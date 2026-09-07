@@ -16,24 +16,30 @@ def create_app(
     settings: Settings | None = None,
     *,
     start_capture: bool = False,
+    load_whisper: bool = False,
 ) -> FastAPI:
     settings = settings or Settings()
     bus = bus or EventBus()
     capture = capture_audio.register(bus, settings) if start_capture else None
 
     @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        translator = app.state.translator
+        await translator.start()
         if capture is not None:
             await capture.start()
         yield
         if capture is not None:
             await capture.stop()
+        await translator.stop()
 
     app = FastAPI(title="metagrafo", lifespan=lifespan)
     app.state.bus = bus
     app.state.settings = settings
     operator_control.register(app, bus, settings)
-    translate_speech.register(app, bus, settings)
+    app.state.translator = translate_speech.register(
+        app, bus, settings, load_whisper=load_whisper
+    )
     broadcast_subtitles.register(app, bus, settings)
     return app
 
@@ -42,7 +48,7 @@ app = create_app()
 
 
 def create_production_app() -> FastAPI:
-    return create_app(start_capture=True)
+    return create_app(start_capture=True, load_whisper=True)
 
 
 def print_input_devices() -> None:
