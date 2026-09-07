@@ -8,3 +8,8 @@ class Settings(BaseSettings):
     port: int = 8000
     translate_mode: str = "ko_to_en"
     audio_device_name: str = "ATEN_Stream_to_USB"
+    audio_device_index: int | None = None
+    vad_preroll_ms: int = 200
+    vad_min_silence_ms: int = 800
+    vad_max_utterance_s: float = 12
+    vad_min_speech_ms: int = 250
