@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Metagrafo control</title>
+  <style>
+    body { font-family: sans-serif; background: #111; color: #eee; margin: 2rem; }
+    button { font-size: 1.4rem; padding: 1rem 1.5rem; margin: 0.5rem; min-width: 12rem; }
+    .on { background: #2e7d32; color: #fff; }
+    .off { background: #c62828; color: #fff; }
+    .mode { background: #1565c0; color: #fff; }
+    .active { outline: 4px solid #ffd54f; }
+  </style>
+</head>
+<body>
+  <h1>Booth control</h1>
+  <p>Captions default OFF. Turn ON when the pastor is at the pulpit.</p>
+  <div>
+    <button id="captions-on" class="on">Captions ON</button>
+    <button id="captions-off" class="off">Captions OFF</button>
+  </div>
+  <div>
+    <button id="mode-ko" class="mode" data-mode="ko_to_en">Mode: ko_to_en</button>
+    <button id="mode-en" class="mode" data-mode="en_to_en">Mode: en_to_en (Guest)</button>
+  </div>
+  <p id="status"></p>
+  <script>
+    async function refresh() {
+      const r = await fetch("/mode");
+      const s = await r.json();
+      document.getElementById("status").textContent =
+        "Captions " + (s.captions_active ? "ON" : "OFF") + " · " + s.mode;
+      document.getElementById("mode-ko").classList.toggle("active", s.mode === "ko_to_en");
+      document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
+    }
+    document.getElementById("captions-on").onclick = async () => {
+      await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: true }) });
+      refresh();
+    };
+    document.getElementById("captions-off").onclick = async () => {
+      await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: false }) });
+      refresh();
+    };
+    document.querySelectorAll(".mode").forEach((btn) => {
+      btn.onclick = async () => {
+        await fetch("/mode", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: btn.dataset.mode }) });
+        refresh();
+      };
+    });
+    refresh();
+  </script>
+</body>
+</html>
