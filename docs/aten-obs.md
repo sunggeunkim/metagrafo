@@ -2,7 +2,9 @@
 
 How Metagrafo sits next to an **ATEN UC9020 StreamLIVE HD** (often called US9020) and **OBS Studio**.
 
-The UC9020 is a hardware AV mixer. It is **not** a USB microphone plugged into the PC. Audio and video reach Windows through **ATEN Stream to USB**, which exposes a virtual webcam (UVC) and virtual microphone (UAC). That virtual audio device is typically named **`ATEN_Stream_to_USB`**. That is the device Metagrafo should capture.
+The UC9020 is a hardware AV mixer. It is **not** a USB microphone. On **Windows**, **ATEN Stream to USB** pulls the mixer over LAN and exposes a virtual webcam (UVC) plus virtual microphone (UAC), typically named **`ATEN_Stream_to_USB`**. That is the Metagrafo capture target.
+
+That software is **Windows-only**. On a Mac, set `AUDIO_DEVICE_NAME` to whatever actually carries program audio. See `docs/hardware-profiles.md`.
 
 ## Signal flow
 
@@ -10,64 +12,62 @@ The UC9020 is a hardware AV mixer. It is **not** a USB microphone plugged into t
 Pastor mic / HDMI cameras
         │
         ▼
-   ATEN UC9020 (mix + optional RTMP)
+   ATEN UC9020 (mix)
         │  LAN
         ▼
  ATEN Stream to USB  ── virtual video ──►  OBS Video Capture Device
                      ── virtual audio ──►  OBS Audio Input Capture
-                     ── same audio ────►  Metagrafo (PyAudio) → two-line captions
+                     ── same audio ────►  Metagrafo (when captions ON)
                                               │
                                               ▼
                                     OBS Browser Source /overlay
                                               │
                                               ▼
-                                         YouTube / record
+                              YouTube  +  house HDMI projector
+                              (same OBS program canvas)
 ```
 
-Captions appear on the public stream **only if OBS is encoding that destination**. If the UC9020 RTMPs to YouTube by itself, the overlay stays on this PC.
+Captions reach YouTube and the sanctuary **only if OBS is encoding**. If the UC9020 RTMPs to the CDN by itself, the overlay never leaves this PC. The house projector is the same canvas: English captions appear in the room.
 
-## Prerequisites
+## Prerequisites (Windows)
 
 1. UC9020 and this PC on the **same LAN**.
-2. **ATEN Stream to USB Capture** installed and **running** (virtual devices do not exist otherwise).
-3. OBS Studio on this PC.
-4. Metagrafo listening on `http://127.0.0.1:8000`.
+2. **ATEN Stream to USB Capture** installed and **running**.
+3. OBS Studio on this PC (this is the live encoder).
+4. Metagrafo at `http://127.0.0.1:8000`.
 
 ## What Metagrafo opens
 
-Default input name: **`ATEN_Stream_to_USB`**.
+Default name: **`ATEN_Stream_to_USB`**. Override with `AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX`. Do not grab the first device that merely contains `ATEN`.
 
-Settings still allow `AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX` override. Do not grab the first device whose name merely contains `ATEN` if more than one ATEN endpoint exists; prefer `ATEN_Stream_to_USB`.
+The virtual device is usually **48 kHz stereo**. VAD and Whisper want **16 kHz mono**:
 
-The virtual device is usually **48 kHz stereo**. Silero VAD and Whisper want **16 kHz mono**. Capture must:
-
-- open in **shared WASAPI** (not exclusive), so OBS can use the same device
+- open **shared WASAPI** (not exclusive) so OBS can share the device
 - **downmix stereo → mono**
 - **resample to 16 kHz**
 
-If Windows still exclusive-locks the device, copy it with a virtual cable and point Metagrafo at the copy.
+If Windows exclusive-locks the device, copy it with a virtual cable.
 
-`--list-devices` should print the Windows recording name so an operator can confirm `ATEN_Stream_to_USB` is present.
+`--list-devices` must show the Windows recording name.
+
+When captions are **OFF** (the default), Metagrafo **drops frames** and does not run VAD or Whisper. Hiding the OBS Browser Source alone does **not** shed GPU load.
 
 ## OBS scene
 
-1. **Video Capture Device** → `ATEN_Stream_to_USB` (or the Stream to USB webcam name Windows shows).
-2. **Audio Input Capture** → the matching `ATEN_Stream_to_USB` recording device (or “use custom audio device” on the video source).
-3. **Browser Source** → `http://127.0.0.1:8000/overlay`, 1920×1080, shutdown when not visible. Transparent background; two-line completed captions, not karaoke.
-4. Keep this Browser Source **above** the video in the scene.
+1. **Video Capture Device** → Stream to USB webcam.
+2. **Audio Input Capture** → `ATEN_Stream_to_USB` (or custom audio on the video source).
+3. **Browser Source** → `http://127.0.0.1:8000/overlay`, 1920×1080, shutdown when not visible. Two-line completed captions, not karaoke. Above the video.
+4. Fullscreen projector / HDMI to the house = this program (English overlay in the room).
 
-Operator control stays at `http://127.0.0.1:8000/control` in a normal browser, **not** as an OBS source.
-
-## What this does not change
-
-Feature slices, event bus, two-line overlay, and Whisper/NLLB are unchanged. Only the capture **source** is a virtual UAC from StreamLIVE’s mix (pastor mic + HDMI), not a dedicated USB mic.
+Booth UI: `http://127.0.0.1:8000/control` in a **normal browser**, not an OBS source. Captions start OFF. ON at the pulpit; OFF for worship.
 
 ## Failure modes
 
 | Symptom | Likely cause |
 |---|---|
 | No ATEN device in `--list-devices` | Stream to USB not running, or UC9020 off the LAN |
-| Device found, silence / no VAD | Wrong ATEN endpoint; OBS holding exclusive mode; muted in Windows |
-| Garbled / chipmunk audio | Sample rate not resampled (48 kHz treated as 16 kHz) |
-| Overlay locally, missing on YouTube | Stream is leaving from the UC9020 RTMP path, not OBS |
-| GPU hitch while captioning | OBS NVENC + Whisper on the 6 GB laptop 3060 (65 W); not an ATEN issue |
+| Device found, silence | Wrong endpoint; exclusive WASAPI; muted in Windows; captions still OFF |
+| Garbled / chipmunk audio | 48 kHz treated as 16 kHz |
+| Overlay locally, missing on YouTube | Stream leaving from UC9020 RTMP, not OBS |
+| Garbage English during songs | Captions left ON on PGM worship; turn OFF |
+| GPU hitch while captioning | OBS NVENC + Whisper on a small NVIDIA card; try `WHISPER_MODEL=medium` and restart |

@@ -1,114 +1,101 @@
 # Architecture
 
-Metagrafo is a single-process, fully local speech pipeline that turns live microphone audio into OBS captions.
+Metagrafo is a single-process, fully local speech pipeline that turns live **program audio** into OBS captions.
 
-It captures an ATEN USB microphone, chunks speech with Silero VAD, runs faster-whisper, optionally translates, and broadcasts subtitle JSON over a FastAPI WebSocket that an OBS Browser Source consumes.
+OBS on the broadcast PC is the encoder (YouTube and the house projector share that canvas). Audio is the StreamLIVE PGM mix via **ATEN Stream to USB** on Windows (`ATEN_Stream_to_USB`). Silero VAD chunks speech; faster-whisper produces English; a FastAPI WebSocket overlay shows **two completed lines**. Hardware path: `docs/aten-obs.md`. GPU/OS profiles: `docs/hardware-profiles.md`.
 
-## Output-language knob
+## Product locks (v1)
 
-The operator picks what appears on screen. The mode can change at runtime (`PUT /mode` or the `/control` page). No process restart.
-
-| Mode | Spoken | On screen | How |
-|---|---|---|---|
-| `ko_to_en` (default) | Korean | English | faster-whisper `task="translate"` |
-| `en_to_ko` | English | Korean | faster-whisper `task="transcribe"`, then local NLLB |
-| `transcribe` | whatever is spoken | same language | faster-whisper `task="transcribe"` only |
-
-Whisper `task="translate"` only produces English. English→Korean therefore needs a second local model (NLLB-200 distilled 600M via CTranslate2). NLLB is lazy-loaded on first switch to `en_to_ko`.
+| Topic | Lock |
+|---|---|
+| Encoder | OBS encodes the destination. UC9020 RTMP alone has **no captions**. |
+| Audio | PGM mix. No speech-only bus. |
+| Worship | Captions **default OFF**. Volunteer ON at the pulpit, OFF for songs. Mute **stops inference**, not only the OBS source. |
+| Presentation | Two-line, utterance-final. **Not karaoke.** ~2–3 s after they stop is OK. |
+| Modes | `ko_to_en` (sermon) and `en_to_en` (English guest transcribe). **`en_to_ko` / NLLB deferred.** |
+| Code-switch | Stay on `ko_to_en`. `church_vocabulary.txt` → Whisper `initial_prompt`. No verse-by-verse mode flips. |
+| Mute in-flight | Capture drops frames. Translate empties the queue. In-flight Whisper may finish; **discard if captions are off**. |
+| Model | Env `WHISPER_MODEL` (default `large-v3`). Fallback `medium` + **restart**. No live swap. |
 
 ## Vertical Slice Architecture
 
-The codebase is organized by **feature**, not by layer.
+Organize by **feature**, not by layer.
 
-Each feature owns its events, I/O, and runtime loop. Features talk only through a typed asyncio event bus. Downstream features may import **events** from upstream features. They must not import each other's internals.
+Each slice owns its events, I/O, and runtime loop. Slices talk only through `core/event_bus.py`. Downstream slices may import **events** from upstream. They must not import each other's internals.
 
-**Do not create** shared layers named `controllers/`, `services/`, `repositories/`, `models/`, `domain/`, `infrastructure/`, `api/`, or `schemas/`. No generic `*Service`, `*Controller`, or `*Repository` classes.
+**Do not create** `controllers/`, `services/`, `repositories/`, `models/`, `domain/`, `infrastructure/`, `api/`, or `schemas/` as shared layers.
 
 Allowed shared code:
 
-- `core/event_bus.py` — typed asyncio pub/sub
-- `core/settings.py` — env-backed bootstrap config (not a service layer)
-- `main.py` — composition root (constructs the bus, registers slices, starts FastAPI)
+- `core/event_bus.py` — typed asyncio pub/sub (no event types in this file)
+- `core/settings.py` — env-backed bootstrap; hardware profile fills **unset** fields only
+- `main.py` — composition root
 
 ```
-ATEN mic
-    │
-    ▼
-capture_audio  ──AudioChunkEvent──►  translate_speech  ──SubtitleEvent──►  broadcast_subtitles  ──►  OBS
- (PyAudio + Silero VAD)              (whisper ± NLLB,                  (FastAPI /ws + overlay)
-                                      mode knob)
+PGM audio → capture_audio --AudioChunkEvent--> translate_speech --SubtitleEvent--> broadcast_subtitles → OBS
+
+operator_control --CaptionsStateEvent / ModeChangedEvent-->  (the three slices above subscribe)
 ```
 
-Language policy lives only in `translate_speech`. Capture does not know about modes. Broadcast renders `SubtitleEvent.text` and does not decide how that text was produced.
+`operator_control` publishes reverse control. Capture does **not** import the overlay.
 
 ## Layout
 
 ```
 metagrafo/
-  main.py                          # composition root
+  main.py
   core/
     event_bus.py
     settings.py
+  church_vocabulary.txt
   features/
-    capture_audio/                 # mic → AudioChunkEvent
-    translate_speech/              # AudioChunkEvent → SubtitleEvent; owns /mode and /control
-    broadcast_subtitles/           # SubtitleEvent → WebSocket JSON + overlay
+    capture_audio/          # named input → AudioChunkEvent
+    translate_speech/       # AudioChunkEvent → SubtitleEvent (no HTTP)
+    broadcast_subtitles/    # /overlay, /ws, /health
+    operator_control/       # /control, /mode, CaptionsStateEvent
+  docs/
+    architecture.md
+    aten-obs.md
+    hardware-profiles.md
 ```
 
-Each feature exposes `register(app, bus, settings)` and is wired from `main.py`. FastAPI routes belong to the slice that owns that HTTP surface, not a global router package.
+Each feature exposes `register(...)`. FastAPI routes live in the slice that owns that surface.
 
 ## Feature slices
 
 ### `capture_audio`
 
-Opens program audio from **ATEN Stream to USB** with PyAudio, runs Silero VAD (ONNX), and publishes one `AudioChunkEvent` per utterance. The hardware path (UC9020 / `ATEN_Stream_to_USB` / OBS) is in `docs/aten-obs.md`.
+Opens the **named** recording device (Windows default `ATEN_Stream_to_USB`). Overridable by name/index for a future Mac box.
 
-- Device match: prefer `ATEN_Stream_to_USB`; overridable by index or name in settings.
-- Downmix stereo to mono and resample to 16 kHz, 512-sample frames. Open the device in shared WASAPI so OBS can use it too.
-- Capture is blocking, so it runs on a dedicated thread and hops into asyncio with `loop.call_soon_threadsafe`.
-- VAD: ~200 ms pre-roll, ~800 ms trailing silence, ~12 s hard cap, drop utterances shorter than ~250 ms.
-- PCM on the bus is `bytes` (s16le), not a numpy array, so the event stays frozen and cheap to copy.
+- Windows: shared WASAPI (not exclusive) so OBS can use the same device.
+- Downmix stereo → mono, resample to 16 kHz, 512-sample frames.
+- Silero VAD (ONNX): ~200 ms pre-roll, ~800 ms trailing silence, ~12 s cap, drop &lt;~250 ms.
+- Subscribe `CaptionsStateEvent`: if inactive, **drop frames, no VAD**.
+- PCM on the bus is `bytes` (s16le).
 - No FastAPI routes.
 
 ### `translate_speech`
 
-Subscribes to `AudioChunkEvent`, runs ASR (± translation) according to the **current** mode, publishes `SubtitleEvent`. Owns the output-language knob.
+Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 
-| Mode | Whisper language | Whisper task | NLLB | Target language |
-|---|---|---|---|---|
-| `ko_to_en` | `ko` | `translate` | no | `en` |
-| `en_to_ko` | `en` | `transcribe` | yes, `eng_Latn` → `kor_Hang` | `ko` |
-| `transcribe` | settings (`en` / `ko` / auto) | `transcribe` | no | spoken language |
+| Mode | Whisper language | Whisper task | On screen |
+|---|---|---|---|
+| `ko_to_en` | `ko` | `translate` | English |
+| `en_to_en` | `en` | `transcribe` | English (unchanged) |
 
-Whisper is `large-v3` with INT8 (`turbo` ignores `task="translate"`). Inference runs in `asyncio.to_thread`. A bounded queue (default 4) **drops oldest** when the translator falls behind so live captions stay current.
-
-Knob HTTP (operator machine, not the OBS overlay):
-
-- `GET /mode` / `PUT /mode` — read or change mode; `PUT` publishes `ModeChangedEvent`
-- `GET /control` — three-button page for the operator
-
-A mode change does not cancel the in-flight chunk. It applies when the next `AudioChunkEvent` is dequeued.
+- `large-v3` (`turbo` ignores `task="translate"`). Inference in `asyncio.to_thread`.
+- `church_vocabulary.txt` read at **startup** → `initial_prompt`.
+- Device profile: see `docs/hardware-profiles.md`. Env always wins.
+- Queue max 4, **drop oldest**. Empty output is not published.
+- Captions off: **empty the queue**. When Whisper returns, if inactive, **do not publish**.
 
 ### `broadcast_subtitles`
 
-Fans `SubtitleEvent` and `ModeChangedEvent` to every connected WebSocket client.
+- `WS /ws` — caption and mode JSON
+- `GET /overlay` — OBS Browser Source (no booth buttons)
+- `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-- `WS /ws` — JSON captions for OBS
-- `GET /overlay` — transparent Browser Source page (viewer-facing; no mode buttons)
-- `GET /health` — liveness plus client count and current mode
-
-OBS: add a Browser source pointing at `http://127.0.0.1:8000/overlay` (1920×1080).
-
-**Presentation: two-line, utterance-final. Not karaoke.** Captions appear only after VAD ends an utterance and translation finishes. There are no partials, no word-level highlight, and no filling-in of English while Korean is still being spoken.
-
-The overlay keeps two completed lines in the browser:
-
-- **Upper line** (dimmer): the previous caption
-- **Lower line** (full contrast): the newest caption
-
-On each new `SubtitleEvent`, the current line moves up and the new `text` becomes current. The JSON payload stays a single `text`; the overlay owns the two-line history. After a few seconds of no events, both lines fade.
-
-Subtitle payload:
+Two-line overlay: upper = previous (dim), lower = current. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
 
 ```json
 {
@@ -123,43 +110,62 @@ Subtitle payload:
 }
 ```
 
+### `operator_control`
+
+Owns the booth UI. Publishes only.
+
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest)
+- `GET /mode` / `PUT /mode`
+- `CaptionsStateEvent(is_active: bool)` — default **false** at process start
+- `ModeChangedEvent` — pre-service; not verse-by-verse
+
+Open `/control` in a normal browser, **not** as an OBS source.
+
 ## Event bus
 
-`core/event_bus.py` is in-process asyncio pub/sub. No Redis, no extra broker.
-
-- Dispatch by exact event type (`type(event)`), not inheritance.
-- `publish` copies the handler list, then `asyncio.gather(..., return_exceptions=True)`.
-- A failing handler is logged; it does not cancel siblings or the publisher.
-- `subscribe` returns an unsubscribe callable.
-- No global singleton. `main.py` constructs one `EventBus` and injects it.
+In-process asyncio pub/sub. Dispatch by exact type. `publish` isolates handler exceptions. No singleton; `main.py` injects one bus.
 
 Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
-- `SubtitleEvent`, `ModeChangedEvent` — `translate_speech`
+- `SubtitleEvent` — `translate_speech`
+- `CaptionsStateEvent`, `ModeChangedEvent` — `operator_control`
 
 ## Process model
 
-One OS process, one asyncio loop, FastAPI via uvicorn.
+One process, one asyncio loop, uvicorn.
 
-| Work | Where | Why |
-|---|---|---|
-| PyAudio `stream.read` | dedicated thread | blocking I/O |
-| Silero VAD | capture thread | cheap, stays next to the frames |
-| faster-whisper / NLLB | `asyncio.to_thread` | CTranslate2 would stall the event loop |
-| WebSocket fan-out | asyncio | native to FastAPI |
+| Work | Where |
+|---|---|
+| PyAudio read | capture thread |
+| Silero VAD | capture thread (only if captions on) |
+| faster-whisper | `asyncio.to_thread` |
+| WebSocket fan-out | asyncio |
 
-Startup order: translator → broadcaster → capture (subscribers ready before mic events). Shutdown is the reverse.
+Startup: operator_control + translate + broadcast, then capture. Shutdown: stop capture first.
 
 ## Settings
 
-Env-backed (`core/settings.py`). Startup defaults only; the live knob overrides `translate_mode` without a restart.
+Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable keys: ATEN device name/index, VAD silence/cap, whisper model/device/compute type, `translate_mode`, `transcribe_language`, NLLB model id, translate queue size, host/port.
+Notable: `AUDIO_DEVICE_NAME` (default `ATEN_Stream_to_USB`), `AUDIO_DEVICE_INDEX`, VAD, `WHISPER_MODEL` / `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE`, `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts off.
 
 ## Operator path
 
-1. Start uvicorn. Default mode is `ko_to_en`.
-2. OBS Browser Source → `/overlay`.
-3. Operator browser → `/control` (not added as an OBS source).
-4. Korean speaker → **KO→EN**. English that should stay English → **Transcribe**. English that needs Korean captions → **EN→KO**.
+1. Start uvicorn. Captions **OFF**, mode `ko_to_en`.
+2. OBS: ATEN video + audio + Browser Source `/overlay`. House projector = program.
+3. `/control` in a booth browser.
+4. Pastor at pulpit → Captions ON. Worship → Captions OFF.
+5. English guest: set **en_to_en** before service.
+6. Saturday: edit `church_vocabulary.txt`; restart Sunday morning.
+7. Rehearsal hitch: `WHISPER_MODEL=medium`, restart. Never hot-swap on the GPU.
+
+## Out of scope (v1)
+
+- `en_to_ko` / NLLB
+- Karaoke / partials / word highlight
+- Application database
+- whisper.cpp Metal
+- Live VRAM/model swap
+- Speech-only aux mix
+- Cloud ASR
