@@ -6,7 +6,8 @@ Local Korean→English speech captions for OBS. Package management is **[uv](htt
 
 ```powershell
 uv sync
-uv run uvicorn main:app --host 127.0.0.1 --port 8000
+uv run python -m main --list-devices
+uv run uvicorn main:create_production_app --factory --host 127.0.0.1 --port 8000
 ```
 
 - Overlay (OBS Browser Source): http://127.0.0.1:8000/overlay
