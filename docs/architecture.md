@@ -98,6 +98,15 @@ Fans `SubtitleEvent` and `ModeChangedEvent` to every connected WebSocket client.
 
 OBS: add a Browser source pointing at `http://127.0.0.1:8000/overlay` (1920×1080).
 
+**Presentation: two-line, utterance-final. Not karaoke.** Captions appear only after VAD ends an utterance and translation finishes. There are no partials, no word-level highlight, and no filling-in of English while Korean is still being spoken.
+
+The overlay keeps two completed lines in the browser:
+
+- **Upper line** (dimmer): the previous caption
+- **Lower line** (full contrast): the newest caption
+
+On each new `SubtitleEvent`, the current line moves up and the new `text` becomes current. The JSON payload stays a single `text`; the overlay owns the two-line history. After a few seconds of no events, both lines fade.
+
 Subtitle payload:
 
 ```json
