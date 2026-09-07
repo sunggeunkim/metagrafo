@@ -61,9 +61,10 @@ Each feature exposes `register(app, bus, settings)` and is wired from `main.py`.
 
 ### `capture_audio`
 
-Opens the ATEN microphone with PyAudio (16 kHz, mono, 512-sample frames), runs Silero VAD (ONNX), and publishes one `AudioChunkEvent` per utterance.
+Opens program audio from **ATEN Stream to USB** with PyAudio, runs Silero VAD (ONNX), and publishes one `AudioChunkEvent` per utterance. The hardware path (UC9020 / `ATEN_Stream_to_USB` / OBS) is in `docs/aten-obs.md`.
 
-- Device match: name contains `ATEN`, overridable by index or name in settings.
+- Device match: prefer `ATEN_Stream_to_USB`; overridable by index or name in settings.
+- Downmix stereo to mono and resample to 16 kHz, 512-sample frames. Open the device in shared WASAPI so OBS can use it too.
 - Capture is blocking, so it runs on a dedicated thread and hops into asyncio with `loop.call_soon_threadsafe`.
 - VAD: ~200 ms pre-roll, ~800 ms trailing silence, ~12 s hard cap, drop utterances shorter than ~250 ms.
 - PCM on the bus is `bytes` (s16le), not a numpy array, so the event stays frozen and cheap to copy.
