@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Metagrafo overlay</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent !important;
+      overflow: hidden;
+      font-family: "Segoe UI", sans-serif;
+    }
+    #stage {
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      bottom: 8%;
+      text-align: center;
+      opacity: 1;
+      transition: opacity 0.6s;
+    }
+    #stage.hidden { opacity: 0; }
+    .line {
+      color: #fff;
+      text-shadow:
+        0 0 6px #000,
+        0 2px 8px #000,
+        2px 2px 0 #000,
+        -2px 2px 0 #000,
+        2px -2px 0 #000,
+        -2px -2px 0 #000;
+      line-height: 1.25;
+      margin: 0.15em 0;
+    }
+    #previous { font-size: 2.4vw; opacity: 0.55; }
+    #current { font-size: 3.4vw; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div id="stage" class="hidden">
+    <p id="previous" class="line"></p>
+    <p id="current" class="line"></p>
+  </div>
+  <script>
+    const previousEl = document.getElementById("previous");
+    const currentEl = document.getElementById("current");
+    const stage = document.getElementById("stage");
+    let hideTimer = null;
+
+    function show() {
+      stage.classList.remove("hidden");
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => stage.classList.add("hidden"), 8000);
+    }
+
+    function clearLines() {
+      previousEl.textContent = "";
+      currentEl.textContent = "";
+      stage.classList.add("hidden");
+    }
+
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(proto + "://" + location.host + "/ws");
+      ws.onmessage = (ev) => {
+        const msg = JSON.parse(ev.data);
+        if (msg.type === "subtitle" && msg.text) {
+          previousEl.textContent = currentEl.textContent;
+          currentEl.textContent = msg.text;
+          show();
+        }
+        if (msg.type === "captions_state" && msg.is_active === false) {
+          clearLines();
+        }
+      };
+      ws.onclose = () => setTimeout(connect, 1500);
+    }
+    connect();
+  </script>
+</body>
+</html>
