@@ -28,7 +28,7 @@
   </div>
   <h2>VAD pause</h2>
   <p class="hint">How long to wait after speech before cutting a caption. Allowed range <strong>100–3000 ms</strong>. Applies live (no restart).</p>
-  <p class="hint">Guidelines: <strong>250 ms</strong> snappy (may split on a breath) · <strong>1000 ms</strong> shorter · <strong>2000 ms</strong> default. Below 200 ms usually cuts words; above 2500 ms feels hung.</p>
+  <p class="hint">Guidelines: <strong>250 ms</strong> snappy (may split on a breath) · <strong>400 ms</strong> shorter · <strong>1000 ms</strong> default. Below 200 ms usually cuts words; above 1500 ms feels hung.</p>
   <label for="vad-ms">VAD pause (ms)</label>
   <input id="vad-ms" type="number" min="100" max="3000" step="1" />
   <button id="vad-apply" class="mode">Apply VAD (ms)</button>
