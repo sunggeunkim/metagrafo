@@ -13,6 +13,9 @@ def test_captions_default_off_and_sermon_mode() -> None:
         assert body["ok"] is True
         assert body["captions_active"] is False
         assert body["mode"] == "ko_to_en"
+        assert "model" in body
+        assert "device" in body
+        assert "compute_type" in body
 
 
 def test_turning_captions_on_publishes_state_event() -> None:

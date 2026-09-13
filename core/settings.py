@@ -13,3 +13,8 @@ class Settings(BaseSettings):
     vad_min_silence_ms: int = 800
     vad_max_utterance_s: float = 12
     vad_min_speech_ms: int = 250
+    whisper_model: str | None = None
+    whisper_device: str | None = None
+    whisper_compute_type: str | None = None
+    church_vocabulary_path: str = "church_vocabulary.txt"
+    translate_queue_size: int = 4

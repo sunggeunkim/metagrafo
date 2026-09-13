@@ -32,11 +32,22 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> SubtitleHub:
     @app.get("/health")
     async def health() -> dict[str, object]:
         operator = app.state.operator
-        return {
+        profile = getattr(app.state, "whisper_profile", None)
+        body: dict[str, object] = {
             "ok": True,
             "clients": hub.client_count,
             **operator.snapshot(),
         }
+        if profile is not None:
+            body.update(
+                {
+                    "model": profile.model,
+                    "device": profile.device,
+                    "compute_type": profile.compute_type,
+                    "vram_gb": profile.vram_gb,
+                }
+            )
+        return body
 
     @app.post("/inject")
     async def inject(body: InjectBody) -> dict[str, str]:
