@@ -20,7 +20,7 @@ class CaptureGate:
         self._bus = bus
         self._chunker = chunker
         self._sample_rate = sample_rate
-        self._active = False
+        self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:

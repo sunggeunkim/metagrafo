@@ -45,7 +45,7 @@ Tests: `uv run pytest`.
 3. **Browser Source** → `http://127.0.0.1:8000/overlay`
    - Width **1920**, height **1080**
    - Shutdown source when not visible
-   - Transparent page; two completed caption lines (previous dim, current bright). Not karaoke.
+   - Transparent page; two completed caption lines, left-aligned. Not karaoke.
 4. Keep the Browser Source **above** the video.
 5. Fullscreen projector / HDMI to the house = this program.
 
@@ -53,7 +53,7 @@ Booth UI is **not** an OBS source. Open `http://127.0.0.1:8000/control` in a nor
 
 ## Sunday morning (`/control`)
 
-Captions **default OFF** when the process starts. That is fail-safe for opening music.
+Captions **default ON** when the process starts. Turn **OFF** during worship so Whisper does not run on music.
 
 | When | Action |
 |---|---|
@@ -72,7 +72,7 @@ Edit `church_vocabulary.txt` in Notepad (pastor name, series title, extra book n
 
 ## Whisper model (NVIDIA)
 
-Env always wins. If unset, Metagrafo picks from OS + NVIDIA VRAM:
+Defaults: `WHISPER_MODEL=large-v3`, `WHISPER_DEVICE=cuda`, `VAD_MIN_SILENCE_MS=400`. Env always wins. If model/device are unset, Metagrafo also has a VRAM heuristic:
 
 | VRAM | Default model | Default compute |
 |---|---|---|

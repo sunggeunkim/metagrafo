@@ -15,20 +15,42 @@ class WhisperProfile:
 _vram_gb: float | None | str = "unset"
 
 
+def detect_cuda() -> bool:
+    try:
+        import ctranslate2
+
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        return False
+
+
 def detect_vram_gb() -> float | None:
     global _vram_gb
     if _vram_gb != "unset":
         return _vram_gb  # type: ignore[return-value]
     try:
+        import subprocess
+
+        raw = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            text=True,
+            timeout=5,
+        )
+        mib = float(raw.strip().splitlines()[0])
+        _vram_gb = mib / 1024.0
+        return _vram_gb
+    except Exception:
+        pass
+    try:
         import torch
 
-        if not torch.cuda.is_available():
-            _vram_gb = None
-        else:
+        if torch.cuda.is_available():
             _vram_gb = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            return _vram_gb
     except Exception:
-        _vram_gb = None
-    return _vram_gb  # type: ignore[return-value]
+        pass
+    _vram_gb = None
+    return None
 
 
 def resolve_profile(
@@ -38,11 +60,18 @@ def resolve_profile(
     model: str | None = None,
     device: str | None = None,
     compute_type: str | None = None,
+    cuda_available: bool | None = None,
 ) -> WhisperProfile:
     plat = platform or sys.platform
     resolved_device = device
     if resolved_device is None:
-        resolved_device = "cpu" if plat == "darwin" else ("cuda" if vram_gb is not None else "cpu")
+        has_cuda = detect_cuda() if cuda_available is None else cuda_available
+        if plat == "darwin":
+            resolved_device = "cpu"
+        elif vram_gb is not None or has_cuda:
+            resolved_device = "cuda"
+        else:
+            resolved_device = "cpu"
 
     resolved_model = model
     if resolved_model is None:

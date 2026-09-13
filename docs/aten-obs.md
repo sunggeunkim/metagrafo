@@ -38,7 +38,7 @@ Captions reach YouTube and the sanctuary **only if OBS is encoding**. If the UC9
 
 ## What Metagrafo opens
 
-Default name: **`ATEN_Stream_to_USB`**. Override with `AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX`. Do not grab the first device that merely contains `ATEN`.
+Default name: **`ATEN_Stream_to_USB`**. Override with `AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX` (for example `Microphone Array` on this laptop).
 
 The virtual device is usually **48 kHz stereo**. VAD and Whisper want **16 kHz mono**:
 
@@ -59,7 +59,7 @@ When captions are **OFF** (the default), Metagrafo **drops frames** and does not
 3. **Browser Source** → `http://127.0.0.1:8000/overlay`, 1920×1080, shutdown when not visible. Two-line completed captions, not karaoke. Above the video.
 4. Fullscreen projector / HDMI to the house = this program (English overlay in the room).
 
-Booth UI: `http://127.0.0.1:8000/control` in a **normal browser**, not an OBS source. Captions start OFF. ON at the pulpit; OFF for worship.
+Booth UI: `http://127.0.0.1:8000/control` in a **normal browser**, not an OBS source. Captions start ON. OFF for worship; ON at the pulpit.
 
 ## Failure modes
 

@@ -5,13 +5,13 @@ from features.operator_control.events import CaptionsStateEvent, ModeChangedEven
 from main import create_app
 
 
-def test_captions_default_off_and_sermon_mode() -> None:
+def test_captions_default_on_and_sermon_mode() -> None:
     with TestClient(create_app()) as client:
         health = client.get("/health")
         assert health.status_code == 200
         body = health.json()
         assert body["ok"] is True
-        assert body["captions_active"] is False
+        assert body["captions_active"] is True
         assert body["mode"] == "ko_to_en"
         assert "model" in body
         assert "device" in body

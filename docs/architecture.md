@@ -10,7 +10,7 @@ OBS on the broadcast PC is the encoder (YouTube and the house projector share th
 |---|---|
 | Encoder | OBS encodes the destination. UC9020 RTMP alone has **no captions**. |
 | Audio | PGM mix. No speech-only bus. |
-| Worship | Captions **default OFF**. Volunteer ON at the pulpit, OFF for songs. Mute **stops inference**, not only the OBS source. |
+| Worship | Captions **default ON**. Volunteer OFF for songs. Mute **stops inference**, not only the OBS source. |
 | Presentation | Two-line, utterance-final. **Not karaoke.** ~2–3 s after they stop is OK. |
 | Modes | `ko_to_en` (sermon) and `en_to_en` (English guest transcribe). **`en_to_ko` / NLLB deferred.** |
 | Code-switch | Stay on `ko_to_en`. `church_vocabulary.txt` → Whisper `initial_prompt`. No verse-by-verse mode flips. |
@@ -65,11 +65,11 @@ Each feature exposes `register(...)`. FastAPI routes live in the slice that owns
 
 ### `capture_audio`
 
-Opens the **named** recording device (Windows default `ATEN_Stream_to_USB`). Overridable by name/index for a future Mac box.
+Opens the **named** recording device (Windows default `ATEN_Stream_to_USB`). Overridable by name/index (`AUDIO_DEVICE_NAME`).
 
 - Windows: shared WASAPI (not exclusive) so OBS can use the same device.
 - Downmix stereo → mono, resample to 16 kHz, 512-sample frames.
-- Silero VAD (ONNX): ~200 ms pre-roll, ~800 ms trailing silence, ~12 s cap, drop &lt;~250 ms.
+- Silero VAD (ONNX): ~200 ms pre-roll, ~400 ms trailing silence, ~12 s cap, drop &lt;~250 ms.
 - Subscribe `CaptionsStateEvent`: if inactive, **drop frames, no VAD**.
 - PCM on the bus is `bytes` (s16le).
 - No FastAPI routes.
@@ -95,7 +95,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-Two-line overlay: upper = previous (dim), lower = current. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
+Two-line overlay: upper = previous, lower = current, left-aligned. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
 
 ```json
 {
@@ -116,7 +116,7 @@ Owns the booth UI. Publishes only.
 
 - `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest)
 - `GET /mode` / `PUT /mode`
-- `CaptionsStateEvent(is_active: bool)` — default **false** at process start
+- `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
 
 Open `/control` in a normal browser, **not** as an OBS source.
@@ -148,11 +148,11 @@ Startup: operator_control + translate + broadcast, then capture. Shutdown: stop 
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `ATEN_Stream_to_USB`), `AUDIO_DEVICE_INDEX`, VAD, `WHISPER_MODEL` / `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE`, `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts off.
+Notable: `AUDIO_DEVICE_NAME` (default `ATEN_Stream_to_USB`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 400), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE`, `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
 
 ## Operator path
 
-1. Start uvicorn. Captions **OFF**, mode `ko_to_en`.
+1. Start uvicorn. Captions **ON**, mode `ko_to_en`.
 2. OBS: ATEN video + audio + Browser Source `/overlay`. House projector = program.
 3. `/control` in a booth browser.
 4. Pastor at pulpit → Captions ON. Worship → Captions OFF.
