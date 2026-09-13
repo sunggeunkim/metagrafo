@@ -19,7 +19,13 @@ logger = logging.getLogger(__name__)
 class SubtitleHub:
     def __init__(self, bus: EventBus) -> None:
         self._clients: set[WebSocket] = set()
-        self._overlay_style = {"type": "overlay_style", "position": "top_left", "font_size_vw": 3.2}
+        self._overlay_style = {
+            "type": "overlay_style",
+            "position": "top_left",
+            "font_size_vw": 2.5,
+            "inset_vertical_pct": 1.0,
+            "inset_horizontal_pct": 1.0,
+        }
         bus.subscribe(SubtitleEvent, self._on_subtitle)
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(ModeChangedEvent, self._on_mode)
@@ -59,6 +65,8 @@ class SubtitleHub:
             "type": "overlay_style",
             "position": event.position,
             "font_size_vw": event.font_size_vw,
+            "inset_vertical_pct": event.inset_vertical_pct,
+            "inset_horizontal_pct": event.inset_horizontal_pct,
         }
         await self._broadcast(self._overlay_style)
 

@@ -16,35 +16,37 @@
       position: absolute;
       opacity: 1;
       transition: opacity 0.6s;
+      --inset-v: 1%;
+      --inset-h: 1%;
     }
     #stage.hidden { opacity: 0; }
     #stage.pos-top_left {
-      top: 8%;
-      left: 5%;
+      top: var(--inset-v);
+      left: var(--inset-h);
       right: auto;
       bottom: auto;
       width: 70%;
       text-align: left;
     }
     #stage.pos-top_center {
-      top: 8%;
-      left: 5%;
-      right: 5%;
+      top: var(--inset-v);
+      left: var(--inset-h);
+      right: var(--inset-h);
       bottom: auto;
       width: auto;
       text-align: center;
     }
     #stage.pos-bottom_center {
       top: auto;
-      left: 5%;
-      right: 5%;
-      bottom: 8%;
+      left: var(--inset-h);
+      right: var(--inset-h);
+      bottom: var(--inset-v);
       width: auto;
       text-align: center;
     }
     .line {
       color: #fff;
-      font-size: 3.2vw;
+      font-size: 2.5vw;
       font-weight: 700;
       text-shadow:
         0 0 6px #000,
@@ -79,6 +81,12 @@
         document.querySelectorAll(".line").forEach((el) => {
           el.style.fontSize = msg.font_size_vw + "vw";
         });
+      }
+      if (typeof msg.inset_vertical_pct === "number") {
+        stage.style.setProperty("--inset-v", msg.inset_vertical_pct + "%");
+      }
+      if (typeof msg.inset_horizontal_pct === "number") {
+        stage.style.setProperty("--inset-h", msg.inset_horizontal_pct + "%");
       }
     }
 

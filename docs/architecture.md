@@ -69,7 +69,7 @@ Opens the **named** recording device (Windows default `ATEN_Stream_to_USB`). Ove
 
 - Windows: shared WASAPI (not exclusive) so OBS can use the same device.
 - Downmix stereo → mono, resample to 16 kHz, 512-sample frames.
-- Silero VAD (ONNX): ~200 ms pre-roll, ~400 ms trailing silence, ~12 s cap, drop &lt;~250 ms.
+- Silero VAD (ONNX): ~200 ms pre-roll, ~1000 ms trailing silence, ~12 s cap, drop &lt;~250 ms.
 - Subscribe `CaptionsStateEvent`: if inactive, **drop frames, no VAD**.
 - PCM on the bus is `bytes` (s16le).
 - No FastAPI routes.
@@ -114,12 +114,12 @@ Two-line overlay: upper = previous, lower = current, left-aligned. New `text` sh
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, overlay position, **font size (vw)**
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, overlay position, **font size (vw)**, **edge insets (%)**
 - `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /overlay-style`
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
 - `VadSilenceMsEvent` — live; capture updates the running chunker (100–3000 ms)
-- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8)
+- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `inset_vertical_pct` / `inset_horizontal_pct` 0–20)
 
 Open `/control` in a normal browser, **not** as an OBS source.
 
@@ -150,7 +150,7 @@ Startup: operator_control + translate + broadcast, then capture. Shutdown: stop 
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `ATEN_Stream_to_USB`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 400), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `ATEN_Stream_to_USB`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 1000), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
 
 ## Operator path
 

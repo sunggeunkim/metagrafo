@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     audio_device_name: str = "ATEN_Stream_to_USB"
     audio_device_index: int | None = None
     vad_preroll_ms: int = 200
-    vad_min_silence_ms: int = 400
+    vad_min_silence_ms: int = 1000
     vad_max_utterance_s: float = 12
     vad_min_speech_ms: int = 250
     whisper_model: str | None = "large-v3"
