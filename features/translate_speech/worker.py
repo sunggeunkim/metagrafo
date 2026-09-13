@@ -35,7 +35,7 @@ class TranslateWorker:
         self._mode = TranslateMode(mode)
         self._prompt = initial_prompt
         self._queue: asyncio.Queue[AudioChunkEvent] = asyncio.Queue(maxsize=queue_size)
-        self._active = False
+        self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(ModeChangedEvent, self._on_mode)
         bus.subscribe(AudioChunkEvent, self._on_chunk)

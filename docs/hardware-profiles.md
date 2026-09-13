@@ -31,7 +31,7 @@ Capture always means **open the recording device named in settings**, never a ha
 
 | OS | Default `AUDIO_DEVICE_NAME` | Notes |
 |---|---|---|
-| Windows | `ATEN_Stream_to_USB` | Requires ATEN Stream to USB Capture running. See `docs/aten-obs.md`. |
+| Windows | `ATEN_Stream_to_USB` | Requires ATEN Stream to USB Capture running. See `docs/aten-obs.md`. Override with `AUDIO_DEVICE_NAME` (for example `Microphone Array`). |
 | macOS | (none — set explicitly) | Stream to USB is **Windows-only**. Use BlackHole, an aggregate device, or a USB interface. UC9020 → Mac is a routing problem, not a second capture stack. |
 
 ## Same-machine OBS

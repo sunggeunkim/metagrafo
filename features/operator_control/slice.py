@@ -19,7 +19,7 @@ _CONTROL_PAGE = Path(__file__).with_name("control.html")
 
 class OperatorState:
     def __init__(self, mode: TranslateMode) -> None:
-        self.captions_active = False
+        self.captions_active = True
         self.mode = mode
 
     def snapshot(self) -> dict[str, object]:

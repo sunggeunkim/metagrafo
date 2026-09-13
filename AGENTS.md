@@ -4,7 +4,7 @@ Local real-time Korean→English speech captions for OBS (v1 also supports Engli
 
 Read before implementing:
 
-- `docs/architecture.md` — VSA, slices, captions default OFF, no NLLB in v1
+- `docs/architecture.md` — VSA, slices, captions default ON, no NLLB in v1
 - `docs/aten-obs.md` — UC9020, `ATEN_Stream_to_USB`, OBS encoder
 - `docs/hardware-profiles.md` — NVIDIA VRAM heuristics, Mac/CPU
 

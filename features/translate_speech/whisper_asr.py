@@ -9,18 +9,44 @@ from features.translate_speech.device_profile import WhisperProfile
 logger = logging.getLogger(__name__)
 
 
+def _warmup(model) -> None:
+    import numpy as np
+
+    dummy = np.zeros(16000, dtype=np.float32)
+    segments, _info = model.transcribe(
+        dummy,
+        language="en",
+        task="transcribe",
+        beam_size=1,
+        vad_filter=False,
+        without_timestamps=True,
+    )
+    list(segments)
+
+
 def make_transcribe(profile: WhisperProfile):
     from faster_whisper import WhisperModel
 
+    from features.translate_speech.cuda_dlls import add_nvidia_dll_dirs
+
+    add_nvidia_dll_dirs()
+
     model = None
+    used_device = profile.device
+    used_compute = profile.compute_type
     attempts = [(profile.device, profile.compute_type)]
-    if profile.device == "cuda" and profile.compute_type == "int8":
-        attempts.append(("cuda", "int8_float16"))
+    if profile.device == "cuda":
+        if profile.compute_type == "int8":
+            attempts.append(("cuda", "int8_float16"))
         attempts.append(("cpu", "int8"))
     last_error: Exception | None = None
     for device, compute in attempts:
         try:
-            model = WhisperModel(profile.model, device=device, compute_type=compute)
+            candidate = WhisperModel(profile.model, device=device, compute_type=compute)
+            _warmup(candidate)
+            model = candidate
+            used_device = device
+            used_compute = compute
             logger.info("loaded whisper %s device=%s compute=%s", profile.model, device, compute)
             break
         except Exception as exc:
@@ -28,6 +54,7 @@ def make_transcribe(profile: WhisperProfile):
             logger.warning("whisper load failed device=%s compute=%s: %s", device, compute, exc)
     if model is None:
         raise RuntimeError("could not load faster-whisper") from last_error
+    logger.info("whisper ready device=%s compute=%s", used_device, used_compute)
 
     def transcribe(
         pcm_s16le: bytes,

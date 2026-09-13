@@ -23,8 +23,14 @@ def test_twelve_gb_defaults_to_large_v3_float16() -> None:
 
 
 def test_darwin_defaults_to_cpu() -> None:
-    profile = resolve_profile(vram_gb=None, platform="darwin")
+    profile = resolve_profile(vram_gb=None, platform="darwin", cuda_available=True)
     assert profile.device == "cpu"
+    assert profile.compute_type == "int8"
+
+
+def test_windows_uses_cuda_even_without_torch_vram() -> None:
+    profile = resolve_profile(vram_gb=None, platform="win32", cuda_available=True)
+    assert profile.device == "cuda"
     assert profile.compute_type == "int8"
 
 
