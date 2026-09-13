@@ -12,6 +12,7 @@ def energy_is_speech(frame: bytes, *, threshold: float = 500.0) -> bool:
 
 def load_is_speech():
     try:
+        import torch
         from silero_vad import load_silero_vad
 
         model = load_silero_vad(onnx=True)
@@ -20,7 +21,7 @@ def load_is_speech():
             audio = np.frombuffer(frame, dtype=np.int16).astype(np.float32) / 32768.0
             if audio.size < 512:
                 return False
-            window = audio[:512]
+            window = torch.from_numpy(np.ascontiguousarray(audio[:512]))
             prob = model(window, 16000)
             value = float(prob.item() if hasattr(prob, "item") else prob)
             return value > 0.5
