@@ -6,7 +6,7 @@ import uuid
 from core.event_bus import EventBus
 from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.events import AudioChunkEvent
-from features.operator_control.events import CaptionsStateEvent
+from features.operator_control.events import CaptionsStateEvent, VadSilenceMsEvent
 
 
 class CaptureGate:
@@ -22,6 +22,10 @@ class CaptureGate:
         self._sample_rate = sample_rate
         self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
+        bus.subscribe(VadSilenceMsEvent, self._on_vad_silence)
+
+    async def _on_vad_silence(self, event: VadSilenceMsEvent) -> None:
+        self._chunker.set_min_silence_ms(event.vad_min_silence_ms)
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
         self._active = event.is_active

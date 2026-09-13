@@ -19,6 +19,23 @@ class ModeChangedEvent:
     target_language: str
 
 
+class OverlayPosition(StrEnum):
+    TOP_LEFT = "top_left"
+    TOP_CENTER = "top_center"
+    BOTTOM_CENTER = "bottom_center"
+
+
+@dataclass(frozen=True, slots=True)
+class VadSilenceMsEvent:
+    vad_min_silence_ms: int
+
+
+@dataclass(frozen=True, slots=True)
+class OverlayStyleEvent:
+    position: str
+    font_size_vw: float
+
+
 def languages_for(mode: TranslateMode) -> tuple[str, str]:
     if mode is TranslateMode.EN_TO_EN:
         return "en", "en"

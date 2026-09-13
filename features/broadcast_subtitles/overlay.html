@@ -14,15 +14,34 @@
     }
     #stage {
       position: absolute;
-      top: 8%;
-      left: 5%;
-      right: auto;
-      width: 70%;
-      text-align: left;
       opacity: 1;
       transition: opacity 0.6s;
     }
     #stage.hidden { opacity: 0; }
+    #stage.pos-top_left {
+      top: 8%;
+      left: 5%;
+      right: auto;
+      bottom: auto;
+      width: 70%;
+      text-align: left;
+    }
+    #stage.pos-top_center {
+      top: 8%;
+      left: 5%;
+      right: 5%;
+      bottom: auto;
+      width: auto;
+      text-align: center;
+    }
+    #stage.pos-bottom_center {
+      top: auto;
+      left: 5%;
+      right: 5%;
+      bottom: 8%;
+      width: auto;
+      text-align: center;
+    }
     .line {
       color: #fff;
       font-size: 3.2vw;
@@ -40,7 +59,7 @@
   </style>
 </head>
 <body>
-  <div id="stage" class="hidden">
+  <div id="stage" class="hidden pos-top_left">
     <p id="previous" class="line"></p>
     <p id="current" class="line"></p>
   </div>
@@ -48,7 +67,20 @@
     const previousEl = document.getElementById("previous");
     const currentEl = document.getElementById("current");
     const stage = document.getElementById("stage");
+    const POSITIONS = ["pos-top_left", "pos-top_center", "pos-bottom_center"];
     let hideTimer = null;
+
+    function applyStyle(msg) {
+      if (msg.position) {
+        stage.classList.remove(...POSITIONS);
+        stage.classList.add("pos-" + msg.position);
+      }
+      if (typeof msg.font_size_vw === "number") {
+        document.querySelectorAll(".line").forEach((el) => {
+          el.style.fontSize = msg.font_size_vw + "vw";
+        });
+      }
+    }
 
     function show() {
       stage.classList.remove("hidden");
@@ -67,6 +99,9 @@
       const ws = new WebSocket(proto + "://" + location.host + "/ws");
       ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data);
+        if (msg.type === "overlay_style") {
+          applyStyle(msg);
+        }
         if (msg.type === "subtitle" && msg.text) {
           previousEl.textContent = currentEl.textContent;
           currentEl.textContent = msg.text;

@@ -15,6 +15,6 @@ class Settings(BaseSettings):
     vad_min_speech_ms: int = 250
     whisper_model: str | None = "large-v3"
     whisper_device: str | None = "cuda"
-    whisper_compute_type: str | None = None
+    whisper_compute_type: str | None = "float16"
     church_vocabulary_path: str = "church_vocabulary.txt"
     translate_queue_size: int = 4

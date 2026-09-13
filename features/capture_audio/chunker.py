@@ -17,9 +17,10 @@ class SpeechChunker:
         is_speech: Callable[[bytes], bool],
     ) -> None:
         self._is_speech = is_speech
-        frame_ms = frame_samples / sample_rate * 1000
+        self._frame_ms = frame_samples / sample_rate * 1000
+        frame_ms = self._frame_ms
         self._preroll_frames = max(1, int(round(preroll_ms / frame_ms))) if preroll_ms else 0
-        self._silence_frames = max(1, int(round(min_silence_ms / frame_ms)))
+        self.set_min_silence_ms(min_silence_ms)
         self._min_speech_frames = max(1, int(round(min_speech_ms / frame_ms)))
         self._max_frames = max(1, int(round(max_utterance_s * sample_rate / frame_samples)))
         self._preroll: deque[bytes] = deque(maxlen=self._preroll_frames or 1)
@@ -58,6 +59,9 @@ class SpeechChunker:
         if len(self._utterance) >= self._max_frames:
             return self._emit()
         return None
+
+    def set_min_silence_ms(self, min_silence_ms: int) -> None:
+        self._silence_frames = max(1, int(round(min_silence_ms / self._frame_ms)))
 
     def reset(self) -> None:
         self._utterance = []

@@ -6,7 +6,11 @@ from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from core.event_bus import EventBus
-from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent
+from features.operator_control.events import (
+    CaptionsStateEvent,
+    ModeChangedEvent,
+    OverlayStyleEvent,
+)
 from features.translate_speech.events import SubtitleEvent
 
 logger = logging.getLogger(__name__)
@@ -15,9 +19,11 @@ logger = logging.getLogger(__name__)
 class SubtitleHub:
     def __init__(self, bus: EventBus) -> None:
         self._clients: set[WebSocket] = set()
+        self._overlay_style = {"type": "overlay_style", "position": "top_left", "font_size_vw": 3.2}
         bus.subscribe(SubtitleEvent, self._on_subtitle)
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(ModeChangedEvent, self._on_mode)
+        bus.subscribe(OverlayStyleEvent, self._on_overlay_style)
 
     @property
     def client_count(self) -> int:
@@ -26,6 +32,7 @@ class SubtitleHub:
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
         self._clients.add(websocket)
+        await websocket.send_json(self._overlay_style)
 
     def disconnect(self, websocket: WebSocket) -> None:
         self._clients.discard(websocket)
@@ -46,6 +53,14 @@ class SubtitleHub:
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
         await self._broadcast({"type": "captions_state", "is_active": event.is_active})
+
+    async def _on_overlay_style(self, event: OverlayStyleEvent) -> None:
+        self._overlay_style = {
+            "type": "overlay_style",
+            "position": event.position,
+            "font_size_vw": event.font_size_vw,
+        }
+        await self._broadcast(self._overlay_style)
 
     async def _on_mode(self, event: ModeChangedEvent) -> None:
         await self._broadcast(

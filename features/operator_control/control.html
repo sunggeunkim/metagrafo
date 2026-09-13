@@ -6,10 +6,13 @@
   <style>
     body { font-family: sans-serif; background: #111; color: #eee; margin: 2rem; }
     button { font-size: 1.4rem; padding: 1rem 1.5rem; margin: 0.5rem; min-width: 12rem; }
+    label { display: block; margin: 1rem 0 0.3rem; }
+    input { font-size: 1.2rem; padding: 0.4rem 0.6rem; width: 8rem; }
     .on { background: #2e7d32; color: #fff; }
     .off { background: #c62828; color: #fff; }
-    .mode { background: #1565c0; color: #fff; }
+    .mode, .pos { background: #1565c0; color: #fff; }
     .active { outline: 4px solid #ffd54f; }
+    .hint { color: #aaa; font-size: 0.95rem; max-width: 40rem; }
   </style>
 </head>
 <body>
@@ -23,15 +26,41 @@
     <button id="mode-ko" class="mode" data-mode="ko_to_en">Mode: ko_to_en</button>
     <button id="mode-en" class="mode" data-mode="en_to_en">Mode: en_to_en (Guest)</button>
   </div>
+  <h2>VAD pause</h2>
+  <p class="hint">How long to wait after speech before cutting a caption. Allowed range <strong>100–3000 ms</strong>. Applies live (no restart).</p>
+  <p class="hint">Guidelines: <strong>250 ms</strong> snappy (may split on a breath) · <strong>400 ms</strong> default · <strong>800 ms</strong> patient (fewer chopped sentences). Below 200 ms usually cuts words; above 1500 ms feels hung.</p>
+  <label for="vad-ms">VAD pause (ms)</label>
+  <input id="vad-ms" type="number" min="100" max="3000" step="1" />
+  <button id="vad-apply" class="mode">Apply VAD (ms)</button>
+  <h2>Overlay</h2>
+  <p class="hint">Position and font size apply live to OBS. Font size is viewport width percent (<strong>vw</strong>). Both caption lines use the same size. Allowed range <strong>1.0–8.0 vw</strong>.</p>
+  <p class="hint">Guidelines: <strong>2.4 vw</strong> small · <strong>3.2 vw</strong> default · <strong>4.5 vw</strong> large for the projector. Below 2 vw is hard to read in the sanctuary; above 6 vw crowds the frame.</p>
+  <div>
+    <button class="pos" data-pos="top_left">Top left</button>
+    <button class="pos" data-pos="top_center">Top center</button>
+    <button class="pos" data-pos="bottom_center">Bottom center</button>
+  </div>
+  <label for="font-vw">Font size (vw)</label>
+  <input id="font-vw" type="number" min="1" max="8" step="0.1" />
+  <button id="style-apply" class="mode">Apply overlay</button>
   <p id="status"></p>
   <script>
     async function refresh() {
       const r = await fetch("/mode");
       const s = await r.json();
       document.getElementById("status").textContent =
-        "Captions " + (s.captions_active ? "ON" : "OFF") + " · " + s.mode;
+        "Captions " + (s.captions_active ? "ON" : "OFF") +
+        " · " + s.mode +
+        " · VAD " + s.vad_min_silence_ms + " ms" +
+        " · " + s.position +
+        " · " + s.font_size_vw + " vw";
       document.getElementById("mode-ko").classList.toggle("active", s.mode === "ko_to_en");
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
+      document.querySelectorAll(".pos").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.pos === s.position);
+      });
+      document.getElementById("vad-ms").value = s.vad_min_silence_ms;
+      document.getElementById("font-vw").value = s.font_size_vw;
     }
     document.getElementById("captions-on").onclick = async () => {
       await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: true }) });
@@ -42,11 +71,31 @@
       refresh();
     };
     document.querySelectorAll(".mode").forEach((btn) => {
+      if (!btn.dataset.mode) return;
       btn.onclick = async () => {
         await fetch("/mode", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: btn.dataset.mode }) });
         refresh();
       };
     });
+    document.getElementById("vad-apply").onclick = async () => {
+      const ms = Number(document.getElementById("vad-ms").value);
+      await fetch("/vad-silence", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vad_min_silence_ms: ms }) });
+      refresh();
+    };
+    async function applyOverlay() {
+      const position = document.querySelector(".pos.active")?.dataset.pos || "top_left";
+      const font_size_vw = Number(document.getElementById("font-vw").value);
+      await fetch("/overlay-style", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position, font_size_vw }) });
+      refresh();
+    }
+    document.querySelectorAll(".pos").forEach((btn) => {
+      btn.onclick = async () => {
+        document.querySelectorAll(".pos").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        await applyOverlay();
+      };
+    });
+    document.getElementById("style-apply").onclick = applyOverlay;
     refresh();
   </script>
 </body>
