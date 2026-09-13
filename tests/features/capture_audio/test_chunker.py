@@ -53,6 +53,29 @@ def test_short_noise_is_dropped() -> None:
     assert emitted == []
 
 
+def test_set_min_silence_ms_changes_cut_point() -> None:
+    chunker = SpeechChunker(
+        sample_rate=16000,
+        frame_samples=FRAME,
+        preroll_ms=0,
+        min_silence_ms=800,
+        max_utterance_s=12,
+        min_speech_ms=250,
+        is_speech=_energy_speech,
+    )
+    for _ in range(16):
+        assert chunker.push(SPEECH) is None
+    for _ in range(10):
+        assert chunker.push(SILENCE) is None
+    chunker.set_min_silence_ms(250)
+    emitted = None
+    for _ in range(10):
+        emitted = chunker.push(SILENCE)
+        if emitted:
+            break
+    assert emitted is not None
+
+
 def test_max_utterance_emits_without_waiting_for_silence() -> None:
     chunker = SpeechChunker(
         sample_rate=16000,

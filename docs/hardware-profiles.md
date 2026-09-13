@@ -9,7 +9,7 @@ Env always wins: `WHISPER_MODEL`, `WHISPER_DEVICE`, `WHISPER_COMPUTE_TYPE`. The 
 | Detected VRAM | Default model | Default compute |
 |---|---|---|
 | &lt; 6 GB | `medium` | `int8` |
-| 6–8 GB (Dell XPS 3060 laptop) | `large-v3` | `int8` (fallback `int8_float16` if int8 will not load) |
+| 6–8 GB (Dell XPS 3060 laptop) | `large-v3` | App default is `float16`; if VRAM is tight, set `WHISPER_COMPUTE_TYPE=int8` |
 | 8–12 GB | `large-v3` | `int8`, or `float16` if there is headroom after OBS NVENC |
 | ≥ 12 GB | `large-v3` | `float16` |
 

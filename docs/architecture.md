@@ -114,10 +114,12 @@ Two-line overlay: upper = previous, lower = current, left-aligned. New `text` sh
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest)
-- `GET /mode` / `PUT /mode`
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, overlay position, **font size (vw)**
+- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /overlay-style`
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
+- `VadSilenceMsEvent` — live; capture updates the running chunker (100–3000 ms)
+- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8)
 
 Open `/control` in a normal browser, **not** as an OBS source.
 
@@ -129,7 +131,7 @@ Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
 - `SubtitleEvent` — `translate_speech`
-- `CaptionsStateEvent`, `ModeChangedEvent` — `operator_control`
+- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `OverlayStyleEvent` — `operator_control`
 
 ## Process model
 
@@ -148,7 +150,7 @@ Startup: operator_control + translate + broadcast, then capture. Shutdown: stop 
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `ATEN_Stream_to_USB`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 400), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE`, `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `ATEN_Stream_to_USB`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 400), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
 
 ## Operator path
 

@@ -13,6 +13,9 @@ def test_captions_default_on_and_sermon_mode() -> None:
         assert body["ok"] is True
         assert body["captions_active"] is True
         assert body["mode"] == "ko_to_en"
+        assert body["vad_min_silence_ms"] == 400
+        assert body["position"] == "top_left"
+        assert body["font_size_vw"] == 3.2
         assert "model" in body
         assert "device" in body
         assert "compute_type" in body
@@ -65,3 +68,14 @@ def test_control_page_has_booth_buttons() -> None:
         assert "ko_to_en" in html
         assert "en_to_en" in html
         assert "en_to_ko" not in html
+        assert "VAD pause (ms)" in html
+        assert "Font size (vw)" in html
+
+
+def test_vad_silence_ms_put_and_reject_out_of_range() -> None:
+    with TestClient(create_app()) as client:
+        ok = client.put("/vad-silence", json={"vad_min_silence_ms": 250})
+        assert ok.status_code == 200
+        assert ok.json()["vad_min_silence_ms"] == 250
+        bad = client.put("/vad-silence", json={"vad_min_silence_ms": 50})
+        assert bad.status_code == 422

@@ -51,6 +51,8 @@ Tests: `uv run pytest`.
 
 Booth UI is **not** an OBS source. Open `http://127.0.0.1:8000/control` in a normal browser on the booth PC.
 
+Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before cutting a caption (100–3000); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8). Whisper model / CUDA / float16 still need a restart.
+
 ## Sunday morning (`/control`)
 
 Captions **default ON** when the process starts. Turn **OFF** during worship so Whisper does not run on music.
@@ -72,7 +74,7 @@ Edit `church_vocabulary.txt` in Notepad (pastor name, series title, extra book n
 
 ## Whisper model (NVIDIA)
 
-Defaults: `WHISPER_MODEL=large-v3`, `WHISPER_DEVICE=cuda`, `VAD_MIN_SILENCE_MS=400`. Env always wins. If model/device are unset, Metagrafo also has a VRAM heuristic:
+Defaults: `WHISPER_MODEL=large-v3`, `WHISPER_DEVICE=cuda`, `WHISPER_COMPUTE_TYPE=float16`, `VAD_MIN_SILENCE_MS=400`. Env always wins. If compute type is unset, a VRAM heuristic still applies:
 
 | VRAM | Default model | Default compute |
 |---|---|---|

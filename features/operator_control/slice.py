@@ -10,7 +10,10 @@ from core.settings import Settings
 from features.operator_control.events import (
     CaptionsStateEvent,
     ModeChangedEvent,
+    OverlayPosition,
+    OverlayStyleEvent,
     TranslateMode,
+    VadSilenceMsEvent,
     languages_for,
 )
 
@@ -18,9 +21,19 @@ _CONTROL_PAGE = Path(__file__).with_name("control.html")
 
 
 class OperatorState:
-    def __init__(self, mode: TranslateMode) -> None:
+    def __init__(
+        self,
+        mode: TranslateMode,
+        *,
+        vad_min_silence_ms: int = 400,
+        overlay_position: OverlayPosition = OverlayPosition.TOP_LEFT,
+        font_size_vw: float = 3.2,
+    ) -> None:
         self.captions_active = True
         self.mode = mode
+        self.vad_min_silence_ms = vad_min_silence_ms
+        self.overlay_position = overlay_position
+        self.font_size_vw = font_size_vw
 
     def snapshot(self) -> dict[str, object]:
         source, target = languages_for(self.mode)
@@ -29,6 +42,9 @@ class OperatorState:
             "mode": self.mode.value,
             "source_language": source,
             "target_language": target,
+            "vad_min_silence_ms": self.vad_min_silence_ms,
+            "position": self.overlay_position.value,
+            "font_size_vw": self.font_size_vw,
         }
 
 
@@ -40,12 +56,24 @@ class ModeBody(BaseModel):
     mode: TranslateMode = Field(description="ko_to_en or en_to_en")
 
 
+class VadSilenceBody(BaseModel):
+    vad_min_silence_ms: int = Field(ge=100, le=3000)
+
+
+class OverlayStyleBody(BaseModel):
+    position: OverlayPosition
+    font_size_vw: float = Field(ge=1.0, le=8.0)
+
+
 def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
     try:
         initial_mode = TranslateMode(settings.translate_mode)
     except ValueError:
         initial_mode = TranslateMode.KO_TO_EN
-    state = OperatorState(initial_mode)
+    state = OperatorState(
+        initial_mode,
+        vad_min_silence_ms=settings.vad_min_silence_ms,
+    )
     app.state.operator = state
 
     @app.get("/control")
@@ -75,6 +103,24 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
     async def put_captions(body: CaptionsBody) -> dict[str, object]:
         state.captions_active = body.is_active
         await bus.publish(CaptionsStateEvent(is_active=body.is_active))
+        return state.snapshot()
+
+    @app.put("/vad-silence")
+    async def put_vad_silence(body: VadSilenceBody) -> dict[str, object]:
+        state.vad_min_silence_ms = body.vad_min_silence_ms
+        await bus.publish(VadSilenceMsEvent(vad_min_silence_ms=body.vad_min_silence_ms))
+        return state.snapshot()
+
+    @app.put("/overlay-style")
+    async def put_overlay_style(body: OverlayStyleBody) -> dict[str, object]:
+        state.overlay_position = body.position
+        state.font_size_vw = body.font_size_vw
+        await bus.publish(
+            OverlayStyleEvent(
+                position=body.position.value,
+                font_size_vw=body.font_size_vw,
+            )
+        )
         return state.snapshot()
 
     return state
