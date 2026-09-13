@@ -38,6 +38,16 @@ uv run python -c "import httpx; httpx.post('http://127.0.0.1:8000/inject', json=
 
 Tests: `uv run pytest`.
 
+## Rehearsal from a YouTube sermon
+
+Not the Sunday capture path. **ffmpeg must be on PATH.** First run may still download Whisper `large-v3`. A long sermon takes a while (sequential ~12 s chunks).
+
+```powershell
+uv run python -m main --youtube "https://www.youtube.com/watch?v=VIDEO_ID"
+```
+
+Saves video + wav (kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current directory, and writes `{VIDEO_ID}.en.txt` there (English lines, one per VAD cut). Optional: `--out captions.txt`, `--file sermon.wav` (wav in only, skip download), `--vad-silence-ms 250`.
+
 ## OBS scene
 
 1. **Video Capture Device** → Stream to USB webcam (`ATEN_Stream_to_USB` or whatever Windows shows).
