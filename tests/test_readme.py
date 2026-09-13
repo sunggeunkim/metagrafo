@@ -28,6 +28,8 @@ def test_readme_covers_whisper_env_and_medium_restart() -> None:
     assert "medium" in README
     assert "restart" in README.lower()
     assert "hot-swap" in README.lower() or "hot swap" in README.lower()
+    assert "8–12 GB" in README
+    assert "discarded" in README.lower()
 
 
 def test_readme_covers_aten_windows_and_mac_device_name() -> None:

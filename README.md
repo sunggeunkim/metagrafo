@@ -59,12 +59,12 @@ Captions **default OFF** when the process starts. That is fail-safe for opening 
 |---|---|
 | Pre-service / worship / hymns | Leave **Captions OFF**. Do not caption PGM music — Whisper will hallucinate. |
 | Pastor at the pulpit | **Captions ON**. Mode **ko_to_en** for a Korean sermon. |
-| Songs again | **Captions OFF**. This stops Whisper, not only hiding the OBS source. |
+| Songs again | **Captions OFF**. Stops **new** capture and queued Whisper jobs. Not the same as hiding the OBS source. |
 | English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. No Korean captions in v1. |
 
 Do **not** flip language verse-by-verse. `ko_to_en` plus `church_vocabulary.txt` handles English names and book titles inside a Korean sermon.
 
-Hiding the OBS Browser Source does **not** rest the GPU. Use **Captions OFF** on `/control`.
+Hiding the OBS Browser Source does **not** rest the GPU. Use **Captions OFF** on `/control`. That drains the queue and drops frames so worship is not transcribed. An utterance **already on the GPU** can still finish (Whisper cannot be cancelled mid-chunk); that result is **discarded** and will not appear on the overlay. GPU load drops after that current chunk, not instantly.
 
 ## Saturday: vocabulary file
 
@@ -78,6 +78,7 @@ Env always wins. If unset, Metagrafo picks from OS + NVIDIA VRAM:
 |---|---|---|
 | &lt; 6 GB | `medium` | `int8` |
 | 6–8 GB (this XPS 3060) | `large-v3` | `int8` |
+| 8–12 GB | `large-v3` | `int8` (or `float16` if OBS NVENC still has headroom) |
 | ≥ 12 GB | `large-v3` | `float16` |
 
 On macOS / no CUDA: device `cpu`, compute `int8`.
