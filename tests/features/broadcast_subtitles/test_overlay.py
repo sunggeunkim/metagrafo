@@ -61,10 +61,17 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
         with client.websocket_connect("/ws") as ws:
             hello = _skip_hello(ws)
             assert hello["position"] == "top_left"
-            assert hello["font_size_vw"] == 3.2
+            assert hello["font_size_vw"] == 2.5
+            assert hello["inset_vertical_pct"] == 1.0
+            assert hello["inset_horizontal_pct"] == 1.0
             response = client.put(
                 "/overlay-style",
-                json={"position": "bottom_center", "font_size_vw": 5.0},
+                json={
+                    "position": "bottom_center",
+                    "font_size_vw": 5.0,
+                    "inset_vertical_pct": 0.0,
+                    "inset_horizontal_pct": 1.5,
+                },
             )
             assert response.status_code == 200
             payload = ws.receive_json()
@@ -72,6 +79,8 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
         "type": "overlay_style",
         "position": "bottom_center",
         "font_size_vw": 5.0,
+        "inset_vertical_pct": 0.0,
+        "inset_horizontal_pct": 1.5,
     }
 
 
@@ -79,9 +88,38 @@ def test_overlay_style_rejects_out_of_range_font() -> None:
     with TestClient(create_app()) as client:
         response = client.put(
             "/overlay-style",
-            json={"position": "top_left", "font_size_vw": 20},
+            json={
+                "position": "top_left",
+                "font_size_vw": 20,
+                "inset_vertical_pct": 8.0,
+                "inset_horizontal_pct": 5.0,
+            },
         )
         assert response.status_code == 422
+
+
+def test_overlay_style_rejects_out_of_range_inset() -> None:
+    with TestClient(create_app()) as client:
+        too_high = client.put(
+            "/overlay-style",
+            json={
+                "position": "top_left",
+                "font_size_vw": 3.2,
+                "inset_vertical_pct": 21,
+                "inset_horizontal_pct": 5.0,
+            },
+        )
+        assert too_high.status_code == 422
+        too_low = client.put(
+            "/overlay-style",
+            json={
+                "position": "top_left",
+                "font_size_vw": 3.2,
+                "inset_vertical_pct": 8.0,
+                "inset_horizontal_pct": -1,
+            },
+        )
+        assert too_low.status_code == 422
 
 
 def test_overlay_html_has_position_classes() -> None:
@@ -90,3 +128,7 @@ def test_overlay_html_has_position_classes() -> None:
         assert "pos-top_left" in html
         assert "pos-bottom_center" in html
         assert "font_size_vw" in html
+        assert "--inset-v" in html
+        assert "--inset-h" in html
+        assert "var(--inset-v)" in html
+        assert "var(--inset-h)" in html

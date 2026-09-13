@@ -51,7 +51,7 @@ Tests: `uv run pytest`.
 
 Booth UI is **not** an OBS source. Open `http://127.0.0.1:8000/control` in a normal browser on the booth PC.
 
-Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before cutting a caption (100–3000); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8). Whisper model / CUDA / float16 still need a restart.
+Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before cutting a caption (100–3000, default 2000); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8, default 2.5); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart.
 
 ## Sunday morning (`/control`)
 
@@ -74,7 +74,7 @@ Edit `church_vocabulary.txt` in Notepad (pastor name, series title, extra book n
 
 ## Whisper model (NVIDIA)
 
-Defaults: `WHISPER_MODEL=large-v3`, `WHISPER_DEVICE=cuda`, `WHISPER_COMPUTE_TYPE=float16`, `VAD_MIN_SILENCE_MS=400`. Env always wins. If compute type is unset, a VRAM heuristic still applies:
+Defaults: `WHISPER_MODEL=large-v3`, `WHISPER_DEVICE=cuda`, `WHISPER_COMPUTE_TYPE=float16`, `VAD_MIN_SILENCE_MS=2000`. Env always wins. If compute type is unset, a VRAM heuristic still applies:
 
 | VRAM | Default model | Default compute |
 |---|---|---|

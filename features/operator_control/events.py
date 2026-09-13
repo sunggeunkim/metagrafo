@@ -34,6 +34,8 @@ class VadSilenceMsEvent:
 class OverlayStyleEvent:
     position: str
     font_size_vw: float
+    inset_vertical_pct: float
+    inset_horizontal_pct: float
 
 
 def languages_for(mode: TranslateMode) -> tuple[str, str]:

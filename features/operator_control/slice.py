@@ -25,15 +25,19 @@ class OperatorState:
         self,
         mode: TranslateMode,
         *,
-        vad_min_silence_ms: int = 400,
+        vad_min_silence_ms: int = 2000,
         overlay_position: OverlayPosition = OverlayPosition.TOP_LEFT,
-        font_size_vw: float = 3.2,
+        font_size_vw: float = 2.5,
+        inset_vertical_pct: float = 1.0,
+        inset_horizontal_pct: float = 1.0,
     ) -> None:
         self.captions_active = True
         self.mode = mode
         self.vad_min_silence_ms = vad_min_silence_ms
         self.overlay_position = overlay_position
         self.font_size_vw = font_size_vw
+        self.inset_vertical_pct = inset_vertical_pct
+        self.inset_horizontal_pct = inset_horizontal_pct
 
     def snapshot(self) -> dict[str, object]:
         source, target = languages_for(self.mode)
@@ -45,6 +49,8 @@ class OperatorState:
             "vad_min_silence_ms": self.vad_min_silence_ms,
             "position": self.overlay_position.value,
             "font_size_vw": self.font_size_vw,
+            "inset_vertical_pct": self.inset_vertical_pct,
+            "inset_horizontal_pct": self.inset_horizontal_pct,
         }
 
 
@@ -63,6 +69,8 @@ class VadSilenceBody(BaseModel):
 class OverlayStyleBody(BaseModel):
     position: OverlayPosition
     font_size_vw: float = Field(ge=1.0, le=8.0)
+    inset_vertical_pct: float = Field(ge=0.0, le=20.0)
+    inset_horizontal_pct: float = Field(ge=0.0, le=20.0)
 
 
 def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
@@ -115,10 +123,14 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
     async def put_overlay_style(body: OverlayStyleBody) -> dict[str, object]:
         state.overlay_position = body.position
         state.font_size_vw = body.font_size_vw
+        state.inset_vertical_pct = body.inset_vertical_pct
+        state.inset_horizontal_pct = body.inset_horizontal_pct
         await bus.publish(
             OverlayStyleEvent(
                 position=body.position.value,
                 font_size_vw=body.font_size_vw,
+                inset_vertical_pct=body.inset_vertical_pct,
+                inset_horizontal_pct=body.inset_horizontal_pct,
             )
         )
         return state.snapshot()
