@@ -61,3 +61,13 @@ def test_eof_appends_trailing_silence_frames(tmp_path: Path) -> None:
     frames = list(frames_from_wav(path, min_silence_ms=320))
     silent = [f for f in frames if int(np.abs(np.frombuffer(f, dtype=np.int16)).mean()) == 0]
     assert len(silent) == 10
+
+
+def test_zero_min_silence_still_appends_one_eof_flush_frame(tmp_path: Path) -> None:
+    samples = np.full(FRAME * 2, 8000, dtype=np.int16)
+    path = tmp_path / "speech.wav"
+    _write_wav(path, samples)
+    frames = list(frames_from_wav(path, min_silence_ms=0))
+    silent = [f for f in frames if int(np.abs(np.frombuffer(f, dtype=np.int16)).mean()) == 0]
+    assert len(frames) == 3
+    assert len(silent) == 1

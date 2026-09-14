@@ -83,6 +83,27 @@ def test_eof_without_silence_still_emits_last_line(tmp_path: Path) -> None:
     assert out_path.read_text(encoding="utf-8") == "Last line.\n"
 
 
+def test_zero_vad_silence_still_emits_last_line(tmp_path: Path) -> None:
+    wav_path = tmp_path / "end.wav"
+    _write_wav(wav_path, SPEECH)
+    out_path = tmp_path / "end.en.txt"
+
+    def transcribe(_pcm: bytes, **_kwargs: object) -> str:
+        return "Last line."
+
+    n = run_wav(
+        wav_path=wav_path,
+        out_path=out_path,
+        transcribe=transcribe,
+        chunker=_chunker(min_silence_ms=0),
+        mode="ko_to_en",
+        initial_prompt="",
+        min_silence_ms=0,
+    )
+    assert n == 1
+    assert out_path.read_text(encoding="utf-8") == "Last line.\n"
+
+
 def test_empty_whisper_result_is_skipped(tmp_path: Path) -> None:
     wav_path = tmp_path / "empty.wav"
     _write_wav(wav_path, SPEECH)

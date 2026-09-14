@@ -33,10 +33,10 @@ def frames_from_wav(
         pcm = pcm + b"\x00" * (step - leftover)
     for offset in range(0, len(pcm), step):
         yield pcm[offset : offset + step]
-    if min_silence_ms <= 0:
-        return
+    # SpeechChunker emits only after trailing silence; pad at least one EOF frame
+    # even when min_silence_ms is nonpositive (chunker uses max(1, …)).
     frame_ms = frame_samples / sample_rate * 1000
-    silence_frames = max(1, int(round(min_silence_ms / frame_ms)))
+    silence_frames = max(1, int(round(max(0, min_silence_ms) / frame_ms)))
     silent = b"\x00" * step
     for _ in range(silence_frames):
         yield silent
