@@ -15,14 +15,15 @@ If the UC9020 RTMPs to YouTube by itself, the audience gets **no captions**. The
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
 2. Clone this repo and `cd` into it.
 3. `uv sync`
-4. Install and **run** ATEN Stream to USB Capture. UC9020 and this PC must be on the same LAN. The virtual recording device is typically named `ATEN_Stream_to_USB`.
-5. Install OBS Studio.
+4. Install and **run** ATEN Stream to USB Capture. UC9020 and this PC on a private Ethernet LAN (see `docs/aten-obs.md`).
+5. Install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/). OBS monitors mixer audio into **CABLE Input**; Metagrafo opens **CABLE Output** (`AUDIO_DEVICE_NAME` default `VB-Audio Virtual Cable`).
+6. Install OBS Studio.
 
 ```powershell
 uv run python -m main --list-devices
 ```
 
-Confirm `ATEN_Stream_to_USB` is listed. If it is missing, Stream to USB is not running or the mixer is off the LAN.
+Confirm `CABLE Output (VB-Audio Virtual Cable)` is listed.
 
 ```powershell
 uv run uvicorn main:create_production_app --factory --host 127.0.0.1 --port 8000
@@ -40,8 +41,10 @@ Tests: `uv run pytest`.
 
 ## OBS scene
 
-1. **Video Capture Device** → Stream to USB webcam (`ATEN_Stream_to_USB` or whatever Windows shows).
-2. **Audio Input Capture** → the same `ATEN_Stream_to_USB` recording device (or “use custom audio device” on the video source). Shared WASAPI so Metagrafo can open it too.
+ATEN Stream to USB Capture **is** the RTMP ingest (its **Play** button starts a listener on this PC). Do not install nginx. In Stream to USB: add the UC9020, click **Play**, copy the device **Stream Key**. Leave Play running.
+
+1. **Media Source** (uncheck Local File) → `rtmp://127.0.0.1/live/<that-stream-key>`.
+2. **Settings → Audio → Monitoring device** → **CABLE Input**. On **Media**, **Monitor and Output**. Metagrafo captures **CABLE Output**.
 3. **Browser Source** → `http://127.0.0.1:8000/overlay`
    - Width **1920**, height **1080**
    - Shutdown source when not visible

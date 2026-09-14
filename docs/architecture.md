@@ -2,7 +2,7 @@
 
 Metagrafo is a single-process, fully local speech pipeline that turns live **program audio** into OBS captions.
 
-OBS on the broadcast PC is the encoder (YouTube and the house projector share that canvas). Audio is the StreamLIVE PGM mix via **ATEN Stream to USB** on Windows (`ATEN_Stream_to_USB`). Silero VAD chunks speech; faster-whisper produces English; a FastAPI WebSocket overlay shows **two completed lines**. Hardware path: `docs/aten-obs.md`. GPU/OS profiles: `docs/hardware-profiles.md`.
+OBS on the broadcast PC is the encoder (YouTube and the house projector share that canvas). Mixer audio reaches OBS over Stream to USB RTMP; Metagrafo captures **`CABLE Output` (`VB-Audio Virtual Cable`)** after OBS monitors into the cable. Silero VAD chunks speech; faster-whisper produces English; a FastAPI WebSocket overlay shows **two completed lines**. Hardware path: `docs/aten-obs.md`. GPU/OS profiles: `docs/hardware-profiles.md`.
 
 ## Product locks (v1)
 
@@ -65,7 +65,7 @@ Each feature exposes `register(...)`. FastAPI routes live in the slice that owns
 
 ### `capture_audio`
 
-Opens the **named** recording device (Windows default `ATEN_Stream_to_USB`). Overridable by name/index (`AUDIO_DEVICE_NAME`).
+Opens the **named** recording device (Windows default `VB-Audio Virtual Cable`). Among name matches, prefer a **2-channel** endpoint (WASAPI over 16-channel MME). Overridable by name/index (`AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX`).
 
 - Windows: shared WASAPI (not exclusive) so OBS can use the same device.
 - Downmix stereo → mono, resample to 16 kHz, 512-sample frames.
@@ -150,7 +150,7 @@ Startup: operator_control + translate + broadcast, then capture. Shutdown: stop 
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `ATEN_Stream_to_USB`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 2000), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `VB-Audio Virtual Cable`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 2000), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
 
 ## Operator path
 
