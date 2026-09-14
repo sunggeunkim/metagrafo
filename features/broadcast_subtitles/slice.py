@@ -27,7 +27,13 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> SubtitleHub:
 
     @app.get("/overlay")
     async def overlay() -> HTMLResponse:
-        return HTMLResponse(_OVERLAY_PAGE.read_text(encoding="utf-8"))
+        return HTMLResponse(
+            _OVERLAY_PAGE.read_text(encoding="utf-8"),
+            headers={
+                "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+                "Pragma": "no-cache",
+            },
+        )
 
     @app.get("/health")
     async def health() -> dict[str, object]:

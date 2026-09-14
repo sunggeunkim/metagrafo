@@ -14,10 +14,17 @@
     }
     #stage {
       position: absolute;
+      box-sizing: border-box;
+      width: var(--box-w);
+      max-width: calc(100% - 2 * var(--inset-h));
+      max-height: var(--box-h);
+      overflow: hidden;
       opacity: 1;
       transition: opacity 0.6s;
       --inset-v: 1%;
       --inset-h: 1%;
+      --box-w: 100%;
+      --box-h: 10%;
     }
     #stage.hidden { opacity: 0; }
     #stage.pos-top_left {
@@ -25,7 +32,6 @@
       left: var(--inset-h);
       right: auto;
       bottom: auto;
-      width: 70%;
       text-align: left;
     }
     #stage.pos-top_center {
@@ -33,7 +39,8 @@
       left: var(--inset-h);
       right: var(--inset-h);
       bottom: auto;
-      width: auto;
+      margin-left: auto;
+      margin-right: auto;
       text-align: center;
     }
     #stage.pos-bottom_center {
@@ -41,7 +48,8 @@
       left: var(--inset-h);
       right: var(--inset-h);
       bottom: var(--inset-v);
-      width: auto;
+      margin-left: auto;
+      margin-right: auto;
       text-align: center;
     }
     .line {
@@ -57,6 +65,12 @@
         -2px -2px 0 #000;
       line-height: 1.25;
       margin: 0.15em 0;
+      overflow-wrap: normal;
+      word-break: normal;
+    }
+    .line:empty {
+      display: none;
+      margin: 0;
     }
   </style>
 </head>
@@ -87,6 +101,12 @@
       }
       if (typeof msg.inset_horizontal_pct === "number") {
         stage.style.setProperty("--inset-h", msg.inset_horizontal_pct + "%");
+      }
+      if (typeof msg.box_width_pct === "number") {
+        stage.style.setProperty("--box-w", msg.box_width_pct + "%");
+      }
+      if (typeof msg.box_height_pct === "number") {
+        stage.style.setProperty("--box-h", msg.box_height_pct + "%");
       }
     }
 

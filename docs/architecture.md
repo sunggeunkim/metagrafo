@@ -95,7 +95,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-Two-line overlay: upper = previous, lower = current, left-aligned. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
+Two-line overlay: upper = previous, lower = current, left-aligned. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 10**). Wrap on word boundaries. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
 
 ```json
 {
@@ -114,12 +114,12 @@ Two-line overlay: upper = previous, lower = current, left-aligned. New `text` sh
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, overlay position, **font size (vw)**, **edge insets (%)**
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**
 - `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /overlay-style`
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
 - `VadSilenceMsEvent` — live; capture updates the running chunker (100–3000 ms)
-- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `inset_vertical_pct` / `inset_horizontal_pct` 0–20)
+- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20)
 
 Open `/control` in a normal browser, **not** as an OBS source.
 

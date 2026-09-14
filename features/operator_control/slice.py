@@ -30,6 +30,8 @@ class OperatorState:
         font_size_vw: float = 2.5,
         inset_vertical_pct: float = 1.0,
         inset_horizontal_pct: float = 1.0,
+        box_width_pct: float = 100.0,
+        box_height_pct: float = 10.0,
     ) -> None:
         self.captions_active = True
         self.mode = mode
@@ -38,6 +40,8 @@ class OperatorState:
         self.font_size_vw = font_size_vw
         self.inset_vertical_pct = inset_vertical_pct
         self.inset_horizontal_pct = inset_horizontal_pct
+        self.box_width_pct = box_width_pct
+        self.box_height_pct = box_height_pct
 
     def snapshot(self) -> dict[str, object]:
         source, target = languages_for(self.mode)
@@ -51,6 +55,8 @@ class OperatorState:
             "font_size_vw": self.font_size_vw,
             "inset_vertical_pct": self.inset_vertical_pct,
             "inset_horizontal_pct": self.inset_horizontal_pct,
+            "box_width_pct": self.box_width_pct,
+            "box_height_pct": self.box_height_pct,
         }
 
 
@@ -71,6 +77,8 @@ class OverlayStyleBody(BaseModel):
     font_size_vw: float = Field(ge=1.0, le=8.0)
     inset_vertical_pct: float = Field(ge=0.0, le=20.0)
     inset_horizontal_pct: float = Field(ge=0.0, le=20.0)
+    box_width_pct: float = Field(ge=10.0, le=100.0)
+    box_height_pct: float = Field(ge=5.0, le=100.0)
 
 
 def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
@@ -125,12 +133,16 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
         state.font_size_vw = body.font_size_vw
         state.inset_vertical_pct = body.inset_vertical_pct
         state.inset_horizontal_pct = body.inset_horizontal_pct
+        state.box_width_pct = body.box_width_pct
+        state.box_height_pct = body.box_height_pct
         await bus.publish(
             OverlayStyleEvent(
                 position=body.position.value,
                 font_size_vw=body.font_size_vw,
                 inset_vertical_pct=body.inset_vertical_pct,
                 inset_horizontal_pct=body.inset_horizontal_pct,
+                box_width_pct=body.box_width_pct,
+                box_height_pct=body.box_height_pct,
             )
         )
         return state.snapshot()

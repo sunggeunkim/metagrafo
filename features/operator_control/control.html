@@ -33,9 +33,9 @@
   <input id="vad-ms" type="number" min="100" max="3000" step="1" />
   <button id="vad-apply" class="mode">Apply VAD (ms)</button>
   <h2>Overlay</h2>
-  <p class="hint">Position, font size, and edge insets apply live to OBS. Font size is viewport width percent (<strong>vw</strong>). Both caption lines use the same size. Allowed font range <strong>1.0–8.0 vw</strong>. Insets are percent of the overlay; allowed range <strong>0–20</strong>.</p>
-  <p class="hint">Font: <strong>2.0 vw</strong> small · <strong>2.5 vw</strong> default · <strong>4.5 vw</strong> large for the projector. Below 2 vw is hard to read in the sanctuary; above 6 vw crowds the frame.</p>
-  <p class="hint">Insets: <strong>0</strong> flush · <strong>1 / 1</strong> default · <strong>12</strong> more padding. Vertical is top (or bottom when captions sit at the bottom). Horizontal is left (and right for centered positions).</p>
+  <p class="hint">Keep the OBS Browser Source at <strong>1920×1080</strong>. Right-click the source → <strong>Transform → Reset Transform</strong> so the type is not stretched. Do not drag the red handles or change source Height to crop captions — that squashes letters. Size the caption band here instead.</p>
+  <p class="hint">Position, font, box size, and insets apply live. Font is viewport width percent (<strong>vw</strong>), range <strong>1.0–8.0</strong>. Box width <strong>10–100</strong> and height <strong>5–100</strong> are percent of the 1920×1080 overlay (default <strong>100 × 10</strong>). Insets <strong>0–20</strong>. After overlay HTML changes, right-click the source → Refresh once.</p>
+  <p class="hint">Font: <strong>2.0 vw</strong> small · <strong>2.5 vw</strong> default · <strong>4.5 vw</strong> large. Box height <strong>10</strong> thin band · <strong>20</strong> two wrapped lines. If a line is sliced, raise box height, not OBS source height.</p>
   <div>
     <button class="pos" data-pos="top_left">Top left</button>
     <button class="pos" data-pos="top_center">Top center</button>
@@ -43,6 +43,10 @@
   </div>
   <label for="font-vw">Font size (vw)</label>
   <input id="font-vw" type="number" min="1" max="8" step="0.1" />
+  <label for="box-w">Box width (%)</label>
+  <input id="box-w" type="number" min="10" max="100" step="1" />
+  <label for="box-h">Box height (%)</label>
+  <input id="box-h" type="number" min="5" max="100" step="1" />
   <label for="inset-v">Vertical inset (%)</label>
   <input id="inset-v" type="number" min="0" max="20" step="0.5" />
   <label for="inset-h">Horizontal inset (%)</label>
@@ -59,6 +63,7 @@
         " · VAD " + s.vad_min_silence_ms + " ms" +
         " · " + s.position +
         " · " + s.font_size_vw + " vw" +
+        " · box " + s.box_width_pct + "×" + s.box_height_pct + " %" +
         " · inset " + s.inset_vertical_pct + "/" + s.inset_horizontal_pct + " %";
       document.getElementById("mode-ko").classList.toggle("active", s.mode === "ko_to_en");
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
@@ -67,6 +72,8 @@
       });
       document.getElementById("vad-ms").value = s.vad_min_silence_ms;
       document.getElementById("font-vw").value = s.font_size_vw;
+      document.getElementById("box-w").value = s.box_width_pct;
+      document.getElementById("box-h").value = s.box_height_pct;
       document.getElementById("inset-v").value = s.inset_vertical_pct;
       document.getElementById("inset-h").value = s.inset_horizontal_pct;
     }
@@ -93,9 +100,11 @@
     async function applyOverlay() {
       const position = document.querySelector(".pos.active")?.dataset.pos || "top_left";
       const font_size_vw = Number(document.getElementById("font-vw").value);
+      const box_width_pct = Number(document.getElementById("box-w").value);
+      const box_height_pct = Number(document.getElementById("box-h").value);
       const inset_vertical_pct = Number(document.getElementById("inset-v").value);
       const inset_horizontal_pct = Number(document.getElementById("inset-h").value);
-      await fetch("/overlay-style", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position, font_size_vw, inset_vertical_pct, inset_horizontal_pct }) });
+      await fetch("/overlay-style", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position, font_size_vw, box_width_pct, box_height_pct, inset_vertical_pct, inset_horizontal_pct }) });
       refresh();
     }
     document.querySelectorAll(".pos").forEach((btn) => {
