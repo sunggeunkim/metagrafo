@@ -18,6 +18,11 @@ def test_overlay_is_two_line_browser_source() -> None:
         assert 'id="previous"' in html
         assert 'id="current"' in html
         assert "karaoke" not in html.lower()
+        assert "--box-w" in html
+        assert "--box-h" in html
+        assert "max-height: var(--box-h)" in html
+        assert "width: 70%" not in html
+        assert "no-store" in page.headers.get("cache-control", "")
 
 
 def test_inject_broadcasts_subtitle_json_on_websocket() -> None:
@@ -64,6 +69,8 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
             assert hello["font_size_vw"] == 2.5
             assert hello["inset_vertical_pct"] == 1.0
             assert hello["inset_horizontal_pct"] == 1.0
+            assert hello["box_width_pct"] == 100.0
+            assert hello["box_height_pct"] == 10.0
             response = client.put(
                 "/overlay-style",
                 json={
@@ -71,6 +78,8 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
                     "font_size_vw": 5.0,
                     "inset_vertical_pct": 0.0,
                     "inset_horizontal_pct": 1.5,
+                    "box_width_pct": 100.0,
+                    "box_height_pct": 20.0,
                 },
             )
             assert response.status_code == 200
@@ -81,6 +90,8 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
         "font_size_vw": 5.0,
         "inset_vertical_pct": 0.0,
         "inset_horizontal_pct": 1.5,
+        "box_width_pct": 100.0,
+        "box_height_pct": 20.0,
     }
 
 
@@ -93,6 +104,8 @@ def test_overlay_style_rejects_out_of_range_font() -> None:
                 "font_size_vw": 20,
                 "inset_vertical_pct": 8.0,
                 "inset_horizontal_pct": 5.0,
+                "box_width_pct": 100.0,
+                "box_height_pct": 10.0,
             },
         )
         assert response.status_code == 422
@@ -107,6 +120,8 @@ def test_overlay_style_rejects_out_of_range_inset() -> None:
                 "font_size_vw": 3.2,
                 "inset_vertical_pct": 21,
                 "inset_horizontal_pct": 5.0,
+                "box_width_pct": 100.0,
+                "box_height_pct": 10.0,
             },
         )
         assert too_high.status_code == 422
@@ -117,9 +132,39 @@ def test_overlay_style_rejects_out_of_range_inset() -> None:
                 "font_size_vw": 3.2,
                 "inset_vertical_pct": 8.0,
                 "inset_horizontal_pct": -1,
+                "box_width_pct": 100.0,
+                "box_height_pct": 10.0,
             },
         )
         assert too_low.status_code == 422
+
+
+def test_overlay_style_rejects_out_of_range_box() -> None:
+    with TestClient(create_app()) as client:
+        too_narrow = client.put(
+            "/overlay-style",
+            json={
+                "position": "top_left",
+                "font_size_vw": 3.2,
+                "inset_vertical_pct": 8.0,
+                "inset_horizontal_pct": 5.0,
+                "box_width_pct": 5.0,
+                "box_height_pct": 10.0,
+            },
+        )
+        assert too_narrow.status_code == 422
+        too_short = client.put(
+            "/overlay-style",
+            json={
+                "position": "top_left",
+                "font_size_vw": 3.2,
+                "inset_vertical_pct": 8.0,
+                "inset_horizontal_pct": 5.0,
+                "box_width_pct": 100.0,
+                "box_height_pct": 1.0,
+            },
+        )
+        assert too_short.status_code == 422
 
 
 def test_overlay_html_has_position_classes() -> None:
@@ -132,3 +177,7 @@ def test_overlay_html_has_position_classes() -> None:
         assert "--inset-h" in html
         assert "var(--inset-v)" in html
         assert "var(--inset-h)" in html
+        assert "var(--box-w)" in html
+        assert "var(--box-h)" in html
+        assert "overflow-wrap: normal" in html
+        assert "function fitCaptionBox" not in html

@@ -18,6 +18,8 @@ def test_captions_default_on_and_sermon_mode() -> None:
         assert body["font_size_vw"] == 2.5
         assert body["inset_vertical_pct"] == 1.0
         assert body["inset_horizontal_pct"] == 1.0
+        assert body["box_width_pct"] == 100.0
+        assert body["box_height_pct"] == 10.0
         assert "model" in body
         assert "device" in body
         assert "compute_type" in body
@@ -74,6 +76,9 @@ def test_control_page_has_booth_buttons() -> None:
         assert "Font size (vw)" in html
         assert "Vertical inset (%)" in html
         assert "Horizontal inset (%)" in html
+        assert "Box width (%)" in html
+        assert "Box height (%)" in html
+        assert "Reset Transform" in html
 
 
 def test_vad_silence_ms_put_and_reject_out_of_range() -> None:

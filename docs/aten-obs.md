@@ -58,7 +58,7 @@ When captions are **OFF**, Metagrafo **drops frames** and does not run VAD or Wh
 1. Stream to USB **Play** is on (RTMP ingest is already listening).
 2. **Media Source** (uncheck Local File) → `rtmp://127.0.0.1/live/<Stream-to-USB-key>` (mixer video + HDMI audio).
 3. OBS **Settings → Audio → Monitoring device** → **CABLE Input**. Media source **Monitor and Output**. Metagrafo opens **CABLE Output**.
-4. **Browser Source** → `http://127.0.0.1:8000/overlay`, 1920×1080, shutdown when not visible. Two-line completed captions, not karaoke. Above the video.
+4. **Browser Source** → `http://127.0.0.1:8000/overlay`, 1920×1080, Transform → Reset Transform, shutdown when not visible. Do not scale the source (that squashes type). Two-line captions in a `/control` box (default full width, one-tenth height). After overlay HTML changes, right-click → Refresh.
 5. Fullscreen projector / HDMI to the house = this program (English overlay in the room).
 
 Booth UI: `http://127.0.0.1:8000/control` in a **normal browser**, not an OBS source. Captions start ON. OFF for worship; ON at the pulpit.

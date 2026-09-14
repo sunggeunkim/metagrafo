@@ -36,6 +36,8 @@ class OverlayStyleEvent:
     font_size_vw: float
     inset_vertical_pct: float
     inset_horizontal_pct: float
+    box_width_pct: float
+    box_height_pct: float
 
 
 def languages_for(mode: TranslateMode) -> tuple[str, str]:
