@@ -13,7 +13,7 @@ def test_captions_default_on_and_sermon_mode() -> None:
         assert body["ok"] is True
         assert body["captions_active"] is True
         assert body["mode"] == "ko_to_en"
-        assert body["vad_min_silence_ms"] == 2000
+        assert body["vad_min_silence_ms"] == 500
         assert body["position"] == "top_left"
         assert body["font_size_vw"] == 2.5
         assert body["inset_vertical_pct"] == 1.0

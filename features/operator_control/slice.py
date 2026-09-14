@@ -25,7 +25,7 @@ class OperatorState:
         self,
         mode: TranslateMode,
         *,
-        vad_min_silence_ms: int = 2000,
+        vad_min_silence_ms: int = 500,
         overlay_position: OverlayPosition = OverlayPosition.TOP_LEFT,
         font_size_vw: float = 2.5,
         inset_vertical_pct: float = 1.0,
