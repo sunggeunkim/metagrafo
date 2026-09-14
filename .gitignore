@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .env
+metagrafo_job/
 .agents/
 .scratch/
 skills-lock.json
