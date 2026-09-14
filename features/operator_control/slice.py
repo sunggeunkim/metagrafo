@@ -31,7 +31,7 @@ class OperatorState:
         inset_vertical_pct: float = 1.0,
         inset_horizontal_pct: float = 1.0,
         box_width_pct: float = 100.0,
-        box_height_pct: float = 10.0,
+        box_height_pct: float = 30.0,
     ) -> None:
         self.captions_active = True
         self.mode = mode

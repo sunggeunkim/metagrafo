@@ -66,7 +66,7 @@ ATEN Stream to USB Capture **is** the RTMP ingest (its **Play** button starts a 
 
 Booth UI is **not** an OBS source. Open `http://127.0.0.1:8000/control` in a normal browser on the booth PC.
 
-Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before cutting a caption (100–3000, default 2000); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8, default 2.5); **box width/height (%)** (10–100 / 5–100, default 100 × 10); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart.
+Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before cutting a caption (100–3000, default 2000); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8, default 2.5); **box width/height (%)** (10–100 / 5–100, default 100 × 30); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart.
 
 ## Sunday morning (`/control`)
 

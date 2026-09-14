@@ -19,7 +19,7 @@ def test_captions_default_on_and_sermon_mode() -> None:
         assert body["inset_vertical_pct"] == 1.0
         assert body["inset_horizontal_pct"] == 1.0
         assert body["box_width_pct"] == 100.0
-        assert body["box_height_pct"] == 10.0
+        assert body["box_height_pct"] == 30.0
         assert "model" in body
         assert "device" in body
         assert "compute_type" in body

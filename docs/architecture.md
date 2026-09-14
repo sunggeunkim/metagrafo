@@ -95,7 +95,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-Two-line overlay: upper = previous, lower = current, left-aligned. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 10**). Wrap on word boundaries. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
+Two-line overlay: upper = previous, lower = current, left-aligned. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
 
 ```json
 {
