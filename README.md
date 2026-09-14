@@ -41,7 +41,9 @@ Tests: `uv run pytest`.
 
 ## OBS scene
 
-1. **Media Source** → `rtmp://127.0.0.1/live/<stream-key>` from Stream to USB.
+ATEN Stream to USB Capture **is** the RTMP ingest (its **Play** button starts a listener on this PC). Do not install nginx. In Stream to USB: add the UC9020, click **Play**, copy the device **Stream Key**. Leave Play running.
+
+1. **Media Source** (uncheck Local File) → `rtmp://127.0.0.1/live/<that-stream-key>`.
 2. **Settings → Audio → Monitoring device** → **CABLE Input**. On **Media**, **Monitor and Output**. Metagrafo captures **CABLE Output**.
 3. **Browser Source** → `http://127.0.0.1:8000/overlay`
    - Width **1920**, height **1080**

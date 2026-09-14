@@ -32,9 +32,10 @@ Captions reach YouTube and the sanctuary **only if OBS is encoding**. If the UC9
 ## Prerequisites (Windows)
 
 1. UC9020 and this PC on the **same LAN**.
-2. **ATEN Stream to USB Capture** installed and **running**.
+2. **ATEN Stream to USB Capture** installed and **running**. Add the UC9020, then click **Play**. Play starts Stream to USB’s bundled RTMP listener on this PC (`rtmp://127.0.0.1/live/<stream-key>`). Copy the **Stream Key** from the device in that app. Leave Play running while OBS is open. Metagrafo does not start this listener.
 3. OBS Studio on this PC (this is the live encoder).
-4. Metagrafo at `http://127.0.0.1:8000`.
+4. VB-Audio Virtual Cable installed.
+5. Metagrafo at `http://127.0.0.1:8000`.
 
 ## What Metagrafo opens
 
@@ -54,10 +55,11 @@ When captions are **OFF**, Metagrafo **drops frames** and does not run VAD or Wh
 
 ## OBS scene
 
-1. **Media Source** → `rtmp://127.0.0.1/live/<Stream-to-USB-key>` (mixer video + HDMI audio).
-2. OBS **Settings → Audio → Monitoring device** → **CABLE Input**. Media source **Monitor and Output**. Metagrafo opens **CABLE Output**.
-3. **Browser Source** → `http://127.0.0.1:8000/overlay`, 1920×1080, shutdown when not visible. Two-line completed captions, not karaoke. Above the video.
-4. Fullscreen projector / HDMI to the house = this program (English overlay in the room).
+1. Stream to USB **Play** is on (RTMP ingest is already listening).
+2. **Media Source** (uncheck Local File) → `rtmp://127.0.0.1/live/<Stream-to-USB-key>` (mixer video + HDMI audio).
+3. OBS **Settings → Audio → Monitoring device** → **CABLE Input**. Media source **Monitor and Output**. Metagrafo opens **CABLE Output**.
+4. **Browser Source** → `http://127.0.0.1:8000/overlay`, 1920×1080, shutdown when not visible. Two-line completed captions, not karaoke. Above the video.
+5. Fullscreen projector / HDMI to the house = this program (English overlay in the room).
 
 Booth UI: `http://127.0.0.1:8000/control` in a **normal browser**, not an OBS source. Captions start ON. OFF for worship; ON at the pulpit.
 
@@ -67,6 +69,7 @@ Booth UI: `http://127.0.0.1:8000/control` in a **normal browser**, not an OBS so
 |---|---|
 | No `CABLE Output` in `--list-devices` | VB-Cable not installed |
 | No ATEN device in `--list-devices` | Normal on this booth; capture uses VB-Cable, not UAC |
+| OBS Media Source black / no audio | Stream to USB **Play** not running, wrong stream key, or mixer not pushing to this PC |
 | Device found, silence | Wrong endpoint; exclusive WASAPI; muted in Windows; captions still OFF |
 | Garbled / chipmunk audio | 48 kHz treated as 16 kHz |
 | Overlay locally, missing on YouTube | Stream leaving from UC9020 RTMP, not OBS |
