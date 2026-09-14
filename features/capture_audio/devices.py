@@ -38,7 +38,7 @@ def resolve_input_device(
             available,
         )
 
-    needle = (name or "ATEN_Stream_to_USB").casefold()
+    needle = (name or "VB-Audio Virtual Cable").casefold()
     matches = [d for d in inputs if needle in d.name.casefold()]
     if not matches:
         raise DeviceNotFoundError(
@@ -48,6 +48,9 @@ def resolve_input_device(
     preferred = [d for d in matches if "aten_stream_to_usb" in d.name.casefold()]
     if preferred:
         return preferred[0]
+    stereo = [d for d in matches if d.max_input_channels <= 2]
+    if stereo:
+        return stereo[0]
     return matches[0]
 
 
