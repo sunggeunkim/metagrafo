@@ -26,8 +26,10 @@ uv run python -m main --list-devices
 Confirm `CABLE Output (VB-Audio Virtual Cable)` is listed.
 
 ```powershell
-uv run uvicorn main:create_production_app --factory --host 127.0.0.1 --port 8000
+uv run python -m main
 ```
+
+Do not use `uv run uvicorn …`. Windows Smart App Control blocks `.venv\Scripts\uvicorn.exe` (`os error 4551`). `python -m main` loads uvicorn inside `python.exe`, which is allowed.
 
 First start may download Whisper `large-v3` (~3 GB). To skip that during rehearsal, see **Whisper model** below.
 
@@ -107,7 +109,7 @@ $env:WHISPER_MODEL = "medium"
 # optional:
 # $env:WHISPER_DEVICE = "cuda"   # or cpu
 # $env:WHISPER_COMPUTE_TYPE = "int8"
-uv run uvicorn main:create_production_app --factory --host 127.0.0.1 --port 8000
+uv run python -m main
 ```
 
 `GET /health` reports `model`, `device`, `compute_type`, `vram_gb`, captions on/off, and mode.

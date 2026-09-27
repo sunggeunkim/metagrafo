@@ -100,6 +100,7 @@ class TranslateWorker:
         cleaned = (text or "").strip()
         if not cleaned:
             return
+        logger.info("%s", cleaned)
         source, target = languages_for(self._mode)
         await self._bus.publish(
             SubtitleEvent(

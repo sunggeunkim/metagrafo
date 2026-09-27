@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import threading
 
 from core.event_bus import EventBus
@@ -30,7 +31,7 @@ class FakeWhisper:
         return self.text
 
 
-async def test_ko_to_en_uses_translate_task_and_publishes_english() -> None:
+async def test_ko_to_en_uses_translate_task_and_publishes_english(caplog) -> None:
     bus = EventBus()
     whisper = FakeWhisper("God is good.")
     seen: list[SubtitleEvent] = []
@@ -41,11 +42,13 @@ async def test_ko_to_en_uses_translate_task_and_publishes_english() -> None:
     bus.subscribe(SubtitleEvent, handler)
     worker = TranslateWorker(bus, whisper.transcribe, initial_prompt="Jesus, Amen.")
     task = asyncio.create_task(worker.run())
-    await bus.publish(CaptionsStateEvent(is_active=True))
-    await bus.publish(_chunk())
-    await asyncio.sleep(0.1)
+    with caplog.at_level(logging.INFO, logger="features.translate_speech.worker"):
+        await bus.publish(CaptionsStateEvent(is_active=True))
+        await bus.publish(_chunk())
+        await asyncio.sleep(0.1)
     task.cancel()
     assert [e.text for e in seen] == ["God is good."]
+    assert "God is good." in caplog.text
     assert whisper.calls == [
         {"language": "ko", "task": "translate", "initial_prompt": "Jesus, Amen."}
     ]
