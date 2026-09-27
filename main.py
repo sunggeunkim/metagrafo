@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -53,7 +54,19 @@ def create_app(
 app = create_app()
 
 
+def _configure_logging() -> None:
+    """Uvicorn's default config has no root handler, so slice INFO is silent."""
+    root = logging.getLogger()
+    if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+        root.addHandler(handler)
+    if root.level == logging.NOTSET or root.level > logging.INFO:
+        root.setLevel(logging.INFO)
+
+
 def create_production_app() -> FastAPI:
+    _configure_logging()
     return create_app(start_capture=True, load_whisper=True)
 
 
