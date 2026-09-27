@@ -41,6 +41,22 @@ uv run python -c "import httpx; httpx.post('http://127.0.0.1:8000/inject', json=
 
 Tests: `uv run pytest`.
 
+## Sign-in autostart (church PC)
+
+On this PC, Metagrafo starts when **thewaychurch** signs in. It is not a SYSTEM task at boot. AutoAdminLogon is off. **VB-Audio Virtual Cable** exists only in that user's desktop session, so a task that runs before sign-in cannot see **CABLE Output**.
+
+Windows runs the copy in the Startup folder:
+
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Metagrafo.cmd`
+
+That file matches `scripts/Metagrafo.cmd`. It sets the console title to **Metagrafo**, waits about 15 seconds so the desktop and VB-Cable are up, then runs `uv run python -m main` from `C:\Users\thewaychurch\metagrafo`. If the process stops, the window prints the exit code and stays open (`pause`).
+
+`uv` is the per-user WinGet install and is found on the user PATH (`C:\Users\thewaychurch\AppData\Local\Microsoft\WinGet\Packages\astral-sh.uv_Microsoft.Winget.Source_8wekyb3d8bbwe\uv.exe`). Leave the command as `python -m main`. Smart App Control still blocks `uvicorn.exe`.
+
+Every sign-in loads Whisper. Captions still default **ON**, including weekdays. Turn them **OFF** on `/control` when you are not captioning a sermon.
+
+Hold **Shift** during sign-in to skip Startup items for that logon. Delete the Startup `.cmd` to turn auto-start off. An edit to `scripts/Metagrafo.cmd` does nothing until that file is copied back over the Startup copy.
+
 ## Rehearsal from a YouTube sermon
 
 Not the Sunday capture path. **ffmpeg must be on PATH.** First run may still download Whisper `large-v3`. A long sermon takes a while (sequential ~12 s chunks).
