@@ -35,6 +35,36 @@ def _chunker(min_silence_ms: int = 400) -> SpeechChunker:
     )
 
 
+def test_gemini_engine_writes_the_translation_not_the_transcript(tmp_path: Path) -> None:
+    wav_path = tmp_path / "sermon.wav"
+    _write_wav(wav_path, SPEECH)
+    out_path = tmp_path / "sermon.en.txt"
+
+    def recognize(_pcm: bytes, *, language: str, task: str, initial_prompt: str) -> str:
+        if language == "ko" and task == "transcribe" and initial_prompt == "Jesus":
+            return "기도"
+        return "God is good."
+
+    def translate(source: str, *, prior_english: list[str], glossary: str) -> str:
+        if source == "기도" and prior_english == [] and glossary == "Jesus":
+            return "Prayer"
+        return "bad context"
+
+    n = run_wav(
+        wav_path=wav_path,
+        out_path=out_path,
+        transcribe=recognize,
+        chunker=_chunker(),
+        mode="ko_to_en",
+        initial_prompt="Jesus",
+        min_silence_ms=400,
+        engine="gemini",
+        translate=translate,
+    )
+    assert n == 1
+    assert out_path.read_text(encoding="utf-8") == "Prayer\n"
+
+
 def test_speech_silence_speech_writes_two_lines(tmp_path: Path) -> None:
     wav_path = tmp_path / "sermon.wav"
     _write_wav(wav_path, np.concatenate([SPEECH, SILENCE, SPEECH]))

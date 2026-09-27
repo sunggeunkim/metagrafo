@@ -13,6 +13,7 @@ from features.operator_control.events import (
     TranslateMode,
     languages_for,
 )
+from features.translate_speech.captioner import Captioner
 from features.translate_speech.events import SubtitleEvent
 
 logger = logging.getLogger(__name__)
@@ -29,11 +30,17 @@ class TranslateWorker:
         mode: str = "ko_to_en",
         initial_prompt: str = "",
         queue_size: int = 4,
+        engine: str = "whisper",
+        translate=None,
     ) -> None:
         self._bus = bus
-        self._transcribe = transcribe
+        self._captioner = Captioner(
+            transcribe,
+            engine=engine,
+            translate=translate,
+            glossary=initial_prompt,
+        )
         self._mode = TranslateMode(mode)
-        self._prompt = initial_prompt
         self._queue: asyncio.Queue[AudioChunkEvent] = asyncio.Queue(maxsize=queue_size)
         self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
@@ -84,16 +91,10 @@ class TranslateWorker:
     async def _process(self, event: AudioChunkEvent) -> None:
         if not self._active:
             return
-        if self._mode is TranslateMode.EN_TO_EN:
-            language, task = "en", "transcribe"
-        else:
-            language, task = "ko", "translate"
         text = await asyncio.to_thread(
-            self._transcribe,
+            self._captioner.line,
             event.pcm_s16le,
-            language=language,
-            task=task,
-            initial_prompt=self._prompt,
+            direction=self._mode.value,
         )
         if not self._active:
             return
