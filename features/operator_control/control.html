@@ -32,6 +32,17 @@
   <label for="vad-ms">VAD pause (ms)</label>
   <input id="vad-ms" type="number" min="100" max="3000" step="1" />
   <button id="vad-apply" class="mode">Apply VAD (ms)</button>
+  <h2>Pauses per caption</h2>
+  <p class="hint"><strong>1</strong> translates on the first pause. <strong>2</strong> waits for a second pause, then prints each phrase on its own line. A stretch still cuts at 12 seconds. Applies live.</p>
+  <label for="vad-pauses">Pauses</label>
+  <input id="vad-pauses" type="number" min="1" max="2" step="1" />
+  <button id="pauses-apply" class="mode">Apply pauses</button>
+  <h2>Previous text</h2>
+  <p class="hint"><strong>On</strong> (default) gives Whisper the caption it just wrote when it translates the next phrase. <strong>Off</strong> translates each phrase alone. The vocabulary line stays in the prompt either way. Applies live.</p>
+  <div>
+    <button id="context-off" class="off">Previous text OFF</button>
+    <button id="context-on" class="on">Previous text ON</button>
+  </div>
   <h2>Overlay</h2>
   <p class="hint">Keep the OBS Browser Source at <strong>1920×1080</strong>. Right-click the source → <strong>Transform → Reset Transform</strong> so the type is not stretched. Do not drag the red handles or change source Height to crop captions — that squashes letters. Size the caption band here instead.</p>
   <p class="hint">Position, font, box size, and insets apply live. Font is viewport width percent (<strong>vw</strong>), range <strong>1.0–8.0</strong>. Box width <strong>10–100</strong> and height <strong>5–100</strong> are percent of the 1920×1080 overlay (default <strong>100 × 30</strong>). Insets <strong>0–20</strong>. After overlay HTML changes, right-click the source → Refresh once.</p>
@@ -51,6 +62,8 @@
   <input id="inset-v" type="number" min="0" max="20" step="0.5" />
   <label for="inset-h">Horizontal inset (%)</label>
   <input id="inset-h" type="number" min="0" max="20" step="0.5" />
+  <label for="line-count">Lines on screen</label>
+  <input id="line-count" type="number" min="1" max="6" step="1" />
   <button id="style-apply" class="mode">Apply overlay</button>
   <p id="status"></p>
   <script>
@@ -61,6 +74,9 @@
         "Captions " + (s.captions_active ? "ON" : "OFF") +
         " · " + s.mode +
         " · VAD " + s.vad_min_silence_ms + " ms" +
+        " · pauses " + s.vad_pauses +
+        " · previous text " + (s.condition_on_previous_text ? "on" : "off") +
+        " · " + s.line_count + " lines" +
         " · " + s.position +
         " · " + s.font_size_vw + " vw" +
         " · box " + s.box_width_pct + "×" + s.box_height_pct + " %" +
@@ -71,11 +87,15 @@
         btn.classList.toggle("active", btn.dataset.pos === s.position);
       });
       document.getElementById("vad-ms").value = s.vad_min_silence_ms;
+      document.getElementById("vad-pauses").value = s.vad_pauses;
+      document.getElementById("context-off").classList.toggle("active", !s.condition_on_previous_text);
+      document.getElementById("context-on").classList.toggle("active", s.condition_on_previous_text);
       document.getElementById("font-vw").value = s.font_size_vw;
       document.getElementById("box-w").value = s.box_width_pct;
       document.getElementById("box-h").value = s.box_height_pct;
       document.getElementById("inset-v").value = s.inset_vertical_pct;
       document.getElementById("inset-h").value = s.inset_horizontal_pct;
+      document.getElementById("line-count").value = s.line_count;
     }
     document.getElementById("captions-on").onclick = async () => {
       await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: true }) });
@@ -97,6 +117,17 @@
       await fetch("/vad-silence", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vad_min_silence_ms: ms }) });
       refresh();
     };
+    document.getElementById("pauses-apply").onclick = async () => {
+      const vad_pauses = Number(document.getElementById("vad-pauses").value);
+      await fetch("/vad-pauses", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vad_pauses }) });
+      refresh();
+    };
+    async function setPreviousText(on) {
+      await fetch("/condition-on-previous-text", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ condition_on_previous_text: on }) });
+      refresh();
+    }
+    document.getElementById("context-off").onclick = () => setPreviousText(false);
+    document.getElementById("context-on").onclick = () => setPreviousText(true);
     async function applyOverlay() {
       const position = document.querySelector(".pos.active")?.dataset.pos || "top_left";
       const font_size_vw = Number(document.getElementById("font-vw").value);
@@ -104,7 +135,8 @@
       const box_height_pct = Number(document.getElementById("box-h").value);
       const inset_vertical_pct = Number(document.getElementById("inset-v").value);
       const inset_horizontal_pct = Number(document.getElementById("inset-h").value);
-      await fetch("/overlay-style", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position, font_size_vw, box_width_pct, box_height_pct, inset_vertical_pct, inset_horizontal_pct }) });
+      const line_count = Number(document.getElementById("line-count").value);
+      await fetch("/overlay-style", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ position, font_size_vw, box_width_pct, box_height_pct, inset_vertical_pct, inset_horizontal_pct, line_count }) });
       refresh();
     }
     document.querySelectorAll(".pos").forEach((btn) => {

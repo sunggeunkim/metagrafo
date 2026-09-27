@@ -4,7 +4,7 @@ import threading
 
 from core.event_bus import EventBus
 from features.capture_audio.events import AudioChunkEvent
-from features.operator_control.events import CaptionsStateEvent
+from features.operator_control.events import CaptionsStateEvent, ConditionOnPreviousTextEvent
 from features.translate_speech.events import SubtitleEvent
 from features.translate_speech.worker import TranslateWorker
 
@@ -24,9 +24,22 @@ class FakeWhisper:
         self.text = text
         self.calls: list[dict] = []
 
-    def transcribe(self, _pcm: bytes, *, language: str, task: str, initial_prompt: str) -> str:
+    def transcribe(
+        self,
+        _pcm: bytes,
+        *,
+        language: str,
+        task: str,
+        initial_prompt: str,
+        condition_on_previous_text: bool = False,
+    ) -> str:
         self.calls.append(
-            {"language": language, "task": task, "initial_prompt": initial_prompt}
+            {
+                "language": language,
+                "task": task,
+                "initial_prompt": initial_prompt,
+                "condition_on_previous_text": condition_on_previous_text,
+            }
         )
         return self.text
 
@@ -50,7 +63,12 @@ async def test_ko_to_en_uses_translate_task_and_publishes_english(caplog) -> Non
     assert [e.text for e in seen] == ["God is good."]
     assert "God is good." in caplog.text
     assert whisper.calls == [
-        {"language": "ko", "task": "translate", "initial_prompt": "Jesus, Amen."}
+        {
+            "language": "ko",
+            "task": "translate",
+            "initial_prompt": "Jesus, Amen.",
+            "condition_on_previous_text": False,
+        }
     ]
     assert seen[0].mode == "ko_to_en"
     assert seen[0].target_language == "en"
@@ -63,7 +81,14 @@ async def test_gemini_engine_publishes_translation_of_the_transcript() -> None:
     async def handler(event: SubtitleEvent) -> None:
         seen.append(event)
 
-    def recognize(_pcm: bytes, *, language: str, task: str, initial_prompt: str) -> str:
+    def recognize(
+        _pcm: bytes,
+        *,
+        language: str,
+        task: str,
+        initial_prompt: str,
+        condition_on_previous_text: bool = False,
+    ) -> str:
         if language == "ko" and task == "transcribe":
             return "기도"
         return "God is good."
@@ -199,3 +224,44 @@ async def test_full_queue_drops_oldest() -> None:
     assert "B" not in texts
     assert "A" in texts
     assert "F" in texts
+
+
+async def test_previous_text_setting_reaches_the_next_chunk() -> None:
+    bus = EventBus()
+    whisper = FakeWhisper("Hannah")
+    worker = TranslateWorker(
+        bus,
+        whisper.transcribe,
+        initial_prompt="Hannah, the mother of Samuel.",
+    )
+    task = asyncio.create_task(worker.run())
+    await bus.publish(ConditionOnPreviousTextEvent(condition_on_previous_text=True))
+    await bus.publish(_chunk("c1"))
+    await asyncio.sleep(0.1)
+    await bus.publish(_chunk("c2"))
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert whisper.calls[0]["condition_on_previous_text"] is True
+    assert whisper.calls[0]["initial_prompt"] == "Hannah, the mother of Samuel."
+    assert whisper.calls[1]["initial_prompt"] == "Hannah Hannah, the mother of Samuel."
+
+
+async def test_captions_off_forgets_previous_text() -> None:
+    bus = EventBus()
+    whisper = FakeWhisper("Hannah")
+    worker = TranslateWorker(
+        bus,
+        whisper.transcribe,
+        initial_prompt="Hannah, the mother of Samuel.",
+        condition_on_previous_text=True,
+    )
+    task = asyncio.create_task(worker.run())
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    await bus.publish(_chunk("c1"))
+    await asyncio.sleep(0.1)
+    await bus.publish(CaptionsStateEvent(is_active=False))
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    await bus.publish(_chunk("c2"))
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert whisper.calls[1]["initial_prompt"] == "Hannah, the mother of Samuel."

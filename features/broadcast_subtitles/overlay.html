@@ -76,15 +76,52 @@
 </head>
 <body>
   <div id="stage" class="hidden pos-top_left">
-    <p id="previous" class="line"></p>
-    <p id="current" class="line"></p>
+    <div id="lines"></div>
   </div>
   <script>
-    const previousEl = document.getElementById("previous");
-    const currentEl = document.getElementById("current");
     const stage = document.getElementById("stage");
+    const linesEl = document.getElementById("lines");
     const POSITIONS = ["pos-top_left", "pos-top_center", "pos-bottom_center"];
     let hideTimer = null;
+    let lineCount = 2;
+    let fontSizeVw = 2.5;
+
+    function lineTexts() {
+      return [...linesEl.querySelectorAll(".line")].map((el) => el.textContent);
+    }
+
+    function renderLines(texts) {
+      linesEl.replaceChildren();
+      for (const text of texts) {
+        const p = document.createElement("p");
+        p.className = "line";
+        p.textContent = text;
+        p.style.fontSize = fontSizeVw + "vw";
+        linesEl.appendChild(p);
+      }
+    }
+
+    function setLineCount(count) {
+      const nextCount = count;
+      const kept = lineTexts().filter((text) => text).slice(-nextCount);
+      const texts = Array(nextCount).fill("");
+      for (let i = 0; i < kept.length; i++) {
+        texts[nextCount - kept.length + i] = kept[i];
+      }
+      lineCount = nextCount;
+      renderLines(texts);
+    }
+
+    function pushText(text) {
+      const texts = lineTexts();
+      while (texts.length < lineCount) texts.unshift("");
+      const next = texts.slice(-lineCount);
+      next.shift();
+      next.push(text);
+      renderLines(next);
+    }
+
+    setLineCount(2);
 
     function applyStyle(msg) {
       if (msg.position) {
@@ -92,9 +129,12 @@
         stage.classList.add("pos-" + msg.position);
       }
       if (typeof msg.font_size_vw === "number") {
-        document.querySelectorAll(".line").forEach((el) => {
-          el.style.fontSize = msg.font_size_vw + "vw";
-        });
+        fontSizeVw = msg.font_size_vw;
+      }
+      if (typeof msg.line_count === "number" && msg.line_count >= 1) {
+        setLineCount(Math.round(msg.line_count));
+      } else {
+        renderLines(lineTexts());
       }
       if (typeof msg.inset_vertical_pct === "number") {
         stage.style.setProperty("--inset-v", msg.inset_vertical_pct + "%");
@@ -117,8 +157,7 @@
     }
 
     function clearLines() {
-      previousEl.textContent = "";
-      currentEl.textContent = "";
+      renderLines(Array(lineCount).fill(""));
       stage.classList.add("hidden");
     }
 
@@ -131,8 +170,7 @@
           applyStyle(msg);
         }
         if (msg.type === "subtitle" && msg.text) {
-          previousEl.textContent = currentEl.textContent;
-          currentEl.textContent = msg.text;
+          pushText(msg.text);
           show();
         }
         if (msg.type === "captions_state" && msg.is_active === false) {

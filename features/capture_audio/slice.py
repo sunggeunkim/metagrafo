@@ -27,6 +27,7 @@ class CaptureSlice:
             min_silence_ms=settings.vad_min_silence_ms,
             max_utterance_s=settings.vad_max_utterance_s,
             min_speech_ms=settings.vad_min_speech_ms,
+            pauses_to_cut=settings.vad_pauses,
             is_speech=load_is_speech(),
         )
         self.gate = CaptureGate(bus=bus, chunker=chunker, sample_rate=16000)

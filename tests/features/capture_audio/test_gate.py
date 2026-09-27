@@ -4,7 +4,7 @@ from core.event_bus import EventBus
 from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.events import AudioChunkEvent
 from features.capture_audio.gate import CaptureGate
-from features.operator_control.events import CaptionsStateEvent
+from features.operator_control.events import CaptionsStateEvent, VadPausesEvent
 
 FRAME = 512
 SPEECH = np.full(FRAME, 8000, dtype=np.int16).tobytes()
@@ -63,3 +63,25 @@ async def test_active_capture_publishes_audio_chunk_for_speech() -> None:
     assert seen[0].sample_rate == 16000
     assert seen[0].duration_s > 0.25
     assert len(seen[0].pcm_s16le) > 0
+
+
+async def test_two_pauses_from_the_booth_hold_the_first_phrase() -> None:
+    bus = EventBus()
+    seen: list[AudioChunkEvent] = []
+
+    async def handler(event: AudioChunkEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(AudioChunkEvent, handler)
+    gate = _gate(bus)
+    await bus.publish(VadPausesEvent(vad_pauses=2))
+    for _ in range(16):
+        await gate.accept_frame(SPEECH)
+    for _ in range(30):
+        await gate.accept_frame(SILENCE)
+    assert seen == []
+    for _ in range(16):
+        await gate.accept_frame(SPEECH)
+    for _ in range(30):
+        await gate.accept_frame(SILENCE)
+    assert len(seen) == 2

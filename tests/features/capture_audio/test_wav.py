@@ -63,6 +63,16 @@ def test_eof_appends_trailing_silence_frames(tmp_path: Path) -> None:
     assert len(silent) == 10
 
 
+def test_start_and_end_keep_only_that_span(tmp_path: Path) -> None:
+    samples = np.full(16000 * 2, 1000, dtype=np.int16)
+    path = tmp_path / "two.wav"
+    _write_wav(path, samples)
+    frames = list(frames_from_wav(path, min_silence_ms=0, start_s=0.5, end_s=1.5))
+    audio = np.frombuffer(b"".join(frames), dtype=np.int16)
+    assert np.all(audio[:16000] == 1000)
+    assert np.all(audio[16000:] == 0)
+
+
 def test_zero_min_silence_still_appends_one_eof_flush_frame(tmp_path: Path) -> None:
     samples = np.full(FRAME * 2, 8000, dtype=np.int16)
     path = tmp_path / "speech.wav"

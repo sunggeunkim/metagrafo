@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -84,6 +85,16 @@ def print_input_devices() -> None:
         pa.terminate()
 
 
+def _non_negative_minutes(value: str) -> float:
+    try:
+        minutes = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("expected minutes as a number") from exc
+    if not math.isfinite(minutes) or minutes < 0:
+        raise argparse.ArgumentTypeError("minutes must be zero or greater")
+    return minutes
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="metagrafo")
     parser.add_argument("--list-devices", action="store_true")
@@ -95,7 +106,47 @@ def build_parser() -> argparse.ArgumentParser:
     source.add_argument("--file", help="Existing wav (skip download)")
     parser.add_argument("--out", help="Caption text file path")
     parser.add_argument("--vad-silence-ms", type=int, default=None)
+    parser.add_argument(
+        "--pauses",
+        type=int,
+        choices=(1, 2),
+        default=None,
+        help="Pauses before a file caption (1 or 2, default 1). Live uses /control.",
+    )
+    parser.add_argument(
+        "--condition-on-previous-text",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Give Whisper the previous caption on the next phrase (default on). Live uses /control.",
+    )
+    parser.add_argument(
+        "--start",
+        type=_non_negative_minutes,
+        default=0.0,
+        metavar="MINUTES",
+        help="Begin translation this many minutes into the wav (default 0)",
+    )
+    parser.add_argument(
+        "--end",
+        type=_non_negative_minutes,
+        default=None,
+        metavar="MINUTES",
+        help="Stop translation this many minutes into the wav (default: the end of the file)",
+    )
     return parser
+
+
+def _window_seconds(start_minutes: float, end_minutes: float | None) -> tuple[float, float | None]:
+    if (
+        not math.isfinite(start_minutes)
+        or start_minutes < 0
+        or (end_minutes is not None and (not math.isfinite(end_minutes) or end_minutes < 0))
+    ):
+        raise ValueError("start and end are in minutes and must be zero or greater")
+    if end_minutes is not None and end_minutes <= start_minutes:
+        raise ValueError("--end must be later than --start")
+    end_s = None if end_minutes is None else end_minutes * 60.0
+    return start_minutes * 60.0, end_s
 
 
 def run_offline(
@@ -110,7 +161,12 @@ def run_offline(
     download: Callable[[str, Path], Path] | None = None,
     now: datetime | None = None,
     cwd: Path | None = None,
+    start_minutes: float = 0.0,
+    end_minutes: float | None = None,
+    pauses: int | None = None,
+    condition_on_previous_text: bool | None = None,
 ) -> Path:
+    start_s, end_s = _window_seconds(start_minutes, end_minutes)
     settings = settings or Settings()
     job_path: Path | None = None
     if youtube:
@@ -126,6 +182,15 @@ def run_offline(
     out_path = out_path.resolve()
 
     vad_ms = settings.vad_min_silence_ms if vad_silence_ms is None else vad_silence_ms
+    configured_pauses = settings.vad_pauses if settings.vad_pauses in (1, 2) else 1
+    pause_count = configured_pauses if pauses is None else pauses
+    if pause_count not in (1, 2):
+        raise ValueError("pauses must be 1 or 2")
+    use_previous = (
+        settings.condition_on_previous_text
+        if condition_on_previous_text is None
+        else condition_on_previous_text
+    )
     if is_speech is None:
         from features.capture_audio.silero import load_is_speech
 
@@ -137,6 +202,7 @@ def run_offline(
         min_silence_ms=vad_ms,
         max_utterance_s=settings.vad_max_utterance_s,
         min_speech_ms=settings.vad_min_speech_ms,
+        pauses_to_cut=pause_count,
         is_speech=is_speech,
     )
     if transcribe is None:
@@ -161,6 +227,9 @@ def run_offline(
             mode=settings.translate_mode,
             initial_prompt=prompt,
             min_silence_ms=vad_ms,
+            start_s=start_s,
+            end_s=end_s,
+            condition_on_previous_text=use_previous,
         )
 
     if youtube:
@@ -181,11 +250,17 @@ def main(argv: list[str] | None = None) -> None:
         print_input_devices()
         return
     if args.youtube or args.file:
+        if args.end is not None and args.end <= args.start:
+            parser.error("--end must be later than --start")
         out = run_offline(
             youtube=args.youtube,
             file=args.file,
             out=args.out,
             vad_silence_ms=args.vad_silence_ms,
+            start_minutes=args.start,
+            end_minutes=args.end,
+            pauses=args.pauses,
+            condition_on_previous_text=args.condition_on_previous_text,
         )
         print(out)
         return

@@ -69,7 +69,7 @@ Opens the **named** recording device (Windows default `VB-Audio Virtual Cable`).
 
 - Windows: shared WASAPI (not exclusive) so OBS can use the same device.
 - Downmix stereo → mono, resample to 16 kHz, 512-sample frames.
-- Silero VAD (ONNX): ~200 ms pre-roll, ~500 ms trailing silence, ~12 s cap, drop &lt;~250 ms.
+- Silero VAD (ONNX): ~200 ms pre-roll, ~500 ms trailing silence, ~12 s cap, drop &lt;~250 ms. Pauses per caption default **1** (one line per pause). **2** waits for a second pause, then prints each phrase on its own line. The 12 s cap still cuts.
 - Subscribe `CaptionsStateEvent`: if inactive, **drop frames, no VAD**.
 - PCM on the bus is `bytes` (s16le).
 - No FastAPI routes.
@@ -85,6 +85,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 
 - `large-v3` (`turbo` ignores `task="translate"`). Inference in `asyncio.to_thread`.
 - `church_vocabulary.txt` read at **startup** → `initial_prompt`.
+- `condition_on_previous_text` defaults **on** (the caption just written is passed into the next phrase). **Off** translates each phrase alone. Live from `/control`. A file run turns it off with `--no-condition-on-previous-text`.
 - Device profile: see `docs/hardware-profiles.md`. Env always wins.
 - Queue max 4, **drop oldest**. Empty output is not published.
 - Captions off: **empty the queue**. When Whisper returns, if inactive, **do not publish**.
@@ -95,7 +96,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-Two-line overlay: upper = previous, lower = current, left-aligned. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
+Overlay lines: default **2** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries. New `text` shifts older lines up. Captions OFF **clears the lines**. Fade after a quiet interval.
 
 ```json
 {
@@ -114,12 +115,14 @@ Two-line overlay: upper = previous, lower = current, left-aligned. Designed for 
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**
-- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /overlay-style`
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**
+- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style`
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
 - `VadSilenceMsEvent` — live; capture updates the running chunker (100–3000 ms)
-- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20)
+- `VadPausesEvent` — live; 1 cuts on each pause. 2 waits for a second pause, then one line per phrase
+- `ConditionOnPreviousTextEvent` — live; feed the caption just written into the next phrase
+- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6)
 
 Open `/control` in a normal browser, **not** as an OBS source.
 
@@ -131,7 +134,7 @@ Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
 - `SubtitleEvent` — `translate_speech`
-- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `OverlayStyleEvent` — `operator_control`
+- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent` — `operator_control`
 
 ## Process model
 

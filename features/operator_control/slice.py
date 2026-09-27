@@ -13,6 +13,8 @@ from features.operator_control.events import (
     OverlayPosition,
     OverlayStyleEvent,
     TranslateMode,
+    ConditionOnPreviousTextEvent,
+    VadPausesEvent,
     VadSilenceMsEvent,
     languages_for,
 )
@@ -26,22 +28,28 @@ class OperatorState:
         mode: TranslateMode,
         *,
         vad_min_silence_ms: int = 500,
+        vad_pauses: int = 1,
+        condition_on_previous_text: bool = True,
         overlay_position: OverlayPosition = OverlayPosition.TOP_LEFT,
         font_size_vw: float = 2.5,
         inset_vertical_pct: float = 1.0,
         inset_horizontal_pct: float = 1.0,
         box_width_pct: float = 100.0,
         box_height_pct: float = 30.0,
+        line_count: int = 2,
     ) -> None:
         self.captions_active = True
         self.mode = mode
         self.vad_min_silence_ms = vad_min_silence_ms
+        self.vad_pauses = vad_pauses
+        self.condition_on_previous_text = condition_on_previous_text
         self.overlay_position = overlay_position
         self.font_size_vw = font_size_vw
         self.inset_vertical_pct = inset_vertical_pct
         self.inset_horizontal_pct = inset_horizontal_pct
         self.box_width_pct = box_width_pct
         self.box_height_pct = box_height_pct
+        self.line_count = line_count
 
     def snapshot(self) -> dict[str, object]:
         source, target = languages_for(self.mode)
@@ -51,12 +59,15 @@ class OperatorState:
             "source_language": source,
             "target_language": target,
             "vad_min_silence_ms": self.vad_min_silence_ms,
+            "vad_pauses": self.vad_pauses,
+            "condition_on_previous_text": self.condition_on_previous_text,
             "position": self.overlay_position.value,
             "font_size_vw": self.font_size_vw,
             "inset_vertical_pct": self.inset_vertical_pct,
             "inset_horizontal_pct": self.inset_horizontal_pct,
             "box_width_pct": self.box_width_pct,
             "box_height_pct": self.box_height_pct,
+            "line_count": self.line_count,
         }
 
 
@@ -72,6 +83,14 @@ class VadSilenceBody(BaseModel):
     vad_min_silence_ms: int = Field(ge=100, le=3000)
 
 
+class VadPausesBody(BaseModel):
+    vad_pauses: int = Field(ge=1, le=2)
+
+
+class ConditionOnPreviousTextBody(BaseModel):
+    condition_on_previous_text: bool
+
+
 class OverlayStyleBody(BaseModel):
     position: OverlayPosition
     font_size_vw: float = Field(ge=1.0, le=8.0)
@@ -79,6 +98,7 @@ class OverlayStyleBody(BaseModel):
     inset_horizontal_pct: float = Field(ge=0.0, le=20.0)
     box_width_pct: float = Field(ge=10.0, le=100.0)
     box_height_pct: float = Field(ge=5.0, le=100.0)
+    line_count: int = Field(default=2, ge=1, le=6)
 
 
 def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
@@ -86,9 +106,12 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
         initial_mode = TranslateMode(settings.translate_mode)
     except ValueError:
         initial_mode = TranslateMode.KO_TO_EN
+    pauses = settings.vad_pauses if settings.vad_pauses in (1, 2) else 1
     state = OperatorState(
         initial_mode,
         vad_min_silence_ms=settings.vad_min_silence_ms,
+        vad_pauses=pauses,
+        condition_on_previous_text=settings.condition_on_previous_text,
     )
     app.state.operator = state
 
@@ -127,6 +150,24 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
         await bus.publish(VadSilenceMsEvent(vad_min_silence_ms=body.vad_min_silence_ms))
         return state.snapshot()
 
+    @app.put("/vad-pauses")
+    async def put_vad_pauses(body: VadPausesBody) -> dict[str, object]:
+        state.vad_pauses = body.vad_pauses
+        await bus.publish(VadPausesEvent(vad_pauses=body.vad_pauses))
+        return state.snapshot()
+
+    @app.put("/condition-on-previous-text")
+    async def put_condition_on_previous_text(
+        body: ConditionOnPreviousTextBody,
+    ) -> dict[str, object]:
+        state.condition_on_previous_text = body.condition_on_previous_text
+        await bus.publish(
+            ConditionOnPreviousTextEvent(
+                condition_on_previous_text=body.condition_on_previous_text
+            )
+        )
+        return state.snapshot()
+
     @app.put("/overlay-style")
     async def put_overlay_style(body: OverlayStyleBody) -> dict[str, object]:
         state.overlay_position = body.position
@@ -135,6 +176,7 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
         state.inset_horizontal_pct = body.inset_horizontal_pct
         state.box_width_pct = body.box_width_pct
         state.box_height_pct = body.box_height_pct
+        state.line_count = body.line_count
         await bus.publish(
             OverlayStyleEvent(
                 position=body.position.value,
@@ -143,6 +185,7 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
                 inset_horizontal_pct=body.inset_horizontal_pct,
                 box_width_pct=body.box_width_pct,
                 box_height_pct=body.box_height_pct,
+                line_count=body.line_count,
             )
         )
         return state.snapshot()
