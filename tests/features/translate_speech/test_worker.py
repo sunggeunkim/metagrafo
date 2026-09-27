@@ -56,6 +56,39 @@ async def test_ko_to_en_uses_translate_task_and_publishes_english(caplog) -> Non
     assert seen[0].target_language == "en"
 
 
+async def test_gemini_engine_publishes_translation_of_the_transcript() -> None:
+    bus = EventBus()
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    def recognize(_pcm: bytes, *, language: str, task: str, initial_prompt: str) -> str:
+        if language == "ko" and task == "transcribe":
+            return "기도"
+        return "God is good."
+
+    def translate(source: str, *, prior_english: list[str], glossary: str) -> str:
+        if source == "기도" and prior_english == [] and glossary == "Jesus":
+            return "Prayer"
+        return "bad context"
+
+    bus.subscribe(SubtitleEvent, handler)
+    worker = TranslateWorker(
+        bus,
+        recognize,
+        initial_prompt="Jesus",
+        engine="gemini",
+        translate=translate,
+    )
+    task = asyncio.create_task(worker.run())
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    await bus.publish(_chunk())
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert [event.text for event in seen] == ["Prayer"]
+
+
 async def test_en_to_en_uses_transcribe_task() -> None:
     bus = EventBus()
     whisper = FakeWhisper("Hello, church.")
