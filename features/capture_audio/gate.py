@@ -6,7 +6,7 @@ import uuid
 from core.event_bus import EventBus
 from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.events import AudioChunkEvent
-from features.operator_control.events import CaptionsStateEvent, VadSilenceMsEvent
+from features.operator_control.events import CaptionsStateEvent, VadPausesEvent, VadSilenceMsEvent
 
 
 class CaptureGate:
@@ -23,9 +23,13 @@ class CaptureGate:
         self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(VadSilenceMsEvent, self._on_vad_silence)
+        bus.subscribe(VadPausesEvent, self._on_vad_pauses)
 
     async def _on_vad_silence(self, event: VadSilenceMsEvent) -> None:
         self._chunker.set_min_silence_ms(event.vad_min_silence_ms)
+
+    async def _on_vad_pauses(self, event: VadPausesEvent) -> None:
+        self._chunker.set_pauses_to_cut(event.vad_pauses)
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
         self._active = event.is_active
@@ -35,16 +39,14 @@ class CaptureGate:
     async def accept_frame(self, frame: bytes) -> None:
         if not self._active:
             return
-        pcm = self._chunker.push(frame)
-        if not pcm:
-            return
-        duration_s = len(pcm) / 2 / self._sample_rate
-        await self._bus.publish(
-            AudioChunkEvent(
-                chunk_id=str(uuid.uuid4()),
-                pcm_s16le=pcm,
-                sample_rate=self._sample_rate,
-                started_at=time.monotonic() - duration_s,
-                duration_s=duration_s,
+        for pcm in self._chunker.push(frame):
+            duration_s = len(pcm) / 2 / self._sample_rate
+            await self._bus.publish(
+                AudioChunkEvent(
+                    chunk_id=str(uuid.uuid4()),
+                    pcm_s16le=pcm,
+                    sample_rate=self._sample_rate,
+                    started_at=time.monotonic() - duration_s,
+                    duration_s=duration_s,
+                )
             )
-        )

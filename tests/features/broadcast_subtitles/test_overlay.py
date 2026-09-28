@@ -15,8 +15,9 @@ def test_overlay_is_two_line_browser_source() -> None:
         assert page.status_code == 200
         html = page.text
         assert "background: transparent" in html
-        assert 'id="previous"' in html
-        assert 'id="current"' in html
+        assert 'id="lines"' in html
+        assert "line_count" in html
+        assert 'id="previous"' not in html
         assert "karaoke" not in html.lower()
         assert "--box-w" in html
         assert "--box-h" in html
@@ -71,6 +72,7 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
             assert hello["inset_horizontal_pct"] == 1.0
             assert hello["box_width_pct"] == 100.0
             assert hello["box_height_pct"] == 30.0
+            assert hello["line_count"] == 2
             response = client.put(
                 "/overlay-style",
                 json={
@@ -92,6 +94,7 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
         "inset_horizontal_pct": 1.5,
         "box_width_pct": 100.0,
         "box_height_pct": 20.0,
+        "line_count": 2,
     }
 
 

@@ -9,6 +9,7 @@ from core.event_bus import EventBus
 from features.capture_audio.events import AudioChunkEvent
 from features.operator_control.events import (
     CaptionsStateEvent,
+    ConditionOnPreviousTextEvent,
     ModeChangedEvent,
     TranslateMode,
     languages_for,
@@ -32,6 +33,7 @@ class TranslateWorker:
         queue_size: int = 4,
         engine: str = "whisper",
         translate=None,
+        condition_on_previous_text: bool = False,
     ) -> None:
         self._bus = bus
         self._captioner = Captioner(
@@ -39,17 +41,23 @@ class TranslateWorker:
             engine=engine,
             translate=translate,
             glossary=initial_prompt,
+            condition_on_previous_text=condition_on_previous_text,
         )
         self._mode = TranslateMode(mode)
         self._queue: asyncio.Queue[AudioChunkEvent] = asyncio.Queue(maxsize=queue_size)
         self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(ModeChangedEvent, self._on_mode)
+        bus.subscribe(ConditionOnPreviousTextEvent, self._on_previous_text)
         bus.subscribe(AudioChunkEvent, self._on_chunk)
+
+    async def _on_previous_text(self, event: ConditionOnPreviousTextEvent) -> None:
+        self._captioner.set_condition_on_previous_text(event.condition_on_previous_text)
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
         self._active = event.is_active
         if not event.is_active:
+            self._captioner.clear_previous()
             while not self._queue.empty():
                 try:
                     self._queue.get_nowait()

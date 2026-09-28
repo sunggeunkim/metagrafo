@@ -40,7 +40,14 @@ def test_gemini_engine_writes_the_translation_not_the_transcript(tmp_path: Path)
     _write_wav(wav_path, SPEECH)
     out_path = tmp_path / "sermon.en.txt"
 
-    def recognize(_pcm: bytes, *, language: str, task: str, initial_prompt: str) -> str:
+    def recognize(
+        _pcm: bytes,
+        *,
+        language: str,
+        task: str,
+        initial_prompt: str,
+        condition_on_previous_text: bool = False,
+    ) -> str:
         if language == "ko" and task == "transcribe" and initial_prompt == "Jesus":
             return "기도"
         return "God is good."
@@ -65,13 +72,46 @@ def test_gemini_engine_writes_the_translation_not_the_transcript(tmp_path: Path)
     assert out_path.read_text(encoding="utf-8") == "Prayer\n"
 
 
+def test_two_pauses_write_one_line_per_phrase(tmp_path: Path) -> None:
+    wav_path = tmp_path / "sermon.wav"
+    _write_wav(wav_path, np.concatenate([SPEECH, SILENCE, SPEECH]))
+    out_path = tmp_path / "sermon.en.txt"
+    calls: list[int] = []
+
+    def transcribe(pcm: bytes, **_kwargs: object) -> str:
+        calls.append(len(pcm))
+        return f"Phrase {len(calls)}."
+
+    chunker = _chunker()
+    chunker.set_pauses_to_cut(2)
+    n = run_wav(
+        wav_path=wav_path,
+        out_path=out_path,
+        transcribe=transcribe,
+        chunker=chunker,
+        mode="ko_to_en",
+        initial_prompt="",
+        min_silence_ms=400,
+    )
+    assert n == 2
+    assert len(calls) == 2
+    assert out_path.read_text(encoding="utf-8") == "Phrase 1.\nPhrase 2.\n"
+
+
 def test_speech_silence_speech_writes_two_lines(tmp_path: Path) -> None:
     wav_path = tmp_path / "sermon.wav"
     _write_wav(wav_path, np.concatenate([SPEECH, SILENCE, SPEECH]))
     out_path = tmp_path / "sermon.en.txt"
     calls: list[int] = []
 
-    def transcribe(pcm: bytes, *, language: str, task: str, initial_prompt: str) -> str:
+    def transcribe(
+        pcm: bytes,
+        *,
+        language: str,
+        task: str,
+        initial_prompt: str,
+        condition_on_previous_text: bool = False,
+    ) -> str:
         calls.append(len(pcm))
         assert language == "ko"
         assert task == "translate"

@@ -56,6 +56,7 @@ def register(
         mode=settings.translate_mode,
         initial_prompt=prompt,
         queue_size=settings.translate_queue_size,
+        condition_on_previous_text=settings.condition_on_previous_text,
     )
     if app is not None:
         app.state.whisper_profile = profile

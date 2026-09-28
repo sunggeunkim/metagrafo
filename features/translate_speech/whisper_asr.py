@@ -62,6 +62,7 @@ def make_transcribe(profile: WhisperProfile):
         language: str,
         task: str,
         initial_prompt: str,
+        condition_on_previous_text: bool = False,
     ) -> str:
         audio = np.frombuffer(pcm_s16le, dtype=np.int16).astype(np.float32) / 32768.0
         segments, _info = model.transcribe(
@@ -70,7 +71,7 @@ def make_transcribe(profile: WhisperProfile):
             task=task,
             beam_size=1,
             vad_filter=False,
-            condition_on_previous_text=False,
+            condition_on_previous_text=condition_on_previous_text,
             without_timestamps=True,
             initial_prompt=initial_prompt or None,
         )

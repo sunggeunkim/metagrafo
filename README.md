@@ -49,7 +49,7 @@ Not the Sunday capture path. **ffmpeg must be on PATH.** First run may still dow
 uv run python -m main --youtube "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-Saves video + wav (kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current directory, and writes `{VIDEO_ID}.en.txt` there (English lines, one per VAD cut). Optional: `--out captions.txt`, `--file sermon.wav` (wav in only, skip download), `--vad-silence-ms 250`.
+Saves video + wav (kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current directory, and writes `{VIDEO_ID}.en.txt` there (English lines, one per VAD cut). Optional: `--out captions.txt`, `--file sermon.wav` (wav in only, skip download), `--vad-silence-ms 250`, `--pauses 2`, `--condition-on-previous-text`, `--start 1`, `--end 3`. `--start` and `--end` are minutes into the wav. Omit them to translate the whole file (`--start` defaults to 0, `--end` to the end). `--pauses` is 1 or 2 (default 1). Previous text is on unless you pass `--no-condition-on-previous-text`. `--condition-on-previous-text` forces it on. A YouTube URL still downloads the full video; the flags only limit translation.
 
 ## OBS scene
 
@@ -61,14 +61,14 @@ ATEN Stream to USB Capture **is** the RTMP ingest (its **Play** button starts a 
    - Width **1920**, height **1080**. Then **Transform → Reset Transform** so letters are not stretched.
    - Do not drag the red handles or change source Height to crop captions. Use **Box height (%)** on `/control`.
    - Shutdown source when not visible
-   - Transparent page; two completed caption lines in a `/control`-sized box. Not karaoke.
+   - Transparent page; completed caption lines in a `/control`-sized box (default **2**, set **Lines on screen** to 1–6). Not karaoke.
    - After overlay HTML changes, right-click the source → **Refresh**.
 4. Keep the Browser Source **above** the video.
 5. Fullscreen projector / HDMI to the house = this program.
 
 Booth UI is **not** an OBS source. Open `http://127.0.0.1:8000/control` in a normal browser on the booth PC.
 
-Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before cutting a caption (100–3000, default 500); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8, default 2.5); **box width/height (%)** (10–100 / 5–100, default 100 × 30); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart.
+Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before a pause counts (100–3000, default 500); **pauses per caption** (1 or 2, default 1; 2 waits for a second pause, then one line per phrase); **previous text** (on by default; gives Whisper the caption it just wrote; turn off on `/control`); **lines on screen** (1–6, default 2); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8, default 2.5); **box width/height (%)** (10–100 / 5–100, default 100 × 30); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart. A file run can set pauses with `--pauses 2`. Previous text is already on; turn it off with `--no-condition-on-previous-text`.
 
 ## Sunday morning (`/control`)
 
