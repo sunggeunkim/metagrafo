@@ -57,6 +57,7 @@ class SubtitleHub:
                 "mode": event.mode,
                 "ts": event.created_at,
                 "duration_s": event.duration_s,
+                "provisional": event.provisional,
             }
         )
 

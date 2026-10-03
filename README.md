@@ -114,6 +114,8 @@ uv run python -m main
 
 `GET /health` reports `model`, `device`, `compute_type`, `vram_gb`, captions on/off, and mode.
 
+To run the model on the Hermeneia GPU box instead of this PC, set `HERMENEIA_URL` (for example `https://hermeneia.stugen.net`) and `HERMENEIA_TOKEN`. `HERMENEIA_MODEL` defaults to `whisper` and stays fixed for the process. Leave the URL unset to keep local Whisper.
+
 ## Mac
 
 Same app. ATEN Stream to USB is **Windows-only**. Set `AUDIO_DEVICE_NAME` to BlackHole, an aggregate device, or a USB interface. Whisper runs on **CPU** until a Metal backend exists. Overlay URL and `/control` are unchanged.

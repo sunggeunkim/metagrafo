@@ -8,6 +8,7 @@ class InputDevice:
     index: int
     name: str
     max_input_channels: int
+    host_api: str = ""
 
 
 class DeviceNotFoundError(LookupError):
@@ -49,9 +50,11 @@ def resolve_input_device(
     if preferred:
         return preferred[0]
     stereo = [d for d in matches if d.max_input_channels <= 2]
-    if stereo:
-        return stereo[0]
-    return matches[0]
+    pool = stereo or matches
+    wasapi = [d for d in pool if "wasapi" in d.host_api.casefold()]
+    if wasapi:
+        return wasapi[0]
+    return pool[0]
 
 
 def list_input_names(devices: list[InputDevice]) -> list[str]:

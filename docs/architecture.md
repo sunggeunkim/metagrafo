@@ -11,7 +11,7 @@ OBS on the broadcast PC is the encoder (YouTube and the house projector share th
 | Encoder | OBS encodes the destination. UC9020 RTMP alone has **no captions**. |
 | Audio | PGM mix. No speech-only bus. |
 | Worship | Captions **default ON**. Volunteer OFF for songs. Mute **stops inference**, not only the OBS source. |
-| Presentation | Two-line, utterance-final. **Not karaoke.** ~2–3 s after they stop is OK. |
+| Presentation | Two-line. Whisper is utterance-final (**not karaoke**). Gemini live, when opted in, grows the bottom line while the pastor is still talking, then moves that line up. ~2–3 s after they stop is OK for Whisper. |
 | Modes | `ko_to_en` (sermon) and `en_to_en` (English guest transcribe). **`en_to_ko` / NLLB deferred.** |
 | Code-switch | Stay on `ko_to_en`. `church_vocabulary.txt` → Whisper `initial_prompt`. No verse-by-verse mode flips. |
 | Mute in-flight | Capture drops frames. Translate empties the queue. In-flight Whisper may finish; **discard if captions are off**. |
@@ -84,11 +84,13 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 | `en_to_en` | `en` | `transcribe` | English (unchanged) |
 
 - `large-v3` (`turbo` ignores `task="translate"`). Inference in `asyncio.to_thread`.
+- `HERMENEIA_URL` sends each VAD chunk to that box (`/v1/translations`) instead of local Whisper. `HERMENEIA_TOKEN` is the bearer token. An unset URL keeps local Whisper. Gemini live does not call Hermeneia.
 - `church_vocabulary.txt` read at **startup** → `initial_prompt`.
 - `condition_on_previous_text` defaults **on** (the caption just written is passed into the next phrase). **Off** translates each phrase alone. Live from `/control`. A file run turns it off with `--no-condition-on-previous-text`.
 - Device profile: see `docs/hardware-profiles.md`. Env always wins.
 - Queue max 4, **drop oldest**. Empty output is not published.
 - Captions off: **empty the queue**. When Whisper returns, if inactive, **do not publish**.
+- `CAPTION_ENGINE=gemini_live` plus `GEMINI_API_KEY` hears program audio as it arrives (`ProgramAudioEvent`, about 100 ms) instead of waiting for a VAD chunk. `gemini-3.5-live-translate-preview` translates Korean speech to English on one socket, the same four settings as the working mic test: no context-window compression and no session resumption. The bottom line grows (`SubtitleEvent.provisional`); a finished sentence, a model turn, or captions off commits it. The microphone match prefers the WASAPI device, because the DirectSound copy of the same name does not wait for the clock. Missing key keeps Whisper. The older `Captioner` engine named `gemini` is not this path.
 
 ### `broadcast_subtitles`
 

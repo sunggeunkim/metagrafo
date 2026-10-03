@@ -1,5 +1,9 @@
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketState
 
+from core.event_bus import EventBus
+from features.broadcast_subtitles.hub import SubtitleHub
+from features.translate_speech.events import SubtitleEvent
 from main import create_app
 
 
@@ -24,6 +28,48 @@ def test_overlay_is_two_line_browser_source() -> None:
         assert "max-height: var(--box-h)" in html
         assert "width: 70%" not in html
         assert "no-store" in page.headers.get("cache-control", "")
+
+
+class _Socket:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+        self.client_state = WebSocketState.CONNECTED
+
+    async def accept(self) -> None:
+        return None
+
+    async def send_json(self, data: dict) -> None:
+        self.sent.append(data)
+
+
+async def test_hub_marks_a_growing_line_provisional() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(
+        SubtitleEvent(
+            chunk_id="c1",
+            text="Today's topical",
+            source_language="ko",
+            target_language="en",
+            mode="ko_to_en",
+            created_at=1.0,
+            duration_s=0.0,
+            provisional=True,
+        )
+    )
+    assert socket.sent[-1]["type"] == "subtitle"
+    assert socket.sent[-1]["text"] == "Today's topical"
+    assert socket.sent[-1]["provisional"] is True
+
+
+def test_overlay_grows_the_open_line_in_place() -> None:
+    with TestClient(create_app()) as client:
+        html = client.get("/overlay").text
+    assert "showDraft" in html
+    assert "draftOpen" in html
+    assert "msg.provisional" in html
 
 
 def test_inject_broadcasts_subtitle_json_on_websocket() -> None:

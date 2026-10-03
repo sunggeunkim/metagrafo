@@ -205,7 +205,16 @@ def run_offline(
         pauses_to_cut=pause_count,
         is_speech=is_speech,
     )
-    if transcribe is None:
+    if transcribe is None and settings.hermeneia_url:
+        from features.translate_speech.hermeneia_client import make_hermeneia_transcribe
+
+        transcribe = make_hermeneia_transcribe(
+            settings.hermeneia_url,
+            settings.hermeneia_token,
+            settings.hermeneia_model,
+            timeout_s=settings.hermeneia_timeout_s,
+        )
+    elif transcribe is None:
         from features.translate_speech.device_profile import detect_vram_gb, resolve_profile
         from features.translate_speech.whisper_asr import make_transcribe
 

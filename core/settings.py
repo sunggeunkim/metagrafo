@@ -20,3 +20,12 @@ class Settings(BaseSettings):
     whisper_compute_type: str | None = "float16"
     church_vocabulary_path: str = "church_vocabulary.txt"
     translate_queue_size: int = 4
+    hermeneia_url: str = ""
+    hermeneia_token: str = ""
+    hermeneia_model: str = "whisper"
+    hermeneia_timeout_s: float = 30.0
+    caption_engine: str = "whisper"
+    gemini_api_key: str = ""
+
+    def gemini_live(self) -> bool:
+        return self.caption_engine == "gemini_live" and bool(self.gemini_api_key.strip())
