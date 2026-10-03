@@ -16,7 +16,6 @@ from features import broadcast_subtitles, capture_audio, operator_control, trans
 from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.youtube import download_media, make_job_dir, youtube_video_id
 from features.translate_speech.file_run import run_wav
-from features.translate_speech.vocabulary import load_vocabulary
 
 
 def create_app(
@@ -225,7 +224,6 @@ def run_offline(
             compute_type=settings.whisper_compute_type,
         )
         transcribe = make_transcribe(profile)
-    prompt = load_vocabulary(Path(settings.church_vocabulary_path))
 
     def _run(path: Path) -> None:
         run_wav(
@@ -234,7 +232,6 @@ def run_offline(
             transcribe=transcribe,
             chunker=chunker,
             mode=settings.translate_mode,
-            initial_prompt=prompt,
             min_silence_ms=vad_ms,
             start_s=start_s,
             end_s=end_s,

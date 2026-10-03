@@ -16,13 +16,11 @@ class Captioner:
         *,
         engine: str = "whisper",
         translate: Translate | None = None,
-        glossary: str = "",
         condition_on_previous_text: bool = False,
     ) -> None:
         self._recognize = recognize
         self._engine = engine
         self._translate = translate
-        self._glossary = glossary
         self._prior_english: list[str] = []
         self._condition_on_previous_text = condition_on_previous_text
         self._previous = ""
@@ -34,16 +32,11 @@ class Captioner:
         self._previous = ""
 
     def _prompt(self) -> str:
-        glossary = self._glossary.strip()
         if not self._condition_on_previous_text or not self._previous:
-            return glossary
-        room = _PROMPT_TAIL - len(glossary) - 1
-        if room < 1:
-            return glossary
-        tail = self._previous if len(self._previous) <= room else self._previous[-room:]
-        if not glossary:
-            return tail.strip()
-        return f"{tail.strip()} {glossary}"
+            return ""
+        if len(self._previous) <= _PROMPT_TAIL:
+            return self._previous
+        return self._previous[-_PROMPT_TAIL:]
 
     def _remember(self, text: str) -> None:
         self._previous = f"{self._previous} {text}".strip()
@@ -74,7 +67,6 @@ class Captioner:
         translated = self._translate(
             text,
             prior_english=list(self._prior_english),
-            glossary=self._glossary,
         )
         translated = (translated or "").strip()
         if translated:

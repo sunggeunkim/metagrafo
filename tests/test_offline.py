@@ -26,8 +26,8 @@ def _is_speech(frame: bytes) -> bool:
     return float(np.abs(np.frombuffer(frame, dtype=np.int16)).mean()) > 1000
 
 
-def _settings(tmp_path: Path) -> Settings:
-    return Settings(church_vocabulary_path=str(tmp_path / "missing_vocab.txt"))
+def _settings() -> Settings:
+    return Settings()
 
 
 def test_youtube_downloads_then_writes_captions(tmp_path: Path) -> None:
@@ -50,7 +50,7 @@ def test_youtube_downloads_then_writes_captions(tmp_path: Path) -> None:
         file=None,
         out=str(out),
         vad_silence_ms=400,
-        settings=_settings(tmp_path),
+        settings=_settings(),
         transcribe=lambda _pcm, **_kwargs: "Hello, everyone.",
         is_speech=_is_speech,
         download=download,
@@ -78,7 +78,7 @@ def test_rejects_non_youtube_before_download(tmp_path: Path) -> None:
             file=None,
             out=str(tmp_path / "out.txt"),
             vad_silence_ms=None,
-            settings=_settings(tmp_path),
+            settings=_settings(),
             transcribe=lambda _pcm, **_kwargs: "no",
             is_speech=_is_speech,
             download=download,
@@ -94,7 +94,7 @@ def test_file_default_out_suffix(tmp_path: Path) -> None:
         file=str(wav),
         out=None,
         vad_silence_ms=400,
-        settings=_settings(tmp_path),
+        settings=_settings(),
         transcribe=lambda _pcm, **_kwargs: "Line.",
         is_speech=_is_speech,
     )
@@ -119,7 +119,7 @@ def test_youtube_keeps_media_under_timestamped_job_dir(tmp_path: Path) -> None:
         file=None,
         out=None,
         vad_silence_ms=400,
-        settings=_settings(tmp_path),
+        settings=_settings(),
         transcribe=lambda _pcm, **_kwargs: "Line.",
         is_speech=_is_speech,
         download=download,
@@ -161,7 +161,7 @@ def _translate_window(
         file=str(wav),
         out=str(out),
         vad_silence_ms=400,
-        settings=_settings(tmp_path),
+        settings=_settings(),
         transcribe=lambda pcm, **_kwargs: _which_utterance(pcm),
         is_speech=_is_speech,
         start_minutes=start_minutes,
@@ -201,7 +201,7 @@ def test_end_before_start_raises_before_download(tmp_path: Path) -> None:
             file=None,
             out=str(tmp_path / "out.txt"),
             vad_silence_ms=400,
-            settings=_settings(tmp_path),
+            settings=_settings(),
             transcribe=lambda _pcm, **_kwargs: "no",
             is_speech=_is_speech,
             download=download,

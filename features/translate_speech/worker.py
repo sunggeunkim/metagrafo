@@ -29,7 +29,6 @@ class TranslateWorker:
         transcribe: TranscribeFn,
         *,
         mode: str = "ko_to_en",
-        initial_prompt: str = "",
         queue_size: int = 4,
         engine: str = "whisper",
         translate=None,
@@ -40,7 +39,6 @@ class TranslateWorker:
             transcribe,
             engine=engine,
             translate=translate,
-            glossary=initial_prompt,
             condition_on_previous_text=condition_on_previous_text,
         )
         self._mode = TranslateMode(mode)

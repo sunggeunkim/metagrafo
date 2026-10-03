@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -10,7 +9,6 @@ from core.event_bus import EventBus
 from core.settings import Settings
 from features.translate_speech.device_profile import detect_vram_gb, resolve_profile
 from features.translate_speech.gemini_live import GeminiLiveTranslator, gemini_connect
-from features.translate_speech.vocabulary import load_vocabulary
 from features.translate_speech.worker import TranslateWorker
 
 logger = logging.getLogger(__name__)
@@ -53,7 +51,6 @@ def register(
         device=settings.whisper_device,
         compute_type=settings.whisper_compute_type,
     )
-    prompt = load_vocabulary(Path(settings.church_vocabulary_path))
     if settings.caption_engine == "gemini_live" and not settings.gemini_api_key.strip():
         logger.warning("CAPTION_ENGINE=gemini_live but GEMINI_API_KEY is empty; using Whisper")
     if settings.gemini_live():
@@ -88,7 +85,6 @@ def register(
         bus,
         transcribe,
         mode=settings.translate_mode,
-        initial_prompt=prompt,
         queue_size=settings.translate_queue_size,
         condition_on_previous_text=settings.condition_on_previous_text,
     )
