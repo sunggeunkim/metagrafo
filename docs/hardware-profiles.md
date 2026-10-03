@@ -31,7 +31,7 @@ Capture always means **open the recording device named in settings**, never a ha
 
 | OS | Default `AUDIO_DEVICE_NAME` | Notes |
 |---|---|---|
-| Windows | `VB-Audio Virtual Cable` | OBS monitors mixer/RTMP audio into **CABLE Input**; Metagrafo opens **CABLE Output**. Name match prefers a 2-channel WASAPI endpoint. Override with `AUDIO_DEVICE_NAME` (for example `Microphone Array` or `ATEN_Stream_to_USB` if that UAC device exists). |
+| Windows | `HDMI (Elgato 4K S)` | Name match prefers a 2-channel WASAPI endpoint. Override with `AUDIO_DEVICE_NAME` (for example `VB-Audio Virtual Cable`, `Microphone Array`, or `ATEN_Stream_to_USB` if that UAC device exists). |
 | macOS | (none — set explicitly) | Stream to USB is **Windows-only**. Use BlackHole, an aggregate device, or a USB interface. UC9020 → Mac is a routing problem, not a second capture stack. |
 
 ## Same-machine OBS
