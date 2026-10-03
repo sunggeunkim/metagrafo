@@ -70,6 +70,8 @@ def test_overlay_grows_the_open_line_in_place() -> None:
     assert "showDraft" in html
     assert "draftOpen" in html
     assert "msg.provisional" in html
+    assert "max-height: var(--box-h)" in html
+    assert "calc(var(--line-count)" not in html
 
 
 def test_inject_broadcasts_subtitle_json_on_websocket() -> None:

@@ -27,7 +27,6 @@
       --inset-h: 1%;
       --box-w: 100%;
       --box-h: 30%;
-      --line-count: 2; /* Controlled live by booth settings */
     }
     #stage.hidden { opacity: 0; }
     #stage.pos-top_left {
@@ -40,17 +39,12 @@
       top: auto; left: var(--inset-h); right: var(--inset-h); bottom: var(--inset-v); margin-left: auto; margin-right: auto; text-align: center;
     }
 
-    /*
-     * Flexbox grows text upward from the bottom.
-     * The max-height clips anything past the line count.
-     */
     #lines {
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
-      max-height: calc(var(--line-count) * 1.35em);
+      max-height: var(--box-h);
       overflow: hidden;
-      transition: max-height 0.3s ease;
     }
 
     .line {
@@ -60,7 +54,6 @@
       text-shadow:
         0 0 6px #000, 0 2px 8px #000, 2px 2px 0 #000,
         -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000;
-      /* 1.35em line-height with no margin keeps the line-count math aligned */
       line-height: 1.35em;
       margin: 0;
       padding: 0;
@@ -91,7 +84,6 @@
 
     function setLineCount(count) {
       lineCount = Math.round(count);
-      stage.style.setProperty("--line-count", lineCount);
       trimLines();
     }
 

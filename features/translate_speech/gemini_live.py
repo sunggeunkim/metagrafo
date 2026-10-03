@@ -17,7 +17,12 @@ from features.translate_speech.live_line import LiveLine
 logger = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-live-translate-preview"
-Connect = Callable[[], "LiveConnection"]
+Connect = Callable[[TranslateMode], "LiveConnection"]
+
+
+def echoes_target_language(mode: TranslateMode) -> bool:
+    """Guest mode is already English, so the socket must echo it instead of staying silent."""
+    return mode is TranslateMode.EN_TO_EN
 
 
 class LiveConnection:
@@ -42,7 +47,7 @@ class LiveConnection:
 
 
 def gemini_connect(api_key: str) -> Connect:
-    def connect() -> LiveConnection:
+    def connect(mode: TranslateMode) -> LiveConnection:
         from google import genai
         from google.genai import types
 
@@ -53,7 +58,7 @@ def gemini_connect(api_key: str) -> Connect:
             output_audio_transcription=types.AudioTranscriptionConfig(),
             translation_config=types.TranslationConfig(
                 target_language_code="en",
-                echo_target_language=False,
+                echo_target_language=echoes_target_language(mode),
             ),
         )
         return client.aio.live.connect(model=MODEL, config=config)
@@ -79,15 +84,21 @@ class GeminiLiveTranslator:
         self._active = True
         self._stop = asyncio.Event()
         self._resumed = asyncio.Event()
+        self._reconnect = asyncio.Event()
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(ModeChangedEvent, self._on_mode)
         bus.subscribe(ProgramAudioEvent, self._on_audio)
 
     async def _on_mode(self, event: ModeChangedEvent) -> None:
         try:
-            self._mode = TranslateMode(event.mode)
+            mode = TranslateMode(event.mode)
         except ValueError:
-            self._mode = TranslateMode.KO_TO_EN
+            mode = TranslateMode.KO_TO_EN
+        if mode == self._mode:
+            return
+        await self._close_open_line()
+        self._mode = mode
+        self._reconnect.set()
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
         self._active = event.is_active
@@ -98,11 +109,17 @@ class GeminiLiveTranslator:
         self._resumed.clear()
         self._stop.set()
         self._drain_audio()
-        await self._finish_open_line()
+        self._line.commit()
 
     async def _on_audio(self, event: ProgramAudioEvent) -> None:
-        if not self._active or self._audio.full():
+        if not self._active:
             return
+        if self._audio.full():
+            try:
+                self._audio.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+            logger.warning("gemini live audio queue full; dropped the oldest chunk")
         self._audio.put_nowait(event.pcm_s16le)
 
     def _drain_audio(self) -> None:
@@ -112,9 +129,9 @@ class GeminiLiveTranslator:
             except asyncio.QueueEmpty:
                 break
 
-    async def _finish_open_line(self) -> None:
+    async def _close_open_line(self) -> None:
         finished = self._line.commit()
-        if finished:
+        if finished and self._active:
             await self._publish(finished, provisional=False)
 
     async def apply_transcript(self, fragment: str, *, turn_complete: bool = False) -> None:
@@ -151,15 +168,18 @@ class GeminiLiveTranslator:
             if not self._active:
                 await self._resumed.wait()
                 continue
+            self._reconnect.clear()
             try:
-                async with self._connect() as session:
+                async with self._connect(self._mode) as session:
                     await self._pump(session)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.error("gemini live session failed: %s", _redact(exc, self._api_key))
+                await self._close_open_line()
                 await asyncio.sleep(1)
                 continue
+            await self._close_open_line()
             if not self._active:
                 continue
 
@@ -167,15 +187,14 @@ class GeminiLiveTranslator:
         sender = asyncio.create_task(self._send(session), name="gemini-live-send")
         receiver = asyncio.create_task(self._receive(session), name="gemini-live-recv")
         stop = asyncio.create_task(self._stop.wait(), name="gemini-live-stop")
+        reconnect = asyncio.create_task(self._reconnect.wait(), name="gemini-live-reconnect")
+        tasks = (sender, receiver, stop, reconnect)
         try:
-            await asyncio.wait(
-                {sender, receiver, stop},
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+            await asyncio.wait(set(tasks), return_when=asyncio.FIRST_COMPLETED)
         finally:
-            for task in (sender, receiver, stop):
+            for task in tasks:
                 task.cancel()
-            for task in (sender, receiver, stop):
+            for task in tasks:
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
 
