@@ -16,14 +16,14 @@ If the UC9020 RTMPs to YouTube by itself, the audience gets **no captions**. The
 2. Clone this repo and `cd` into it.
 3. `uv sync`
 4. Install and **run** ATEN Stream to USB Capture. UC9020 and this PC on a private Ethernet LAN (see `docs/aten-obs.md`).
-5. Install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/). OBS monitors mixer audio into **CABLE Input**; Metagrafo opens **CABLE Output** (`AUDIO_DEVICE_NAME` default `VB-Audio Virtual Cable`).
+5. Connect the Elgato. Metagrafo opens **`HDMI (Elgato 4K S)`** (`AUDIO_DEVICE_NAME` default). To capture the VB-Audio cable instead, install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) and set `AUDIO_DEVICE_NAME=VB-Audio Virtual Cable`.
 6. Install OBS Studio.
 
 ```powershell
 uv run python -m main --list-devices
 ```
 
-Confirm `CABLE Output (VB-Audio Virtual Cable)` is listed.
+Confirm `HDMI (Elgato 4K S)` is listed.
 
 ```powershell
 uv run python -m main

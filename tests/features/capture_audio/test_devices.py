@@ -68,11 +68,11 @@ def test_index_still_selects_multichannel_cable() -> None:
     assert chosen.max_input_channels == 16
 
 
-def test_default_settings_audio_device_is_vb_cable() -> None:
+def test_default_settings_audio_device_is_elgato_hdmi() -> None:
     from core.settings import Settings
 
     settings = Settings()
-    assert settings.audio_device_name == "VB-Audio Virtual Cable"
+    assert settings.audio_device_name == "HDMI (Elgato 4K S)"
     assert settings.audio_device_index is None
 
 
