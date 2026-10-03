@@ -21,6 +21,8 @@
       overflow: hidden;
       opacity: 1;
       transition: opacity 0.6s;
+      /* Base font size set here so the box height math scales perfectly */
+      font-size: 2.5vw;
       --inset-v: 1%;
       --inset-h: 1%;
       --box-w: 100%;
@@ -28,49 +30,42 @@
     }
     #stage.hidden { opacity: 0; }
     #stage.pos-top_left {
-      top: var(--inset-v);
-      left: var(--inset-h);
-      right: auto;
-      bottom: auto;
-      text-align: left;
+      top: var(--inset-v); left: var(--inset-h); right: auto; bottom: auto; text-align: left;
     }
     #stage.pos-top_center {
-      top: var(--inset-v);
-      left: var(--inset-h);
-      right: var(--inset-h);
-      bottom: auto;
-      margin-left: auto;
-      margin-right: auto;
-      text-align: center;
+      top: var(--inset-v); left: var(--inset-h); right: var(--inset-h); bottom: auto; margin-left: auto; margin-right: auto; text-align: center;
     }
     #stage.pos-bottom_center {
-      top: auto;
-      left: var(--inset-h);
-      right: var(--inset-h);
-      bottom: var(--inset-v);
-      margin-left: auto;
-      margin-right: auto;
-      text-align: center;
+      top: auto; left: var(--inset-h); right: var(--inset-h); bottom: var(--inset-v); margin-left: auto; margin-right: auto; text-align: center;
     }
+
+    #lines {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      max-height: var(--box-h);
+      overflow: hidden;
+    }
+
     .line {
       color: #fff;
-      font-size: 2.5vw;
+      font-size: inherit;
       font-weight: 700;
       text-shadow:
-        0 0 6px #000,
-        0 2px 8px #000,
-        2px 2px 0 #000,
-        -2px 2px 0 #000,
-        2px -2px 0 #000,
-        -2px -2px 0 #000;
-      line-height: 1.25;
-      margin: 0.15em 0;
+        0 0 6px #000, 0 2px 8px #000, 2px 2px 0 #000,
+        -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000;
+      line-height: 1.35em;
+      margin: 0;
+      padding: 0;
       overflow-wrap: normal;
       word-break: normal;
+      /* Fade-up so a new line does not snap in */
+      animation: fadeUp 0.3s ease-out forwards;
     }
-    .line:empty {
-      display: none;
-      margin: 0;
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   </style>
 </head>
@@ -83,42 +78,46 @@
     const linesEl = document.getElementById("lines");
     const POSITIONS = ["pos-top_left", "pos-top_center", "pos-bottom_center"];
     let hideTimer = null;
-    let lineCount = 2;
     let fontSizeVw = 2.5;
+    let lineCount = 2;
+    let draftOpen = false;
 
-    function lineTexts() {
-      return [...linesEl.querySelectorAll(".line")].map((el) => el.textContent);
+    function setLineCount(count) {
+      lineCount = Math.round(count);
+      trimLines();
     }
 
-    function renderLines(texts) {
-      linesEl.replaceChildren();
-      for (const text of texts) {
+    function trimLines() {
+      while (linesEl.children.length > lineCount) {
+        linesEl.firstElementChild.remove();
+      }
+    }
+
+    function showDraft(text) {
+      let draft = linesEl.querySelector(".line.draft");
+      if (!draft) {
+        draft = document.createElement("p");
+        draft.className = "line draft";
+        linesEl.appendChild(draft);
+      }
+      draft.textContent = text;
+      draftOpen = true;
+      trimLines();
+    }
+
+    function commitLine(text) {
+      const draft = draftOpen ? linesEl.querySelector(".line.draft") : null;
+      if (draft) {
+        draft.textContent = text;
+        draft.classList.remove("draft");
+      } else {
         const p = document.createElement("p");
         p.className = "line";
         p.textContent = text;
-        p.style.fontSize = fontSizeVw + "vw";
         linesEl.appendChild(p);
       }
-    }
-
-    function setLineCount(count) {
-      const nextCount = count;
-      const kept = lineTexts().filter((text) => text).slice(-nextCount);
-      const texts = Array(nextCount).fill("");
-      for (let i = 0; i < kept.length; i++) {
-        texts[nextCount - kept.length + i] = kept[i];
-      }
-      lineCount = nextCount;
-      renderLines(texts);
-    }
-
-    function pushText(text) {
-      const texts = lineTexts();
-      while (texts.length < lineCount) texts.unshift("");
-      const next = texts.slice(-lineCount);
-      next.shift();
-      next.push(text);
-      renderLines(next);
+      draftOpen = false;
+      trimLines();
     }
 
     setLineCount(2);
@@ -130,11 +129,10 @@
       }
       if (typeof msg.font_size_vw === "number") {
         fontSizeVw = msg.font_size_vw;
+        stage.style.fontSize = fontSizeVw + "vw";
       }
       if (typeof msg.line_count === "number" && msg.line_count >= 1) {
-        setLineCount(Math.round(msg.line_count));
-      } else {
-        renderLines(lineTexts());
+        setLineCount(msg.line_count);
       }
       if (typeof msg.inset_vertical_pct === "number") {
         stage.style.setProperty("--inset-v", msg.inset_vertical_pct + "%");
@@ -157,7 +155,8 @@
     }
 
     function clearLines() {
-      renderLines(Array(lineCount).fill(""));
+      linesEl.replaceChildren();
+      draftOpen = false;
       stage.classList.add("hidden");
     }
 
@@ -170,7 +169,11 @@
           applyStyle(msg);
         }
         if (msg.type === "subtitle" && msg.text) {
-          pushText(msg.text);
+          if (msg.provisional) {
+            showDraft(msg.text);
+          } else {
+            commitLine(msg.text);
+          }
           show();
         }
         if (msg.type === "captions_state" && msg.is_active === false) {

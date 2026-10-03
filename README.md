@@ -81,13 +81,9 @@ Captions **default ON** when the process starts. Turn **OFF** during worship so 
 | Songs again | **Captions OFF**. Stops **new** capture and queued Whisper jobs. Not the same as hiding the OBS source. |
 | English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. No Korean captions in v1. |
 
-Do **not** flip language verse-by-verse. `ko_to_en` plus `church_vocabulary.txt` handles English names and book titles inside a Korean sermon.
+Do **not** flip language verse-by-verse. Stay on `ko_to_en` for a Korean sermon.
 
 Hiding the OBS Browser Source does **not** rest the GPU. Use **Captions OFF** on `/control`. That drains the queue and drops frames so worship is not transcribed. An utterance **already on the GPU** can still finish (Whisper cannot be cancelled mid-chunk); that result is **discarded** and will not appear on the overlay. GPU load drops after that current chunk, not instantly.
-
-## Saturday: vocabulary file
-
-Edit `church_vocabulary.txt` in Notepad (pastor name, series title, extra book names). The file is read at **startup** as Whisper’s `initial_prompt`. Restart Metagrafo Sunday morning for changes to apply.
 
 ## Whisper model (NVIDIA)
 
@@ -113,6 +109,8 @@ uv run python -m main
 ```
 
 `GET /health` reports `model`, `device`, `compute_type`, `vram_gb`, captions on/off, and mode.
+
+To run the model on the Hermeneia GPU box instead of this PC, set `HERMENEIA_URL` (for example `https://hermeneia.stugen.net`) and `HERMENEIA_TOKEN`. `HERMENEIA_MODEL` defaults to `whisper` and stays fixed for the process. Leave the URL unset to keep local Whisper.
 
 ## Mac
 

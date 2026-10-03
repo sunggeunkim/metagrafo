@@ -11,9 +11,9 @@ OBS on the broadcast PC is the encoder (YouTube and the house projector share th
 | Encoder | OBS encodes the destination. UC9020 RTMP alone has **no captions**. |
 | Audio | PGM mix. No speech-only bus. |
 | Worship | Captions **default ON**. Volunteer OFF for songs. Mute **stops inference**, not only the OBS source. |
-| Presentation | Two-line, utterance-final. **Not karaoke.** ~2–3 s after they stop is OK. |
+| Presentation | Two-line. Whisper is utterance-final (**not karaoke**). Gemini live, when opted in, grows the bottom line while the pastor is still talking, then moves that line up. ~2–3 s after they stop is OK for Whisper. |
 | Modes | `ko_to_en` (sermon) and `en_to_en` (English guest transcribe). **`en_to_ko` / NLLB deferred.** |
-| Code-switch | Stay on `ko_to_en`. `church_vocabulary.txt` → Whisper `initial_prompt`. No verse-by-verse mode flips. |
+| Code-switch | Stay on `ko_to_en`. No verse-by-verse mode flips. |
 | Mute in-flight | Capture drops frames. Translate empties the queue. In-flight Whisper may finish; **discard if captions are off**. |
 | Model | Env `WHISPER_MODEL` (default `large-v3`). Fallback `medium` + **restart**. No live swap. |
 
@@ -47,7 +47,6 @@ metagrafo/
   core/
     event_bus.py
     settings.py
-  church_vocabulary.txt
   features/
     capture_audio/          # named input → AudioChunkEvent
     translate_speech/       # AudioChunkEvent → SubtitleEvent (no HTTP)
@@ -84,11 +83,12 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 | `en_to_en` | `en` | `transcribe` | English (unchanged) |
 
 - `large-v3` (`turbo` ignores `task="translate"`). Inference in `asyncio.to_thread`.
-- `church_vocabulary.txt` read at **startup** → `initial_prompt`.
+- `HERMENEIA_URL` sends each VAD chunk to that box (`/v1/translations`) instead of local Whisper. `HERMENEIA_TOKEN` is the bearer token. An unset URL keeps local Whisper. Gemini live does not call Hermeneia.
 - `condition_on_previous_text` defaults **on** (the caption just written is passed into the next phrase). **Off** translates each phrase alone. Live from `/control`. A file run turns it off with `--no-condition-on-previous-text`.
 - Device profile: see `docs/hardware-profiles.md`. Env always wins.
 - Queue max 4, **drop oldest**. Empty output is not published.
 - Captions off: **empty the queue**. When Whisper returns, if inactive, **do not publish**.
+- `CAPTION_ENGINE=gemini_live` plus `GEMINI_API_KEY` hears program audio as it arrives (`ProgramAudioEvent`, about 100 ms) instead of waiting for a VAD chunk. `gemini-3.5-live-translate-preview` translates Korean speech to English on one socket, the same four settings as the working mic test: no context-window compression and no session resumption. The bottom line grows (`SubtitleEvent.provisional`); a finished sentence, a model turn, or the end of a socket commits it. Captions off clears the open line and the overlay. English guest mode reconnects with echo so English speech is captioned. The microphone match prefers the WASAPI device, because the DirectSound copy of the same name does not wait for the clock. Missing key keeps Whisper. The older `Captioner` engine named `gemini` is not this path.
 
 ### `broadcast_subtitles`
 
@@ -162,8 +162,7 @@ Notable: `AUDIO_DEVICE_NAME` (default `VB-Audio Virtual Cable`), `AUDIO_DEVICE_I
 3. `/control` in a booth browser.
 4. Pastor at pulpit → Captions ON. Worship → Captions OFF.
 5. English guest: set **en_to_en** before service.
-6. Saturday: edit `church_vocabulary.txt`; restart Sunday morning.
-7. Rehearsal hitch: `WHISPER_MODEL=medium`, restart. Never hot-swap on the GPU.
+6. Rehearsal hitch: `WHISPER_MODEL=medium`, restart. Never hot-swap on the GPU.
 
 ## Out of scope (v1)
 

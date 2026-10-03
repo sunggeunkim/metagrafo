@@ -1,23 +1,34 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
+import logging
 
 from fastapi import FastAPI
 
 from core.event_bus import EventBus
 from core.settings import Settings
 from features.translate_speech.device_profile import detect_vram_gb, resolve_profile
-from features.translate_speech.vocabulary import load_vocabulary
+from features.translate_speech.gemini_live import GeminiLiveTranslator, gemini_connect
 from features.translate_speech.worker import TranslateWorker
+
+logger = logging.getLogger(__name__)
 
 
 class TranslateSlice:
-    def __init__(self, worker: TranslateWorker) -> None:
+    def __init__(
+        self,
+        worker: TranslateWorker | None = None,
+        live: GeminiLiveTranslator | None = None,
+    ) -> None:
         self.worker = worker
+        self.live = live
         self._task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
+        if self.live is not None:
+            self._task = asyncio.create_task(self.live.run(), name="gemini-live")
+            return
+        assert self.worker is not None
         self._task = asyncio.create_task(self.worker.run(), name="translate-speech")
 
     async def stop(self) -> None:
@@ -40,8 +51,28 @@ def register(
         device=settings.whisper_device,
         compute_type=settings.whisper_compute_type,
     )
-    prompt = load_vocabulary(Path(settings.church_vocabulary_path))
-    if transcribe is None and load_whisper:
+    if settings.caption_engine == "gemini_live" and not settings.gemini_api_key.strip():
+        logger.warning("CAPTION_ENGINE=gemini_live but GEMINI_API_KEY is empty; using Whisper")
+    if settings.gemini_live():
+        live = GeminiLiveTranslator(
+            bus,
+            connect=gemini_connect(settings.gemini_api_key),
+            api_key=settings.gemini_api_key,
+            mode=settings.translate_mode,
+        )
+        if app is not None:
+            app.state.whisper_profile = profile
+        return TranslateSlice(live=live)
+    if transcribe is None and settings.hermeneia_url:
+        from features.translate_speech.hermeneia_client import make_hermeneia_transcribe
+
+        transcribe = make_hermeneia_transcribe(
+            settings.hermeneia_url,
+            settings.hermeneia_token,
+            settings.hermeneia_model,
+            timeout_s=settings.hermeneia_timeout_s,
+        )
+    elif transcribe is None and load_whisper:
         from features.translate_speech.whisper_asr import make_transcribe
 
         transcribe = make_transcribe(profile)
@@ -54,7 +85,6 @@ def register(
         bus,
         transcribe,
         mode=settings.translate_mode,
-        initial_prompt=prompt,
         queue_size=settings.translate_queue_size,
         condition_on_previous_text=settings.condition_on_previous_text,
     )

@@ -53,7 +53,7 @@ async def test_ko_to_en_uses_translate_task_and_publishes_english(caplog) -> Non
         seen.append(event)
 
     bus.subscribe(SubtitleEvent, handler)
-    worker = TranslateWorker(bus, whisper.transcribe, initial_prompt="Jesus, Amen.")
+    worker = TranslateWorker(bus, whisper.transcribe)
     task = asyncio.create_task(worker.run())
     with caplog.at_level(logging.INFO, logger="features.translate_speech.worker"):
         await bus.publish(CaptionsStateEvent(is_active=True))
@@ -66,7 +66,7 @@ async def test_ko_to_en_uses_translate_task_and_publishes_english(caplog) -> Non
         {
             "language": "ko",
             "task": "translate",
-            "initial_prompt": "Jesus, Amen.",
+            "initial_prompt": "",
             "condition_on_previous_text": False,
         }
     ]
@@ -93,8 +93,8 @@ async def test_gemini_engine_publishes_translation_of_the_transcript() -> None:
             return "기도"
         return "God is good."
 
-    def translate(source: str, *, prior_english: list[str], glossary: str) -> str:
-        if source == "기도" and prior_english == [] and glossary == "Jesus":
+    def translate(source: str, *, prior_english: list[str]) -> str:
+        if source == "기도" and prior_english == []:
             return "Prayer"
         return "bad context"
 
@@ -102,7 +102,6 @@ async def test_gemini_engine_publishes_translation_of_the_transcript() -> None:
     worker = TranslateWorker(
         bus,
         recognize,
-        initial_prompt="Jesus",
         engine="gemini",
         translate=translate,
     )
@@ -229,11 +228,7 @@ async def test_full_queue_drops_oldest() -> None:
 async def test_previous_text_setting_reaches_the_next_chunk() -> None:
     bus = EventBus()
     whisper = FakeWhisper("Hannah")
-    worker = TranslateWorker(
-        bus,
-        whisper.transcribe,
-        initial_prompt="Hannah, the mother of Samuel.",
-    )
+    worker = TranslateWorker(bus, whisper.transcribe)
     task = asyncio.create_task(worker.run())
     await bus.publish(ConditionOnPreviousTextEvent(condition_on_previous_text=True))
     await bus.publish(_chunk("c1"))
@@ -242,8 +237,8 @@ async def test_previous_text_setting_reaches_the_next_chunk() -> None:
     await asyncio.sleep(0.1)
     task.cancel()
     assert whisper.calls[0]["condition_on_previous_text"] is True
-    assert whisper.calls[0]["initial_prompt"] == "Hannah, the mother of Samuel."
-    assert whisper.calls[1]["initial_prompt"] == "Hannah Hannah, the mother of Samuel."
+    assert whisper.calls[0]["initial_prompt"] == ""
+    assert whisper.calls[1]["initial_prompt"] == "Hannah"
 
 
 async def test_captions_off_forgets_previous_text() -> None:
@@ -252,7 +247,6 @@ async def test_captions_off_forgets_previous_text() -> None:
     worker = TranslateWorker(
         bus,
         whisper.transcribe,
-        initial_prompt="Hannah, the mother of Samuel.",
         condition_on_previous_text=True,
     )
     task = asyncio.create_task(worker.run())
@@ -264,4 +258,4 @@ async def test_captions_off_forgets_previous_text() -> None:
     await bus.publish(_chunk("c2"))
     await asyncio.sleep(0.1)
     task.cancel()
-    assert whisper.calls[1]["initial_prompt"] == "Hannah, the mother of Samuel."
+    assert whisper.calls[1]["initial_prompt"] == ""

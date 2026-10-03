@@ -15,7 +15,6 @@ def run_wav(
     transcribe,
     chunker: SpeechChunker,
     mode: str,
-    initial_prompt: str,
     min_silence_ms: int,
     engine: str = "whisper",
     translate=None,
@@ -31,7 +30,6 @@ def run_wav(
         transcribe,
         engine=engine,
         translate=translate,
-        glossary=initial_prompt,
         condition_on_previous_text=condition_on_previous_text,
     )
 

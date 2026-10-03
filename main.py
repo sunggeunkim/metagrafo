@@ -16,7 +16,6 @@ from features import broadcast_subtitles, capture_audio, operator_control, trans
 from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.youtube import download_media, make_job_dir, youtube_video_id
 from features.translate_speech.file_run import run_wav
-from features.translate_speech.vocabulary import load_vocabulary
 
 
 def create_app(
@@ -205,7 +204,16 @@ def run_offline(
         pauses_to_cut=pause_count,
         is_speech=is_speech,
     )
-    if transcribe is None:
+    if transcribe is None and settings.hermeneia_url:
+        from features.translate_speech.hermeneia_client import make_hermeneia_transcribe
+
+        transcribe = make_hermeneia_transcribe(
+            settings.hermeneia_url,
+            settings.hermeneia_token,
+            settings.hermeneia_model,
+            timeout_s=settings.hermeneia_timeout_s,
+        )
+    elif transcribe is None:
         from features.translate_speech.device_profile import detect_vram_gb, resolve_profile
         from features.translate_speech.whisper_asr import make_transcribe
 
@@ -216,7 +224,6 @@ def run_offline(
             compute_type=settings.whisper_compute_type,
         )
         transcribe = make_transcribe(profile)
-    prompt = load_vocabulary(Path(settings.church_vocabulary_path))
 
     def _run(path: Path) -> None:
         run_wav(
@@ -225,7 +232,6 @@ def run_offline(
             transcribe=transcribe,
             chunker=chunker,
             mode=settings.translate_mode,
-            initial_prompt=prompt,
             min_silence_ms=vad_ms,
             start_s=start_s,
             end_s=end_s,

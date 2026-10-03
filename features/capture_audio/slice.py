@@ -30,7 +30,12 @@ class CaptureSlice:
             pauses_to_cut=settings.vad_pauses,
             is_speech=load_is_speech(),
         )
-        self.gate = CaptureGate(bus=bus, chunker=chunker, sample_rate=16000)
+        self.gate = CaptureGate(
+            bus=bus,
+            chunker=chunker,
+            sample_rate=16000,
+            stream_program_audio=settings.gemini_live(),
+        )
 
     async def start(self) -> None:
         self._loop = asyncio.get_running_loop()

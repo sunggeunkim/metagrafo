@@ -10,3 +10,4 @@ class SubtitleEvent:
     mode: str
     created_at: float
     duration_s: float
+    provisional: bool = False

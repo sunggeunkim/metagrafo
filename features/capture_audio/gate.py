@@ -5,8 +5,10 @@ import uuid
 
 from core.event_bus import EventBus
 from features.capture_audio.chunker import SpeechChunker
-from features.capture_audio.events import AudioChunkEvent
+from features.capture_audio.events import AudioChunkEvent, ProgramAudioEvent
 from features.operator_control.events import CaptionsStateEvent, VadPausesEvent, VadSilenceMsEvent
+
+_PROGRAM_SAMPLES = 1600
 
 
 class CaptureGate:
@@ -16,10 +18,13 @@ class CaptureGate:
         bus: EventBus,
         chunker: SpeechChunker,
         sample_rate: int = 16000,
+        stream_program_audio: bool = False,
     ) -> None:
         self._bus = bus
         self._chunker = chunker
         self._sample_rate = sample_rate
+        self._stream_program_audio = stream_program_audio
+        self._pending = bytearray()
         self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(VadSilenceMsEvent, self._on_vad_silence)
@@ -34,11 +39,14 @@ class CaptureGate:
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
         self._active = event.is_active
         if not event.is_active:
+            self._pending.clear()
             self._chunker.reset()
 
     async def accept_frame(self, frame: bytes) -> None:
         if not self._active:
             return
+        if self._stream_program_audio:
+            await self._publish_program_audio(frame)
         for pcm in self._chunker.push(frame):
             duration_s = len(pcm) / 2 / self._sample_rate
             await self._bus.publish(
@@ -49,4 +57,14 @@ class CaptureGate:
                     started_at=time.monotonic() - duration_s,
                     duration_s=duration_s,
                 )
+            )
+
+    async def _publish_program_audio(self, frame: bytes) -> None:
+        self._pending.extend(frame)
+        need = _PROGRAM_SAMPLES * 2
+        while len(self._pending) >= need:
+            chunk = bytes(self._pending[:need])
+            del self._pending[:need]
+            await self._bus.publish(
+                ProgramAudioEvent(pcm_s16le=chunk, sample_rate=self._sample_rate)
             )
