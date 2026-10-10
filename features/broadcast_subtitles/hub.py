@@ -27,6 +27,7 @@ class SubtitleHub:
             "inset_horizontal_pct": 1.0,
             "box_width_pct": 100.0,
             "box_height_pct": 30.0,
+            "line_count": 2,
         }
         bus.subscribe(SubtitleEvent, self._on_subtitle)
         bus.subscribe(CaptionsStateEvent, self._on_captions)
@@ -56,6 +57,7 @@ class SubtitleHub:
                 "mode": event.mode,
                 "ts": event.created_at,
                 "duration_s": event.duration_s,
+                "provisional": event.provisional,
             }
         )
 
@@ -71,6 +73,7 @@ class SubtitleHub:
             "inset_horizontal_pct": event.inset_horizontal_pct,
             "box_width_pct": event.box_width_pct,
             "box_height_pct": event.box_height_pct,
+            "line_count": event.line_count,
         }
         await self._broadcast(self._overlay_style)
 

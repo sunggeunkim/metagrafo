@@ -21,6 +21,8 @@
       overflow: hidden;
       opacity: 1;
       transition: opacity 0.6s;
+      /* Base font size set here so the box height math scales perfectly */
+      font-size: 2.5vw;
       --inset-v: 1%;
       --inset-h: 1%;
       --box-w: 100%;
@@ -28,63 +30,144 @@
     }
     #stage.hidden { opacity: 0; }
     #stage.pos-top_left {
-      top: var(--inset-v);
-      left: var(--inset-h);
-      right: auto;
-      bottom: auto;
-      text-align: left;
+      top: var(--inset-v); left: var(--inset-h); right: auto; bottom: auto; text-align: left;
     }
     #stage.pos-top_center {
-      top: var(--inset-v);
-      left: var(--inset-h);
-      right: var(--inset-h);
-      bottom: auto;
-      margin-left: auto;
-      margin-right: auto;
-      text-align: center;
+      top: var(--inset-v); left: var(--inset-h); right: var(--inset-h); bottom: auto; margin-left: auto; margin-right: auto; text-align: center;
     }
     #stage.pos-bottom_center {
-      top: auto;
-      left: var(--inset-h);
-      right: var(--inset-h);
-      bottom: var(--inset-v);
-      margin-left: auto;
-      margin-right: auto;
-      text-align: center;
+      top: auto; left: var(--inset-h); right: var(--inset-h); bottom: var(--inset-v); margin-left: auto; margin-right: auto; text-align: center;
     }
+
+    #lines {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      align-items: flex-start;
+      max-height: var(--box-h);
+      overflow: hidden;
+    }
+    #stage.pos-top_center #lines,
+    #stage.pos-bottom_center #lines {
+      align-items: center;
+    }
+
     .line {
       color: #fff;
-      font-size: 2.5vw;
+      font-size: inherit;
       font-weight: 700;
+      background: rgba(0, 0, 0, 0.55);
       text-shadow:
-        0 0 6px #000,
-        0 2px 8px #000,
-        2px 2px 0 #000,
-        -2px 2px 0 #000,
-        2px -2px 0 #000,
-        -2px -2px 0 #000;
-      line-height: 1.25;
-      margin: 0.15em 0;
+        0 0 6px #000, 0 2px 8px #000, 2px 2px 0 #000,
+        -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000;
+      line-height: 1.35em;
+      margin: 0.08em 0;
+      padding: 0.06em 0.45em;
+      width: fit-content;
+      max-width: 100%;
       overflow-wrap: normal;
       word-break: normal;
-    }
-    .line:empty {
-      display: none;
-      margin: 0;
     }
   </style>
 </head>
 <body>
   <div id="stage" class="hidden pos-top_left">
-    <p id="previous" class="line"></p>
-    <p id="current" class="line"></p>
+    <div id="lines"></div>
   </div>
   <script>
-    const previousEl = document.getElementById("previous");
-    const currentEl = document.getElementById("current");
     const stage = document.getElementById("stage");
+    const linesEl = document.getElementById("lines");
     const POSITIONS = ["pos-top_left", "pos-top_center", "pos-bottom_center"];
     let hideTimer = null;
+    let fontSizeVw = 2.5;
+    let lineCount = 2;
+    let draftText = null;
+    let committed = [];
+    let renderRetry = false;
+
+    function setLineCount(count) {
+      lineCount = Math.round(count);
+      render();
+    }
+
+    function measureRows(text) {
+      const width = linesEl.clientWidth || stage.clientWidth;
+      if (!text || width < 8) {
+        return text ? [text] : [];
+      }
+      const probe = document.createElement("p");
+      probe.className = "line";
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.left = "0";
+      probe.style.top = "0";
+      probe.style.width = width + "px";
+      probe.style.maxWidth = width + "px";
+      probe.textContent = text;
+      stage.appendChild(probe);
+      const node = probe.firstChild;
+      const range = document.createRange();
+      const rows = [];
+      let start = 0;
+      let lineTop = null;
+      for (let i = 0; i < text.length; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const top = range.getBoundingClientRect().top;
+        if (lineTop === null) {
+          lineTop = top;
+        } else if (top > lineTop + 1) {
+          rows.push(text.slice(start, i));
+          start = i;
+          lineTop = top;
+        }
+      }
+      rows.push(text.slice(start));
+      probe.remove();
+      return rows.map((row) => row.trim()).filter(Boolean);
+    }
+
+    function render() {
+      const width = linesEl.clientWidth || stage.clientWidth;
+      if (width < 8) {
+        if (!renderRetry) {
+          renderRetry = true;
+          requestAnimationFrame(() => {
+            renderRetry = false;
+            render();
+          });
+        }
+        return;
+      }
+      const blocks = draftText !== null ? committed.concat(draftText) : committed;
+      const rows = [];
+      for (const block of blocks) {
+        rows.push(...measureRows(block));
+      }
+      while (committed.length > 30) {
+        committed.shift();
+      }
+      linesEl.replaceChildren();
+      for (const row of rows.slice(-lineCount)) {
+        const p = document.createElement("p");
+        p.className = "line";
+        p.textContent = row;
+        linesEl.appendChild(p);
+      }
+    }
+
+    function showDraft(text) {
+      draftText = text;
+      render();
+    }
+
+    function commitLine(text) {
+      committed.push(text);
+      draftText = null;
+      render();
+    }
+
+    setLineCount(2);
 
     function applyStyle(msg) {
       if (msg.position) {
@@ -92,9 +175,11 @@
         stage.classList.add("pos-" + msg.position);
       }
       if (typeof msg.font_size_vw === "number") {
-        document.querySelectorAll(".line").forEach((el) => {
-          el.style.fontSize = msg.font_size_vw + "vw";
-        });
+        fontSizeVw = msg.font_size_vw;
+        stage.style.fontSize = fontSizeVw + "vw";
+      }
+      if (typeof msg.line_count === "number" && msg.line_count >= 1) {
+        lineCount = Math.round(msg.line_count);
       }
       if (typeof msg.inset_vertical_pct === "number") {
         stage.style.setProperty("--inset-v", msg.inset_vertical_pct + "%");
@@ -108,6 +193,7 @@
       if (typeof msg.box_height_pct === "number") {
         stage.style.setProperty("--box-h", msg.box_height_pct + "%");
       }
+      render();
     }
 
     function show() {
@@ -117,8 +203,9 @@
     }
 
     function clearLines() {
-      previousEl.textContent = "";
-      currentEl.textContent = "";
+      committed = [];
+      draftText = null;
+      linesEl.replaceChildren();
       stage.classList.add("hidden");
     }
 
@@ -131,8 +218,11 @@
           applyStyle(msg);
         }
         if (msg.type === "subtitle" && msg.text) {
-          previousEl.textContent = currentEl.textContent;
-          currentEl.textContent = msg.text;
+          if (msg.provisional) {
+            showDraft(msg.text);
+          } else {
+            commitLine(msg.text);
+          }
           show();
         }
         if (msg.type === "captions_state" && msg.is_active === false) {

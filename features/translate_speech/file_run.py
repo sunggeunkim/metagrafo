@@ -15,10 +15,12 @@ def run_wav(
     transcribe,
     chunker: SpeechChunker,
     mode: str,
-    initial_prompt: str,
     min_silence_ms: int,
     engine: str = "whisper",
     translate=None,
+    start_s: float = 0.0,
+    end_s: float | None = None,
+    condition_on_previous_text: bool = False,
 ) -> int:
     try:
         translate_mode = TranslateMode(mode)
@@ -28,18 +30,26 @@ def run_wav(
         transcribe,
         engine=engine,
         translate=translate,
-        glossary=initial_prompt,
+        condition_on_previous_text=condition_on_previous_text,
     )
 
     lines: list[str] = []
-    for frame in frames_from_wav(wav_path, min_silence_ms=min_silence_ms):
-        pcm = chunker.push(frame)
-        if not pcm:
-            continue
-        text = captioner.line(pcm, direction=translate_mode.value)
-        cleaned = (text or "").strip()
-        if cleaned:
-            lines.append(cleaned)
+
+    def _take(parts: list[bytes]) -> None:
+        for pcm in parts:
+            text = captioner.line(pcm, direction=translate_mode.value)
+            cleaned = (text or "").strip()
+            if cleaned:
+                lines.append(cleaned)
+
+    for frame in frames_from_wav(
+        wav_path,
+        min_silence_ms=min_silence_ms,
+        start_s=start_s,
+        end_s=end_s,
+    ):
+        _take(chunker.push(frame))
+    _take(chunker.flush())
 
     out_path = Path(out_path)
     payload = "\n".join(lines)

@@ -2,7 +2,7 @@
 
 Metagrafo is a single-process, fully local speech pipeline that turns live **program audio** into OBS captions.
 
-OBS on the broadcast PC is the encoder (YouTube and the house projector share that canvas). Mixer audio reaches OBS over Stream to USB RTMP; Metagrafo captures **`CABLE Output` (`VB-Audio Virtual Cable`)** after OBS monitors into the cable. Silero VAD chunks speech; faster-whisper produces English; a FastAPI WebSocket overlay shows **two completed lines**. Hardware path: `docs/aten-obs.md`. GPU/OS profiles: `docs/hardware-profiles.md`.
+OBS on the broadcast PC is the encoder (YouTube and the house projector share that canvas). Mixer audio reaches OBS over Stream to USB RTMP; Metagrafo captures **`HDMI (Elgato 4K S)`**. Silero VAD chunks speech; faster-whisper produces English; a FastAPI WebSocket overlay shows **two completed lines**. Hardware path: `docs/aten-obs.md`. GPU/OS profiles: `docs/hardware-profiles.md`.
 
 ## Product locks (v1)
 
@@ -11,9 +11,9 @@ OBS on the broadcast PC is the encoder (YouTube and the house projector share th
 | Encoder | OBS encodes the destination. UC9020 RTMP alone has **no captions**. |
 | Audio | PGM mix. No speech-only bus. |
 | Worship | Captions **default ON**. Volunteer OFF for songs. Mute **stops inference**, not only the OBS source. |
-| Presentation | Two-line, utterance-final. **Not karaoke.** ~2–3 s after they stop is OK. |
+| Presentation | Two-line. Whisper is utterance-final (**not karaoke**). Gemini live, when opted in, grows the bottom line while the pastor is still talking, then moves that line up. ~2–3 s after they stop is OK for Whisper. |
 | Modes | `ko_to_en` (sermon) and `en_to_en` (English guest transcribe). **`en_to_ko` / NLLB deferred.** |
-| Code-switch | Stay on `ko_to_en`. `church_vocabulary.txt` → Whisper `initial_prompt`. No verse-by-verse mode flips. |
+| Code-switch | Stay on `ko_to_en`. No verse-by-verse mode flips. |
 | Mute in-flight | Capture drops frames. Translate empties the queue. In-flight Whisper may finish; **discard if captions are off**. |
 | Model | Env `WHISPER_MODEL` (default `large-v3`). Fallback `medium` + **restart**. No live swap. |
 
@@ -47,7 +47,6 @@ metagrafo/
   core/
     event_bus.py
     settings.py
-  church_vocabulary.txt
   features/
     capture_audio/          # named input → AudioChunkEvent
     translate_speech/       # AudioChunkEvent → SubtitleEvent (no HTTP)
@@ -65,11 +64,11 @@ Each feature exposes `register(...)`. FastAPI routes live in the slice that owns
 
 ### `capture_audio`
 
-Opens the **named** recording device (Windows default `VB-Audio Virtual Cable`). Among name matches, prefer a **2-channel** endpoint (WASAPI over 16-channel MME). Overridable by name/index (`AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX`).
+Opens the **named** recording device (Windows default `HDMI (Elgato 4K S)`). Among name matches, prefer a **2-channel** endpoint (WASAPI over 16-channel MME). Overridable by name/index (`AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX`).
 
 - Windows: shared WASAPI (not exclusive) so OBS can use the same device.
 - Downmix stereo → mono, resample to 16 kHz, 512-sample frames.
-- Silero VAD (ONNX): ~200 ms pre-roll, ~500 ms trailing silence, ~12 s cap, drop &lt;~250 ms.
+- Silero VAD (ONNX): ~200 ms pre-roll, ~500 ms trailing silence, ~12 s cap, drop &lt;~250 ms. Pauses per caption default **1** (one line per pause). **2** waits for a second pause, then prints each phrase on its own line. The 12 s cap still cuts.
 - Subscribe `CaptionsStateEvent`: if inactive, **drop frames, no VAD**.
 - PCM on the bus is `bytes` (s16le).
 - No FastAPI routes.
@@ -84,10 +83,12 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 | `en_to_en` | `en` | `transcribe` | English (unchanged) |
 
 - `large-v3` (`turbo` ignores `task="translate"`). Inference in `asyncio.to_thread`.
-- `church_vocabulary.txt` read at **startup** → `initial_prompt`.
+- `HERMENEIA_URL` sends each VAD chunk to that box (`/v1/translations`) instead of local Whisper. `HERMENEIA_TOKEN` is the bearer token. An unset URL keeps local Whisper. Gemini live does not call Hermeneia.
+- `condition_on_previous_text` defaults **on** (the caption just written is passed into the next phrase). **Off** translates each phrase alone. Live from `/control`. A file run turns it off with `--no-condition-on-previous-text`.
 - Device profile: see `docs/hardware-profiles.md`. Env always wins.
 - Queue max 4, **drop oldest**. Empty output is not published.
 - Captions off: **empty the queue**. When Whisper returns, if inactive, **do not publish**.
+- `CAPTION_ENGINE=gemini_live` plus `GEMINI_API_KEY` hears program audio as it arrives (`ProgramAudioEvent`, about 100 ms) instead of waiting for a VAD chunk. `gemini-3.5-live-translate-preview` translates Korean speech to English on one socket, the same four settings as the working mic test: no context-window compression and no session resumption. The bottom line grows (`SubtitleEvent.provisional`); a finished sentence, a model turn, or the end of a socket commits it. Captions off clears the open line and the overlay. English guest mode reconnects with echo so English speech is captioned. The microphone match prefers the WASAPI device, because the DirectSound copy of the same name does not wait for the clock. Missing key keeps Whisper. The older `Captioner` engine named `gemini` is not this path.
 
 ### `broadcast_subtitles`
 
@@ -95,7 +96,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-Two-line overlay: upper = previous, lower = current, left-aligned. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries. New `text` shifts current up. Captions OFF **clears both lines**. Fade after a quiet interval.
+Overlay lines: default **2** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries. New `text` shifts older lines up. Captions OFF **clears the lines**. Fade after a quiet interval.
 
 ```json
 {
@@ -114,12 +115,14 @@ Two-line overlay: upper = previous, lower = current, left-aligned. Designed for 
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**
-- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /overlay-style`
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**
+- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style`
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
 - `VadSilenceMsEvent` — live; capture updates the running chunker (100–3000 ms)
-- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20)
+- `VadPausesEvent` — live; 1 cuts on each pause. 2 waits for a second pause, then one line per phrase
+- `ConditionOnPreviousTextEvent` — live; feed the caption just written into the next phrase
+- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6). `line_count` is visible text rows, default 2. A wrapped sentence keeps the newest rows and the oldest row leaves.
 
 Open `/control` in a normal browser, **not** as an OBS source.
 
@@ -131,7 +134,7 @@ Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
 - `SubtitleEvent` — `translate_speech`
-- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `OverlayStyleEvent` — `operator_control`
+- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent` — `operator_control`
 
 ## Process model
 
@@ -150,7 +153,7 @@ Startup: operator_control + translate + broadcast, then capture. Shutdown: stop 
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `VB-Audio Virtual Cable`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
 
 ## Operator path
 
@@ -159,8 +162,7 @@ Notable: `AUDIO_DEVICE_NAME` (default `VB-Audio Virtual Cable`), `AUDIO_DEVICE_I
 3. `/control` in a booth browser.
 4. Pastor at pulpit → Captions ON. Worship → Captions OFF.
 5. English guest: set **en_to_en** before service.
-6. Saturday: edit `church_vocabulary.txt`; restart Sunday morning.
-7. Rehearsal hitch: `WHISPER_MODEL=medium`, restart. Never hot-swap on the GPU.
+6. Rehearsal hitch: `WHISPER_MODEL=medium`, restart. Never hot-swap on the GPU.
 
 ## Out of scope (v1)
 

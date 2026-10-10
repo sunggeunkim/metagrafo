@@ -13,11 +13,13 @@ def enumerate_input_devices(pa) -> list[InputDevice]:
     devices: list[InputDevice] = []
     for index in range(pa.get_device_count()):
         info = pa.get_device_info_by_index(index)
+        host = pa.get_host_api_info_by_index(int(info.get("hostApi", 0)))
         devices.append(
             InputDevice(
                 index=index,
                 name=str(info.get("name", "")),
                 max_input_channels=int(info.get("maxInputChannels", 0)),
+                host_api=str(host.get("name", "")),
             )
         )
     return devices

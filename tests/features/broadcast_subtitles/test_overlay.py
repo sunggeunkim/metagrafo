@@ -1,5 +1,9 @@
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketState
 
+from core.event_bus import EventBus
+from features.broadcast_subtitles.hub import SubtitleHub
+from features.translate_speech.events import SubtitleEvent
 from main import create_app
 
 
@@ -15,14 +19,62 @@ def test_overlay_is_two_line_browser_source() -> None:
         assert page.status_code == 200
         html = page.text
         assert "background: transparent" in html
-        assert 'id="previous"' in html
-        assert 'id="current"' in html
+        assert "background: rgba(0, 0, 0, 0.55)" in html
+        assert 'id="lines"' in html
+        assert "line_count" in html
+        assert 'id="previous"' not in html
         assert "karaoke" not in html.lower()
         assert "--box-w" in html
         assert "--box-h" in html
         assert "max-height: var(--box-h)" in html
         assert "width: 70%" not in html
         assert "no-store" in page.headers.get("cache-control", "")
+
+
+class _Socket:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+        self.client_state = WebSocketState.CONNECTED
+
+    async def accept(self) -> None:
+        return None
+
+    async def send_json(self, data: dict) -> None:
+        self.sent.append(data)
+
+
+async def test_hub_marks_a_growing_line_provisional() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(
+        SubtitleEvent(
+            chunk_id="c1",
+            text="Today's topical",
+            source_language="ko",
+            target_language="en",
+            mode="ko_to_en",
+            created_at=1.0,
+            duration_s=0.0,
+            provisional=True,
+        )
+    )
+    assert socket.sent[-1]["type"] == "subtitle"
+    assert socket.sent[-1]["text"] == "Today's topical"
+    assert socket.sent[-1]["provisional"] is True
+
+
+def test_overlay_grows_the_open_line_in_place() -> None:
+    with TestClient(create_app()) as client:
+        html = client.get("/overlay").text
+    assert "showDraft" in html
+    assert "draftText" in html
+    assert "measureRows" in html
+    assert "slice(-lineCount)" in html
+    assert "msg.provisional" in html
+    assert "max-height: var(--box-h)" in html
+    assert "calc(var(--line-count)" not in html
 
 
 def test_inject_broadcasts_subtitle_json_on_websocket() -> None:
@@ -71,6 +123,7 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
             assert hello["inset_horizontal_pct"] == 1.0
             assert hello["box_width_pct"] == 100.0
             assert hello["box_height_pct"] == 30.0
+            assert hello["line_count"] == 2
             response = client.put(
                 "/overlay-style",
                 json={
@@ -92,6 +145,7 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
         "inset_horizontal_pct": 1.5,
         "box_width_pct": 100.0,
         "box_height_pct": 20.0,
+        "line_count": 2,
     }
 
 

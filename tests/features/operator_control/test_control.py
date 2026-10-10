@@ -14,6 +14,9 @@ def test_captions_default_on_and_sermon_mode() -> None:
         assert body["captions_active"] is True
         assert body["mode"] == "ko_to_en"
         assert body["vad_min_silence_ms"] == 500
+        assert body["vad_pauses"] == 1
+        assert body["condition_on_previous_text"] is True
+        assert body["line_count"] == 2
         assert body["position"] == "top_left"
         assert body["font_size_vw"] == 2.5
         assert body["inset_vertical_pct"] == 1.0
@@ -78,6 +81,9 @@ def test_control_page_has_booth_buttons() -> None:
         assert "Horizontal inset (%)" in html
         assert "Box width (%)" in html
         assert "Box height (%)" in html
+        assert "Pauses per caption" in html
+        assert "Previous text" in html
+        assert "Lines on screen" in html
         assert "Reset Transform" in html
 
 
@@ -87,4 +93,62 @@ def test_vad_silence_ms_put_and_reject_out_of_range() -> None:
         assert ok.status_code == 200
         assert ok.json()["vad_min_silence_ms"] == 250
         bad = client.put("/vad-silence", json={"vad_min_silence_ms": 50})
+        assert bad.status_code == 422
+
+
+def test_vad_pauses_put_and_reject_out_of_range() -> None:
+    with TestClient(create_app()) as client:
+        ok = client.put("/vad-pauses", json={"vad_pauses": 2})
+        assert ok.status_code == 200
+        assert ok.json()["vad_pauses"] == 2
+        assert client.get("/mode").json()["vad_pauses"] == 2
+        bad = client.put("/vad-pauses", json={"vad_pauses": 3})
+        assert bad.status_code == 422
+
+
+def test_condition_on_previous_text_put() -> None:
+    with TestClient(create_app()) as client:
+        on = client.put(
+            "/condition-on-previous-text",
+            json={"condition_on_previous_text": True},
+        )
+        assert on.status_code == 200
+        assert on.json()["condition_on_previous_text"] is True
+        assert client.get("/mode").json()["condition_on_previous_text"] is True
+        off = client.put(
+            "/condition-on-previous-text",
+            json={"condition_on_previous_text": False},
+        )
+        assert off.status_code == 200
+        assert off.json()["condition_on_previous_text"] is False
+
+
+def test_line_count_put_and_reject_out_of_range() -> None:
+    with TestClient(create_app()) as client:
+        ok = client.put(
+            "/overlay-style",
+            json={
+                "position": "top_left",
+                "font_size_vw": 2.5,
+                "inset_vertical_pct": 1.0,
+                "inset_horizontal_pct": 1.0,
+                "box_width_pct": 100.0,
+                "box_height_pct": 30.0,
+                "line_count": 4,
+            },
+        )
+        assert ok.status_code == 200
+        assert ok.json()["line_count"] == 4
+        bad = client.put(
+            "/overlay-style",
+            json={
+                "position": "top_left",
+                "font_size_vw": 2.5,
+                "inset_vertical_pct": 1.0,
+                "inset_horizontal_pct": 1.0,
+                "box_width_pct": 100.0,
+                "box_height_pct": 30.0,
+                "line_count": 8,
+            },
+        )
         assert bad.status_code == 422

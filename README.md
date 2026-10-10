@@ -16,14 +16,14 @@ If the UC9020 RTMPs to YouTube by itself, the audience gets **no captions**. The
 2. Clone this repo and `cd` into it.
 3. `uv sync`
 4. Install and **run** ATEN Stream to USB Capture. UC9020 and this PC on a private Ethernet LAN (see `docs/aten-obs.md`).
-5. Install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/). OBS monitors mixer audio into **CABLE Input**; Metagrafo opens **CABLE Output** (`AUDIO_DEVICE_NAME` default `VB-Audio Virtual Cable`).
+5. Connect the Elgato. Metagrafo opens **`HDMI (Elgato 4K S)`** (`AUDIO_DEVICE_NAME` default). To capture the VB-Audio cable instead, install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) and set `AUDIO_DEVICE_NAME=VB-Audio Virtual Cable`.
 6. Install OBS Studio.
 
 ```powershell
 uv run python -m main --list-devices
 ```
 
-Confirm `CABLE Output (VB-Audio Virtual Cable)` is listed.
+Confirm `HDMI (Elgato 4K S)` is listed.
 
 ```powershell
 uv run python -m main
@@ -65,7 +65,7 @@ Not the Sunday capture path. **ffmpeg must be on PATH.** First run may still dow
 uv run python -m main --youtube "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-Saves video + wav (kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current directory, and writes `{VIDEO_ID}.en.txt` there (English lines, one per VAD cut). Optional: `--out captions.txt`, `--file sermon.wav` (wav in only, skip download), `--vad-silence-ms 250`.
+Saves video + wav (kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current directory, and writes `{VIDEO_ID}.en.txt` there (English lines, one per VAD cut). Optional: `--out captions.txt`, `--file sermon.wav` (wav in only, skip download), `--vad-silence-ms 250`, `--pauses 2`, `--condition-on-previous-text`, `--start 1`, `--end 3`. `--start` and `--end` are minutes into the wav. Omit them to translate the whole file (`--start` defaults to 0, `--end` to the end). `--pauses` is 1 or 2 (default 1). Previous text is on unless you pass `--no-condition-on-previous-text`. `--condition-on-previous-text` forces it on. A YouTube URL still downloads the full video; the flags only limit translation.
 
 ## OBS scene
 
@@ -77,14 +77,14 @@ ATEN Stream to USB Capture **is** the RTMP ingest (its **Play** button starts a 
    - Width **1920**, height **1080**. Then **Transform → Reset Transform** so letters are not stretched.
    - Do not drag the red handles or change source Height to crop captions. Use **Box height (%)** on `/control`.
    - Shutdown source when not visible
-   - Transparent page; two completed caption lines in a `/control`-sized box. Not karaoke.
+   - Transparent page. **Lines on screen** (default **2**, range 1–6) is how many text rows stay visible. A longer sentence wraps, and the oldest row leaves when the next one starts. Not karaoke.
    - After overlay HTML changes, right-click the source → **Refresh**.
 4. Keep the Browser Source **above** the video.
 5. Fullscreen projector / HDMI to the house = this program.
 
 Booth UI is **not** an OBS source. Open `http://127.0.0.1:8000/control` in a normal browser on the booth PC.
 
-Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before cutting a caption (100–3000, default 500); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8, default 2.5); **box width/height (%)** (10–100 / 5–100, default 100 × 30); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart.
+Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before a pause counts (100–3000, default 500); **pauses per caption** (1 or 2, default 1; 2 waits for a second pause, then one line per phrase); **previous text** (on by default; gives Whisper the caption it just wrote; turn off on `/control`); **lines on screen** (1–6, default 2; a longer sentence scrolls the oldest row off); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8, default 2.5); **box width/height (%)** (10–100 / 5–100, default 100 × 30); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart. A file run can set pauses with `--pauses 2`. Previous text is already on; turn it off with `--no-condition-on-previous-text`.
 
 ## Sunday morning (`/control`)
 
@@ -97,13 +97,9 @@ Captions **default ON** when the process starts. Turn **OFF** during worship so 
 | Songs again | **Captions OFF**. Stops **new** capture and queued Whisper jobs. Not the same as hiding the OBS source. |
 | English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. No Korean captions in v1. |
 
-Do **not** flip language verse-by-verse. `ko_to_en` plus `church_vocabulary.txt` handles English names and book titles inside a Korean sermon.
+Do **not** flip language verse-by-verse. Stay on `ko_to_en` for a Korean sermon.
 
 Hiding the OBS Browser Source does **not** rest the GPU. Use **Captions OFF** on `/control`. That drains the queue and drops frames so worship is not transcribed. An utterance **already on the GPU** can still finish (Whisper cannot be cancelled mid-chunk); that result is **discarded** and will not appear on the overlay. GPU load drops after that current chunk, not instantly.
-
-## Saturday: vocabulary file
-
-Edit `church_vocabulary.txt` in Notepad (pastor name, series title, extra book names). The file is read at **startup** as Whisper’s `initial_prompt`. Restart Metagrafo Sunday morning for changes to apply.
 
 ## Whisper model (NVIDIA)
 
@@ -129,6 +125,8 @@ uv run python -m main
 ```
 
 `GET /health` reports `model`, `device`, `compute_type`, `vram_gb`, captions on/off, and mode.
+
+To run the model on the Hermeneia GPU box instead of this PC, set `HERMENEIA_URL` (for example `https://hermeneia.stugen.net`) and `HERMENEIA_TOKEN`. `HERMENEIA_MODEL` defaults to `whisper` and stays fixed for the process. Leave the URL unset to keep local Whisper.
 
 ## Mac
 

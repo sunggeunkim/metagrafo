@@ -27,13 +27,9 @@ def test_speech_then_silence_emits_one_utterance() -> None:
     chunker = _chunker()
     emitted: list[bytes] = []
     for _ in range(16):
-        out = chunker.push(SPEECH)
-        if out:
-            emitted.append(out)
+        emitted.extend(chunker.push(SPEECH))
     for _ in range(30):
-        out = chunker.push(SILENCE)
-        if out:
-            emitted.append(out)
+        emitted.extend(chunker.push(SILENCE))
     assert len(emitted) == 1
     duration = len(emitted[0]) / 2 / 16000
     assert duration > 0.25
@@ -43,13 +39,9 @@ def test_short_noise_is_dropped() -> None:
     chunker = _chunker()
     emitted: list[bytes] = []
     for _ in range(4):
-        out = chunker.push(SPEECH)
-        if out:
-            emitted.append(out)
+        emitted.extend(chunker.push(SPEECH))
     for _ in range(30):
-        out = chunker.push(SILENCE)
-        if out:
-            emitted.append(out)
+        emitted.extend(chunker.push(SILENCE))
     assert emitted == []
 
 
@@ -64,16 +56,46 @@ def test_set_min_silence_ms_changes_cut_point() -> None:
         is_speech=_energy_speech,
     )
     for _ in range(16):
-        assert chunker.push(SPEECH) is None
+        assert chunker.push(SPEECH) == []
     for _ in range(10):
-        assert chunker.push(SILENCE) is None
+        assert chunker.push(SILENCE) == []
     chunker.set_min_silence_ms(250)
-    emitted = None
+    emitted: list[bytes] = []
     for _ in range(10):
         emitted = chunker.push(SILENCE)
         if emitted:
             break
-    assert emitted is not None
+    assert len(emitted) == 1
+
+
+def test_two_pauses_emit_on_the_second_pause() -> None:
+    chunker = _chunker()
+    chunker.set_pauses_to_cut(2)
+    emitted: list[bytes] = []
+
+    def push_many(frame: bytes, count: int) -> None:
+        for _ in range(count):
+            emitted.extend(chunker.push(frame))
+
+    push_many(SPEECH, 16)
+    push_many(SILENCE, 30)
+    assert emitted == []
+    push_many(SPEECH, 16)
+    push_many(SILENCE, 30)
+    assert len(emitted) == 2
+    assert all(len(pcm) / 2 / 16000 > 0.25 for pcm in emitted)
+
+
+def test_flush_emits_a_phrase_held_for_a_second_pause() -> None:
+    chunker = _chunker()
+    chunker.set_pauses_to_cut(2)
+    for _ in range(16):
+        assert chunker.push(SPEECH) == []
+    for _ in range(30):
+        assert chunker.push(SILENCE) == []
+    held = chunker.flush()
+    assert len(held) == 1
+    assert len(held[0]) / 2 / 16000 > 0.25
 
 
 def test_max_utterance_emits_without_waiting_for_silence() -> None:
@@ -86,10 +108,10 @@ def test_max_utterance_emits_without_waiting_for_silence() -> None:
         min_speech_ms=250,
         is_speech=_energy_speech,
     )
-    emitted = None
+    emitted: list[bytes] = []
     for _ in range(80):
         emitted = chunker.push(SPEECH)
         if emitted:
             break
-    assert emitted is not None
-    assert len(emitted) / 2 / 16000 >= 0.9
+    assert len(emitted) == 1
+    assert len(emitted[0]) / 2 / 16000 >= 0.9

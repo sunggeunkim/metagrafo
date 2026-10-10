@@ -41,6 +41,25 @@ def test_name_match_prefers_two_channel_cable() -> None:
     assert chosen.max_input_channels == 2
 
 
+def test_name_match_prefers_wasapi_over_directsound() -> None:
+    devices = [
+        InputDevice(
+            index=9,
+            name="Microphone Array (Intel Smart Sound)",
+            max_input_channels=2,
+            host_api="Windows DirectSound",
+        ),
+        InputDevice(
+            index=21,
+            name="Microphone Array (Intel Smart Sound)",
+            max_input_channels=2,
+            host_api="Windows WASAPI",
+        ),
+    ]
+    chosen = resolve_input_device(devices, name="Smart Sound", index=None)
+    assert chosen.index == 21
+
+
 def test_index_still_selects_multichannel_cable() -> None:
     chosen = resolve_input_device(
         CABLE_DEVICES, name="VB-Audio Virtual Cable", index=2
@@ -49,11 +68,11 @@ def test_index_still_selects_multichannel_cable() -> None:
     assert chosen.max_input_channels == 16
 
 
-def test_default_settings_audio_device_is_vb_cable() -> None:
+def test_default_settings_audio_device_is_elgato_hdmi() -> None:
     from core.settings import Settings
 
     settings = Settings()
-    assert settings.audio_device_name == "VB-Audio Virtual Cable"
+    assert settings.audio_device_name == "HDMI (Elgato 4K S)"
     assert settings.audio_device_index is None
 
 

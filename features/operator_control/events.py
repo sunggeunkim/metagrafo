@@ -31,6 +31,16 @@ class VadSilenceMsEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class VadPausesEvent:
+    vad_pauses: int
+
+
+@dataclass(frozen=True, slots=True)
+class ConditionOnPreviousTextEvent:
+    condition_on_previous_text: bool
+
+
+@dataclass(frozen=True, slots=True)
 class OverlayStyleEvent:
     position: str
     font_size_vw: float
@@ -38,6 +48,7 @@ class OverlayStyleEvent:
     inset_horizontal_pct: float
     box_width_pct: float
     box_height_pct: float
+    line_count: int
 
 
 def languages_for(mode: TranslateMode) -> tuple[str, str]:
