@@ -19,6 +19,7 @@ def test_overlay_is_two_line_browser_source() -> None:
         assert page.status_code == 200
         html = page.text
         assert "background: transparent" in html
+        assert "background: rgba(0, 0, 0, 0.55)" in html
         assert 'id="lines"' in html
         assert "line_count" in html
         assert 'id="previous"' not in html
@@ -68,7 +69,9 @@ def test_overlay_grows_the_open_line_in_place() -> None:
     with TestClient(create_app()) as client:
         html = client.get("/overlay").text
     assert "showDraft" in html
-    assert "draftOpen" in html
+    assert "draftText" in html
+    assert "measureRows" in html
+    assert "slice(-lineCount)" in html
     assert "msg.provisional" in html
     assert "max-height: var(--box-h)" in html
     assert "calc(var(--line-count)" not in html

@@ -122,7 +122,7 @@ Owns the booth UI. Publishes only.
 - `VadSilenceMsEvent` — live; capture updates the running chunker (100–3000 ms)
 - `VadPausesEvent` — live; 1 cuts on each pause. 2 waits for a second pause, then one line per phrase
 - `ConditionOnPreviousTextEvent` — live; feed the caption just written into the next phrase
-- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6)
+- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6). `line_count` is visible text rows, default 2. A wrapped sentence keeps the newest rows and the oldest row leaves.
 
 Open `/control` in a normal browser, **not** as an OBS source.
 
