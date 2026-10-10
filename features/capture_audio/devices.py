@@ -39,7 +39,7 @@ def resolve_input_device(
             available,
         )
 
-    needle = (name or "VB-Audio Virtual Cable").casefold()
+    needle = (name or "HDMI (Elgato 4K S)").casefold()
     matches = [d for d in inputs if needle in d.name.casefold()]
     if not matches:
         raise DeviceNotFoundError(

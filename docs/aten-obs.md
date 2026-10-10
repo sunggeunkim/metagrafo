@@ -2,7 +2,7 @@
 
 How Metagrafo sits next to an **ATEN UC9020 StreamLIVE HD** (often called US9020) and **OBS Studio**.
 
-The UC9020 is a hardware AV mixer. It is **not** a USB microphone. On **Windows**, **ATEN Stream to USB** pulls the mixer over LAN. Video (and embedded HDMI audio) usually arrive in OBS as an RTMP **Media Source**. Stream to USB’s virtual mic (`ATEN_Stream_to_USB`) often never appears; Metagrafo’s default capture is **`VB-Audio Virtual Cable`** (`CABLE Output`) after OBS monitors **Media** into **CABLE Input**.
+The UC9020 is a hardware AV mixer. It is **not** a USB microphone. On **Windows**, **ATEN Stream to USB** pulls the mixer over LAN. Video (and embedded HDMI audio) usually arrive in OBS as an RTMP **Media Source**. Stream to USB’s virtual mic (`ATEN_Stream_to_USB`) often never appears. Metagrafo’s default capture is **`HDMI (Elgato 4K S)`**. The VB-Cable path below is the override: OBS monitors **Media** into **CABLE Input**, and Metagrafo opens **CABLE Output** when `AUDIO_DEVICE_NAME` is `VB-Audio Virtual Cable`.
 
 That software is **Windows-only**. On a Mac, set `AUDIO_DEVICE_NAME` to whatever actually carries program audio. See `docs/hardware-profiles.md`.
 
@@ -39,7 +39,7 @@ Captions reach YouTube and the sanctuary **only if OBS is encoding**. If the UC9
 
 ## What Metagrafo opens
 
-Default name: **`VB-Audio Virtual Cable`**. Name match prefers a **2-channel** device so PortAudio does not open the 16-channel MME cable. Override with `AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX` (for example `Microphone Array` or `ATEN_Stream_to_USB`).
+Default name: **`HDMI (Elgato 4K S)`**. Name match prefers a **2-channel** WASAPI endpoint. Override with `AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX` (for example `VB-Audio Virtual Cable`, `Microphone Array`, or `ATEN_Stream_to_USB`). For the cable, the match prefers a **2-channel** device so PortAudio does not open the 16-channel MME cable.
 
 The virtual device is usually **48 kHz stereo**. VAD and Whisper want **16 kHz mono**:
 
