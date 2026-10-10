@@ -43,29 +43,30 @@
       display: flex;
       flex-direction: column;
       justify-content: flex-end;
+      align-items: flex-start;
       max-height: var(--box-h);
       overflow: hidden;
+    }
+    #stage.pos-top_center #lines,
+    #stage.pos-bottom_center #lines {
+      align-items: center;
     }
 
     .line {
       color: #fff;
       font-size: inherit;
       font-weight: 700;
+      background: rgba(0, 0, 0, 0.55);
       text-shadow:
         0 0 6px #000, 0 2px 8px #000, 2px 2px 0 #000,
         -2px 2px 0 #000, 2px -2px 0 #000, -2px -2px 0 #000;
       line-height: 1.35em;
-      margin: 0;
-      padding: 0;
+      margin: 0.08em 0;
+      padding: 0.06em 0.45em;
+      width: fit-content;
+      max-width: 100%;
       overflow-wrap: normal;
       word-break: normal;
-      /* Fade-up so a new line does not snap in */
-      animation: fadeUp 0.3s ease-out forwards;
-    }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
     }
   </style>
 </head>
@@ -80,44 +81,90 @@
     let hideTimer = null;
     let fontSizeVw = 2.5;
     let lineCount = 2;
-    let draftOpen = false;
+    let draftText = null;
+    let committed = [];
+    let renderRetry = false;
 
     function setLineCount(count) {
       lineCount = Math.round(count);
-      trimLines();
+      render();
     }
 
-    function trimLines() {
-      while (linesEl.children.length > lineCount) {
-        linesEl.firstElementChild.remove();
+    function measureRows(text) {
+      const width = linesEl.clientWidth || stage.clientWidth;
+      if (!text || width < 8) {
+        return text ? [text] : [];
+      }
+      const probe = document.createElement("p");
+      probe.className = "line";
+      probe.style.position = "absolute";
+      probe.style.visibility = "hidden";
+      probe.style.left = "0";
+      probe.style.top = "0";
+      probe.style.width = width + "px";
+      probe.style.maxWidth = width + "px";
+      probe.textContent = text;
+      stage.appendChild(probe);
+      const node = probe.firstChild;
+      const range = document.createRange();
+      const rows = [];
+      let start = 0;
+      let lineTop = null;
+      for (let i = 0; i < text.length; i++) {
+        range.setStart(node, i);
+        range.setEnd(node, i + 1);
+        const top = range.getBoundingClientRect().top;
+        if (lineTop === null) {
+          lineTop = top;
+        } else if (top > lineTop + 1) {
+          rows.push(text.slice(start, i));
+          start = i;
+          lineTop = top;
+        }
+      }
+      rows.push(text.slice(start));
+      probe.remove();
+      return rows.map((row) => row.trim()).filter(Boolean);
+    }
+
+    function render() {
+      const width = linesEl.clientWidth || stage.clientWidth;
+      if (width < 8) {
+        if (!renderRetry) {
+          renderRetry = true;
+          requestAnimationFrame(() => {
+            renderRetry = false;
+            render();
+          });
+        }
+        return;
+      }
+      const blocks = draftText !== null ? committed.concat(draftText) : committed;
+      const rows = [];
+      for (const block of blocks) {
+        rows.push(...measureRows(block));
+      }
+      while (committed.length > 30) {
+        committed.shift();
+      }
+      linesEl.replaceChildren();
+      for (const row of rows.slice(-lineCount)) {
+        const p = document.createElement("p");
+        p.className = "line";
+        p.textContent = row;
+        linesEl.appendChild(p);
       }
     }
 
     function showDraft(text) {
-      let draft = linesEl.querySelector(".line.draft");
-      if (!draft) {
-        draft = document.createElement("p");
-        draft.className = "line draft";
-        linesEl.appendChild(draft);
-      }
-      draft.textContent = text;
-      draftOpen = true;
-      trimLines();
+      draftText = text;
+      render();
     }
 
     function commitLine(text) {
-      const draft = draftOpen ? linesEl.querySelector(".line.draft") : null;
-      if (draft) {
-        draft.textContent = text;
-        draft.classList.remove("draft");
-      } else {
-        const p = document.createElement("p");
-        p.className = "line";
-        p.textContent = text;
-        linesEl.appendChild(p);
-      }
-      draftOpen = false;
-      trimLines();
+      committed.push(text);
+      draftText = null;
+      render();
     }
 
     setLineCount(2);
@@ -132,7 +179,7 @@
         stage.style.fontSize = fontSizeVw + "vw";
       }
       if (typeof msg.line_count === "number" && msg.line_count >= 1) {
-        setLineCount(msg.line_count);
+        lineCount = Math.round(msg.line_count);
       }
       if (typeof msg.inset_vertical_pct === "number") {
         stage.style.setProperty("--inset-v", msg.inset_vertical_pct + "%");
@@ -146,6 +193,7 @@
       if (typeof msg.box_height_pct === "number") {
         stage.style.setProperty("--box-h", msg.box_height_pct + "%");
       }
+      render();
     }
 
     function show() {
@@ -155,8 +203,9 @@
     }
 
     function clearLines() {
+      committed = [];
+      draftText = null;
       linesEl.replaceChildren();
-      draftOpen = false;
       stage.classList.add("hidden");
     }
 
