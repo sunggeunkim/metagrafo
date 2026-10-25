@@ -12,7 +12,13 @@ from fastapi import FastAPI
 
 from core.event_bus import EventBus
 from core.settings import Settings
-from features import broadcast_subtitles, capture_audio, operator_control, translate_speech
+from features import (
+    broadcast_subtitles,
+    capture_audio,
+    operator_control,
+    translate_speech,
+    youtube_captions,
+)
 from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.youtube import download_media, make_job_dir, youtube_video_id
 from features.translate_speech.file_run import run_wav
@@ -32,13 +38,16 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         translator = app.state.translator
+        youtube = app.state.youtube_captions
         await translator.start()
+        await youtube.start()
         if capture is not None:
             await capture.start()
         yield
         if capture is not None:
             await capture.stop()
         await translator.stop()
+        await youtube.stop()
 
     app = FastAPI(title="metagrafo", lifespan=lifespan)
     app.state.bus = bus
@@ -48,6 +57,7 @@ def create_app(
         app, bus, settings, load_whisper=load_whisper
     )
     broadcast_subtitles.register(app, bus, settings)
+    app.state.youtube_captions = youtube_captions.register(app, bus, settings)
     return app
 
 

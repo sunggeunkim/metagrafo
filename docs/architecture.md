@@ -33,6 +33,7 @@ Allowed shared code:
 
 ```
 PGM audio → capture_audio --AudioChunkEvent--> translate_speech --SubtitleEvent--> broadcast_subtitles → OBS
+                                                                              └-----> youtube_captions → YouTube CC (optional)
 
 operator_control --CaptionsStateEvent / ModeChangedEvent-->  (the three slices above subscribe)
 ```
@@ -52,6 +53,7 @@ metagrafo/
     translate_speech/       # AudioChunkEvent → SubtitleEvent (no HTTP)
     broadcast_subtitles/    # /overlay, /ws, /health
     operator_control/       # /control, /mode, CaptionsStateEvent
+    youtube_captions/       # SubtitleEvent → YouTube caption ingestion URL, /youtube-captions
   docs/
     architecture.md
     aten-obs.md
@@ -111,6 +113,17 @@ Overlay lines: default **2** (newest at the bottom, older lines above). `/contro
 }
 ```
 
+### `youtube_captions`
+
+Optional. `YOUTUBE_CAPTION_URL` is the **Captions Ingestion URL** from YouTube Studio (**POST captions to URL**). Unset sends nothing.
+
+- Subscribes to `SubtitleEvent`. Skips `provisional` lines and blank text.
+- One line per POST to `<url>&seq=N`, `Content-Type: text/plain`, body `YYYY-MM-DDTHH:MM:SS.mmm\n<text>\n` in UTC. The stamp is `created_at − duration_s` (when the speech began).
+- One sender task posts in order, so `seq` only rises. `seq` advances on a 2xx; a refused line is dropped and its `seq` is reused. No retries.
+- Queue max 16, **drop oldest**.
+- YouTube refuses lines until the stream is live: warn once, log once when it recovers. The URL is never logged (it carries the caption key).
+- `GET /youtube-captions` — `enabled`, `sent`, `failed`, `last_status`.
+
 ### `operator_control`
 
 Owns the booth UI. Publishes only.
@@ -133,7 +146,7 @@ In-process asyncio pub/sub. Dispatch by exact type. `publish` isolates handler e
 Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
-- `SubtitleEvent` — `translate_speech`
+- `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`)
 - `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent` — `operator_control`
 
 ## Process model
@@ -147,13 +160,13 @@ One process, one asyncio loop, uvicorn.
 | faster-whisper | `asyncio.to_thread` |
 | WebSocket fan-out | asyncio |
 
-Startup: operator_control + translate + broadcast, then capture. Shutdown: stop capture first.
+Startup: operator_control + translate + broadcast + youtube_captions, then capture. Shutdown: stop capture first.
 
 ## Settings
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port, `YOUTUBE_CAPTION_URL` (optional). Captions active is **not** persisted; always starts on.
 
 ## Operator path
 
