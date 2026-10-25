@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -24,6 +25,8 @@ def create_app(
     *,
     start_capture: bool = False,
     load_whisper: bool = False,
+    env_file: Path | None = None,
+    gemini_connect_factory: Callable[[str], object] | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     bus = bus or EventBus()
@@ -43,9 +46,13 @@ def create_app(
     app = FastAPI(title="metagrafo", lifespan=lifespan)
     app.state.bus = bus
     app.state.settings = settings
-    operator_control.register(app, bus, settings)
+    operator_control.register(app, bus, settings, env_file=env_file)
     app.state.translator = translate_speech.register(
-        app, bus, settings, load_whisper=load_whisper
+        app,
+        bus,
+        settings,
+        load_whisper=load_whisper,
+        gemini_connect_factory=gemini_connect_factory,
     )
     broadcast_subtitles.register(app, bus, settings)
     return app
@@ -57,10 +64,19 @@ app = create_app()
 def _configure_logging() -> None:
     """Uvicorn's default config has no root handler, so slice INFO is silent."""
     root = logging.getLogger()
+    formatter = logging.Formatter("%(levelname)s:     %(name)s: %(message)s")
     if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
         handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
+        handler.setFormatter(formatter)
         root.addHandler(handler)
+    if sys.platform == "win32":
+        import ctypes
+
+        if not ctypes.windll.kernel32.GetConsoleWindow():
+            if not any(isinstance(h, logging.FileHandler) for h in root.handlers):
+                file_handler = logging.FileHandler("metagrafo.log", encoding="utf-8")
+                file_handler.setFormatter(formatter)
+                root.addHandler(file_handler)
     if root.level == logging.NOTSET or root.level > logging.INFO:
         root.setLevel(logging.INFO)
 
