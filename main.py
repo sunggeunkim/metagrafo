@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -30,6 +31,8 @@ def create_app(
     *,
     start_capture: bool = False,
     load_whisper: bool = False,
+    env_file: Path | None = None,
+    gemini_connect_factory: Callable[[str], object] | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     bus = bus or EventBus()
@@ -52,9 +55,13 @@ def create_app(
     app = FastAPI(title="metagrafo", lifespan=lifespan)
     app.state.bus = bus
     app.state.settings = settings
-    operator_control.register(app, bus, settings)
+    operator_control.register(app, bus, settings, env_file=env_file)
     app.state.translator = translate_speech.register(
-        app, bus, settings, load_whisper=load_whisper
+        app,
+        bus,
+        settings,
+        load_whisper=load_whisper,
+        gemini_connect_factory=gemini_connect_factory,
     )
     broadcast_subtitles.register(app, bus, settings)
     app.state.youtube_captions = youtube_captions.register(app, bus, settings)
@@ -73,6 +80,17 @@ def _configure_logging() -> None:
         root.addHandler(handler)
     if root.level == logging.NOTSET or root.level > logging.INFO:
         root.setLevel(logging.INFO)
+
+
+def _redirect_missing_stdio(log_path: Path) -> None:
+    """pythonw has no stdout/stderr, and uvicorn's log setup calls sys.stdout.isatty()."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    log = open(log_path, "a", encoding="utf-8", buffering=1)
+    if sys.stdout is None:
+        sys.stdout = log
+    if sys.stderr is None:
+        sys.stderr = log
 
 
 def create_production_app() -> FastAPI:
@@ -280,6 +298,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(out)
         return
+    _redirect_missing_stdio(Path("metagrafo.log"))
     import uvicorn
 
     uvicorn.run(create_production_app, factory=True, host="127.0.0.1", port=8000)

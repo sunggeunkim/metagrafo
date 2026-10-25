@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from core.event_bus import EventBus
 from core.settings import Settings
 from features.operator_control.events import (
     CaptionsStateEvent,
+    GeminiKeyChangedEvent,
     ModeChangedEvent,
     OverlayPosition,
     OverlayStyleEvent,
@@ -71,6 +72,10 @@ class OperatorState:
         }
 
 
+class GeminiKeyBody(BaseModel):
+    api_key: str
+
+
 class CaptionsBody(BaseModel):
     is_active: bool
 
@@ -101,12 +106,42 @@ class OverlayStyleBody(BaseModel):
     line_count: int = Field(default=2, ge=1, le=6)
 
 
-def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
+def write_gemini_key(env_file: Path, api_key: str) -> None:
+    existing = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
+    wrote_engine = False
+    wrote_key = False
+    lines: list[str] = []
+    for line in existing:
+        stripped = line.strip()
+        if stripped.startswith("CAPTION_ENGINE="):
+            lines.append("CAPTION_ENGINE=gemini_live")
+            wrote_engine = True
+        elif stripped.startswith("GEMINI_API_KEY="):
+            lines.append(f"GEMINI_API_KEY={api_key}")
+            wrote_key = True
+        else:
+            lines.append(line)
+    if not wrote_engine:
+        lines.append("CAPTION_ENGINE=gemini_live")
+    if not wrote_key:
+        lines.append(f"GEMINI_API_KEY={api_key}")
+    env_file.parent.mkdir(parents=True, exist_ok=True)
+    env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def register(
+    app: FastAPI,
+    bus: EventBus,
+    settings: Settings,
+    *,
+    env_file: Path | None = None,
+) -> OperatorState:
     try:
         initial_mode = TranslateMode(settings.translate_mode)
     except ValueError:
         initial_mode = TranslateMode.KO_TO_EN
     pauses = settings.vad_pauses if settings.vad_pauses in (1, 2) else 1
+    key_file = env_file or Path.cwd() / ".env"
     state = OperatorState(
         initial_mode,
         vad_min_silence_ms=settings.vad_min_silence_ms,
@@ -114,6 +149,11 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
         condition_on_previous_text=settings.condition_on_previous_text,
     )
     app.state.operator = state
+
+    def public_state() -> dict[str, object]:
+        body = state.snapshot()
+        body["gemini_key_set"] = bool(settings.gemini_api_key.strip())
+        return body
 
     @app.get("/control")
     async def control_page() -> object:
@@ -123,7 +163,18 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> OperatorState:
 
     @app.get("/mode")
     async def get_mode() -> dict[str, object]:
-        return state.snapshot()
+        return public_state()
+
+    @app.put("/gemini-key")
+    async def put_gemini_key(body: GeminiKeyBody) -> dict[str, object]:
+        key = body.api_key.strip()
+        if not key or "\n" in body.api_key or "\r" in body.api_key:
+            raise HTTPException(status_code=422, detail="Gemini key is empty")
+        write_gemini_key(key_file, key)
+        settings.gemini_api_key = key
+        settings.caption_engine = "gemini_live"
+        await bus.publish(GeminiKeyChangedEvent())
+        return public_state()
 
     @app.put("/mode")
     async def put_mode(body: ModeBody) -> dict[str, object]:

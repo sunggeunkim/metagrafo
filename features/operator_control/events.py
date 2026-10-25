@@ -41,6 +41,11 @@ class ConditionOnPreviousTextEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class GeminiKeyChangedEvent:
+    """The operator saved a Gemini key. The key itself stays on Settings."""
+
+
+@dataclass(frozen=True, slots=True)
 class OverlayStyleEvent:
     position: str
     font_size_vw: float
