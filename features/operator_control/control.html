@@ -8,6 +8,7 @@
     button { font-size: 1.4rem; padding: 1rem 1.5rem; margin: 0.5rem; min-width: 12rem; }
     label { display: block; margin: 1rem 0 0.3rem; }
     input { font-size: 1.2rem; padding: 0.4rem 0.6rem; width: 8rem; }
+    input.key { width: 28rem; }
     .on { background: #2e7d32; color: #fff; }
     .off { background: #c62828; color: #fff; }
     .mode, .pos { background: #1565c0; color: #fff; }
@@ -66,6 +67,11 @@
   <label for="line-count">Lines on screen</label>
   <input id="line-count" type="number" min="1" max="6" step="1" />
   <button id="style-apply" class="mode">Apply overlay</button>
+  <h2>Gemini key</h2>
+  <p class="hint">Paste the Gemini key you were given, then Save key. The words start coming from Gemini, and this computer keeps the key for the next time you open Metagrafo.</p>
+  <label for="gemini-key">Gemini key</label>
+  <input id="gemini-key" class="key" type="password" autocomplete="off" />
+  <button id="gemini-save" class="mode">Save key</button>
   <p id="status"></p>
   <script>
     async function refresh() {
@@ -81,7 +87,8 @@
         " · " + s.position +
         " · " + s.font_size_vw + " vw" +
         " · box " + s.box_width_pct + "×" + s.box_height_pct + " %" +
-        " · inset " + s.inset_vertical_pct + "/" + s.inset_horizontal_pct + " %";
+        " · inset " + s.inset_vertical_pct + "/" + s.inset_horizontal_pct + " %" +
+        " · Gemini key " + (s.gemini_key_set ? "saved" : "needed");
       document.getElementById("mode-ko").classList.toggle("active", s.mode === "ko_to_en");
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
       document.querySelectorAll(".pos").forEach((btn) => {
@@ -148,6 +155,18 @@
       };
     });
     document.getElementById("style-apply").onclick = applyOverlay;
+    document.getElementById("gemini-save").onclick = async () => {
+      const api_key = document.getElementById("gemini-key").value;
+      const response = await fetch("/gemini-key", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ api_key }),
+      });
+      if (response.ok) {
+        document.getElementById("gemini-key").value = "";
+      }
+      refresh();
+    };
     refresh();
   </script>
 </body>

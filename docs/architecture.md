@@ -157,7 +157,7 @@ Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX
 
 ## Operator path
 
-1. Start uvicorn. Captions **ON**, mode `ko_to_en`.
+1. Church PC: **thewaychurch** sign-in runs `scripts/Metagrafo.cmd` in that user session (not SYSTEM). Captions **ON**, mode `ko_to_en`.
 2. OBS: ATEN video + audio + Browser Source `/overlay`. House projector = program.
 3. `/control` in a booth browser.
 4. Pastor at pulpit → Captions ON. Worship → Captions OFF.

@@ -2,32 +2,37 @@
 
 Local Korean→English speech captions for OBS. An operator should be able to run a service from this file alone.
 
-Package management is **[uv](https://docs.astral.sh/uv/)**. Architecture (for developers): `docs/architecture.md`. Hardware routing: `docs/aten-obs.md`. GPU/OS defaults: `docs/hardware-profiles.md`.
+Audio is already arriving on this PC as a recording device. Metagrafo translates that speech and serves a transparent overlay page. OBS places that page on the video.
 
-## Captions only leave this PC if OBS encodes
+Package management is **[uv](https://docs.astral.sh/uv/)**. Architecture (for developers): `docs/architecture.md`. GPU/OS defaults: `docs/hardware-profiles.md`.
 
-OBS on this computer is the YouTube encoder. The ATEN UC9020 (StreamLIVE HD) mix reaches Windows through **ATEN Stream to USB**. Metagrafo captions sit on the OBS canvas.
+## Where the captions appear
 
-If the UC9020 RTMPs to YouTube by itself, the audience gets **no captions**. The house HDMI projector is the **same OBS program**, so English captions appear in the sanctuary too.
+The overlay is `http://127.0.0.1:8000/overlay`. Captions show up wherever OBS sends the program that contains that page: a stream, a projector, or another display of the same canvas.
 
-## Windows install (broadcast laptop)
+## Another Windows computer
+
+Download the repo zip from GitHub and unzip it. Double-click `Start Metagrafo.cmd`.
+
+The first time, that file downloads Python and the Gemini pieces. It needs the internet. Leave the window open. When it finishes, the booth page opens in the browser. Paste the Gemini key and click **Save key**.
+
+The next time, double-click the same file. Close the window after the page opens. Metagrafo keeps running.
+
+## Windows install
+
+For this computer, where uv is already the way Metagrafo is developed:
 
 1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
 2. Clone this repo and `cd` into it.
 3. `uv sync`
-4. Install and **run** ATEN Stream to USB Capture. UC9020 and this PC on a private Ethernet LAN (see `docs/aten-obs.md`).
-5. Connect the Elgato. Metagrafo opens **`HDMI (Elgato 4K S)`** (`AUDIO_DEVICE_NAME` default). To capture the VB-Audio cable instead, install [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) and set `AUDIO_DEVICE_NAME=VB-Audio Virtual Cable`.
-6. Install OBS Studio.
+4. Install OBS Studio.
 
 ```powershell
 uv run python -m main --list-devices
-```
-
-Confirm `HDMI (Elgato 4K S)` is listed.
-
-```powershell
 uv run python -m main
 ```
+
+The default recording device is **`HDMI (Elgato 4K S)`**. To use another input, see **Input device**.
 
 Do not use `uv run uvicorn …`. Windows Smart App Control blocks `.venv\Scripts\uvicorn.exe` (`os error 4551`). `python -m main` loads uvicorn inside `python.exe`, which is allowed.
 
@@ -41,6 +46,84 @@ uv run python -c "import httpx; httpx.post('http://127.0.0.1:8000/inject', json=
 
 Tests: `uv run pytest`.
 
+## Input device
+
+Metagrafo opens one recording device. List the names this PC exposes:
+
+```powershell
+uv run python -m main --list-devices
+```
+
+Set `AUDIO_DEVICE_NAME` to a unique substring of one of those names. Matching is case-insensitive. Put it in `.env` so each start uses it, including sign-in. See **Settings**.
+
+| Input | `AUDIO_DEVICE_NAME` |
+|---|---|
+| Elgato 4K S (HDMI) | `HDMI (Elgato 4K S)` — also the value used when the variable is unset |
+| ATEN Stream to USB | `ATEN_Stream_to_USB` |
+
+The name has to appear in `--list-devices`. A name that is not listed stops capture and prints the names that are available.
+
+A shell variable applies to that window and overrides `.env`:
+
+```powershell
+$env:AUDIO_DEVICE_NAME = "ATEN_Stream_to_USB"
+uv run python -m main
+```
+
+Restart Metagrafo after a change. A process that is already running keeps the device it opened. The sign-in launcher does not set this variable.
+
+When the same name is listed more than once, a name containing `ATEN_Stream_to_USB` opens that device. Other names prefer the 2-channel WASAPI copy. `AUDIO_DEVICE_INDEX` selects one PortAudio index and overrides the name. Indexes move when devices are plugged or unplugged, so leave it unset and use the name.
+
+On macOS, set `AUDIO_DEVICE_NAME` the same way. Typical names are BlackHole, an aggregate device, or a USB interface.
+
+## Settings
+
+Metagrafo reads a file named `.env` in the repo root (next to `main.py`) at startup. Create that file if it is missing. `.gitignore` already ignores it.
+
+Write one setting per line, as `NAME=value`. Leave out `export`, and leave out spaces around `=`. A value may contain spaces. Lines look like this:
+
+```
+AUDIO_DEVICE_NAME=HDMI (Elgato 4K S)
+CAPTION_ENGINE=gemini_live
+GEMINI_API_KEY=your-key-here
+```
+
+Save the file, then start Metagrafo again. A process that is already running keeps the settings it loaded. A variable set in the shell overrides the same name in `.env` for that window:
+
+```powershell
+$env:AUDIO_DEVICE_NAME = "ATEN_Stream_to_USB"
+uv run python -m main
+```
+
+## Caption engine
+
+With `CAPTION_ENGINE` unset, Metagrafo uses local Whisper. See **Whisper model**.
+
+Google Gemini Live translates the live audio when `.env` has both of these lines:
+
+```
+CAPTION_ENGINE=gemini_live
+GEMINI_API_KEY=your-key-here
+```
+
+The model is `gemini-3.5-live-translate-preview`. Korean speech is translated to English while it is still coming in. The key belongs only in `.env`. An empty key, or any other `CAPTION_ENGINE` value, stays on Whisper.
+
+## Sign-in autostart
+
+Optional. Copy `scripts/Metagrafo.cmd` into the Startup folder so Metagrafo starts when you sign in:
+
+`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Metagrafo.cmd`
+
+Run it in the signed-in desktop session. The recording device is visible only there. A task that runs as SYSTEM before sign-in cannot open it.
+
+In that Startup copy, set the `cd /d` line to this repo. The launcher titles the console **Metagrafo**, waits about 15 seconds so desktop audio is up, then runs `uv run python -m main`. If the process stops, the window prints the exit code and stays open (`pause`).
+
+`uv` must be on the user PATH. Leave the command as `python -m main`. Smart App Control still blocks `uvicorn.exe`.
+
+Every sign-in uses the caption engine and input device in `.env`. Captions still default **ON**, including weekdays. Turn them **OFF** on `/control` when you are not captioning a sermon.
+
+Hold **Shift** during sign-in to skip Startup items for that logon. Delete the Startup `.cmd` to turn auto-start off. An edit to `scripts/Metagrafo.cmd` does nothing until that file is copied back over the Startup copy.
+
 ## Rehearsal from a YouTube sermon
 
 Not the Sunday capture path. **ffmpeg must be on PATH.** First run may still download Whisper `large-v3`. A long sermon takes a while (sequential ~12 s chunks).
@@ -53,18 +136,16 @@ Saves video + wav (kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current di
 
 ## OBS scene
 
-ATEN Stream to USB Capture **is** the RTMP ingest (its **Play** button starts a listener on this PC). Do not install nginx. In Stream to USB: add the UC9020, click **Play**, copy the device **Stream Key**. Leave Play running.
+Put the video in OBS the way you already do. Add the captions as a Browser Source on top of it.
 
-1. **Media Source** (uncheck Local File) → `rtmp://127.0.0.1/live/<that-stream-key>`.
-2. **Settings → Audio → Monitoring device** → **CABLE Input**. On **Media**, **Monitor and Output**. Metagrafo captures **CABLE Output**.
-3. **Browser Source** → `http://127.0.0.1:8000/overlay`
+1. **Browser Source** → `http://127.0.0.1:8000/overlay`
    - Width **1920**, height **1080**. Then **Transform → Reset Transform** so letters are not stretched.
    - Do not drag the red handles or change source Height to crop captions. Use **Box height (%)** on `/control`.
    - Shutdown source when not visible
    - Transparent page. **Lines on screen** (default **2**, range 1–6) is how many text rows stay visible. A longer sentence wraps, and the oldest row leaves when the next one starts. Not karaoke.
    - After overlay HTML changes, right-click the source → **Refresh**.
-4. Keep the Browser Source **above** the video.
-5. Fullscreen projector / HDMI to the house = this program.
+2. Keep the Browser Source **above** the video.
+3. A stream, projector, or other display of this program shows the same captions.
 
 Booth UI is **not** an OBS source. Open `http://127.0.0.1:8000/control` in a normal browser on the booth PC.
 
@@ -92,7 +173,7 @@ Defaults: `WHISPER_MODEL=large-v3`, `WHISPER_DEVICE=cuda`, `WHISPER_COMPUTE_TYPE
 | VRAM | Default model | Default compute |
 |---|---|---|
 | &lt; 6 GB | `medium` | `int8` |
-| 6–8 GB (this XPS 3060) | `large-v3` | `int8` |
+| 6–8 GB | `large-v3` | `int8` |
 | 8–12 GB | `large-v3` | `int8` (or `float16` if OBS NVENC still has headroom) |
 | ≥ 12 GB | `large-v3` | `float16` |
 
@@ -114,4 +195,4 @@ To run the model on the Hermeneia GPU box instead of this PC, set `HERMENEIA_URL
 
 ## Mac
 
-Same app. ATEN Stream to USB is **Windows-only**. Set `AUDIO_DEVICE_NAME` to BlackHole, an aggregate device, or a USB interface. Whisper runs on **CPU** until a Metal backend exists. Overlay URL and `/control` are unchanged.
+Same app. Choose the recording device with **Input device**. Whisper runs on **CPU** until a Metal backend exists. Overlay URL and `/control` are unchanged.

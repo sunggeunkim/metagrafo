@@ -35,7 +35,7 @@ Captions reach YouTube and the sanctuary **only if OBS is encoding**. If the UC9
 2. **ATEN Stream to USB Capture** installed and **running**. Add the UC9020, then click **Play**. Play starts Stream to USB’s bundled RTMP listener on this PC (`rtmp://127.0.0.1/live/<stream-key>`). Copy the **Stream Key** from the device in that app. Leave Play running while OBS is open. Metagrafo does not start this listener.
 3. OBS Studio on this PC (this is the live encoder).
 4. VB-Audio Virtual Cable installed.
-5. Metagrafo at `http://127.0.0.1:8000`.
+5. Metagrafo at `http://127.0.0.1:8000`. On this PC it starts at **thewaychurch** sign-in from the Startup-folder launcher (`scripts/Metagrafo.cmd`), not as SYSTEM before logon. See the README.
 
 ## What Metagrafo opens
 
@@ -67,7 +67,7 @@ Booth UI: `http://127.0.0.1:8000/control` in a **normal browser**, not an OBS so
 
 | Symptom | Likely cause |
 |---|---|
-| No `CABLE Output` in `--list-devices` | VB-Cable not installed |
+| No `CABLE Output` in `--list-devices` | VB-Cable not installed, or Metagrafo started before sign-in / as SYSTEM (use the Startup launcher) |
 | No ATEN device in `--list-devices` | Normal on this booth; capture uses VB-Cable, not UAC |
 | OBS Media Source black / no audio | Stream to USB **Play** not running, wrong stream key, or mixer not pushing to this PC |
 | Device found, silence | Wrong endpoint; exclusive WASAPI; muted in Windows; captions still OFF |

@@ -89,6 +89,11 @@ class GeminiLiveTranslator:
         bus.subscribe(ModeChangedEvent, self._on_mode)
         bus.subscribe(ProgramAudioEvent, self._on_audio)
 
+    def use_key(self, api_key: str, connect: Connect) -> None:
+        self._api_key = api_key
+        self._connect = connect
+        self._reconnect.set()
+
     async def _on_mode(self, event: ModeChangedEvent) -> None:
         try:
             mode = TranslateMode(event.mode)
