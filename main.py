@@ -64,21 +64,23 @@ app = create_app()
 def _configure_logging() -> None:
     """Uvicorn's default config has no root handler, so slice INFO is silent."""
     root = logging.getLogger()
-    formatter = logging.Formatter("%(levelname)s:     %(name)s: %(message)s")
     if not any(isinstance(h, logging.StreamHandler) for h in root.handlers):
         handler = logging.StreamHandler()
-        handler.setFormatter(formatter)
+        handler.setFormatter(logging.Formatter("%(levelname)s:     %(name)s: %(message)s"))
         root.addHandler(handler)
-    if sys.platform == "win32":
-        import ctypes
-
-        if not ctypes.windll.kernel32.GetConsoleWindow():
-            if not any(isinstance(h, logging.FileHandler) for h in root.handlers):
-                file_handler = logging.FileHandler("metagrafo.log", encoding="utf-8")
-                file_handler.setFormatter(formatter)
-                root.addHandler(file_handler)
     if root.level == logging.NOTSET or root.level > logging.INFO:
         root.setLevel(logging.INFO)
+
+
+def _redirect_missing_stdio(log_path: Path) -> None:
+    """pythonw has no stdout/stderr, and uvicorn's log setup calls sys.stdout.isatty()."""
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    log = open(log_path, "a", encoding="utf-8", buffering=1)
+    if sys.stdout is None:
+        sys.stdout = log
+    if sys.stderr is None:
+        sys.stderr = log
 
 
 def create_production_app() -> FastAPI:
@@ -286,6 +288,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(out)
         return
+    _redirect_missing_stdio(Path("metagrafo.log"))
     import uvicorn
 
     uvicorn.run(create_production_app, factory=True, host="127.0.0.1", port=8000)

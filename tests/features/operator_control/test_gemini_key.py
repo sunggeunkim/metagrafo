@@ -76,3 +76,20 @@ def test_pasting_a_gemini_key_connects_with_that_key_and_keeps_other_settings(
     assert reloaded.gemini_live() is True
     assert reloaded.gemini_api_key == "replacement-key"
     assert reloaded.audio_device_name == "Booth Mic"
+
+
+def test_windowless_start_logs_to_a_file_so_uvicorn_can_configure(tmp_path, monkeypatch) -> None:
+    import sys
+
+    from uvicorn.config import Config
+
+    from main import _redirect_missing_stdio
+
+    monkeypatch.setattr(sys, "stdout", None)
+    monkeypatch.setattr(sys, "stderr", None)
+    log_path = tmp_path / "metagrafo.log"
+    _redirect_missing_stdio(log_path)
+    Config(app="main:app").configure_logging()
+    print("IN: hello", flush=True)
+    sys.stdout.close()
+    assert "IN: hello" in log_path.read_text(encoding="utf-8")
