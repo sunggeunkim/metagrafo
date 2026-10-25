@@ -12,7 +12,7 @@ OBS on the broadcast PC is the encoder (YouTube and the house projector share th
 | Audio | PGM mix. No speech-only bus. |
 | Worship | Captions **default ON**. Volunteer OFF for songs. Mute **stops inference**, not only the OBS source. |
 | Presentation | Two-line. Whisper is utterance-final (**not karaoke**). Gemini live, when opted in, grows the bottom line while the pastor is still talking, then moves that line up. ~2–3 s after they stop is OK for Whisper. |
-| Modes | `ko_to_en` (sermon) and `en_to_en` (English guest transcribe). **`en_to_ko` / NLLB deferred.** |
+| Modes | `ko_to_en` (sermon), `en_to_en` (English guest transcribe), and `en_to_ko` (English guest, Korean captions; **Gemini live only**). NLLB deferred. |
 | Code-switch | Stay on `ko_to_en`. No verse-by-verse mode flips. |
 | Mute in-flight | Capture drops frames. Translate empties the queue. In-flight Whisper may finish; **discard if captions are off**. |
 | Model | Env `WHISPER_MODEL` (default `large-v3`). Fallback `medium` + **restart**. No live swap. |
@@ -82,6 +82,8 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 | `ko_to_en` | `ko` | `translate` | English |
 | `en_to_en` | `en` | `transcribe` | English (unchanged) |
 
+`en_to_ko` has no Whisper row: Whisper only translates into English. Gemini live opens its socket with target `ko`. `PUT /mode` answers **409** for `en_to_ko` until a Gemini key is saved, and a Whisper worker started with `TRANSLATE_MODE=en_to_ko` falls back to `ko_to_en`.
+
 - `large-v3` (`turbo` ignores `task="translate"`). Inference in `asyncio.to_thread`.
 - `HERMENEIA_URL` sends each VAD chunk to that box (`/v1/translations`) instead of local Whisper. `HERMENEIA_TOKEN` is the bearer token. An unset URL keeps local Whisper. Gemini live does not call Hermeneia.
 - `condition_on_previous_text` defaults **on** (the caption just written is passed into the next phrase). **Off** translates each phrase alone. Live from `/control`. A file run turns it off with `--no-condition-on-previous-text`.
@@ -115,7 +117,7 @@ Overlay lines: default **2** (newest at the bottom, older lines above). `/contro
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**
 - `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style`
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
@@ -153,7 +155,7 @@ Startup: operator_control + translate + broadcast, then capture. Shutdown: stop 
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en`), queue size, host/port. Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port. Captions active is **not** persisted; always starts on.
 
 ## Operator path
 
@@ -161,12 +163,12 @@ Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX
 2. OBS: ATEN video + audio + Browser Source `/overlay`. House projector = program.
 3. `/control` in a booth browser.
 4. Pastor at pulpit → Captions ON. Worship → Captions OFF.
-5. English guest: set **en_to_en** before service.
+5. English guest: set **en_to_en** before service, or **en_to_ko** (Gemini only) to caption them in Korean.
 6. Rehearsal hitch: `WHISPER_MODEL=medium`, restart. Never hot-swap on the GPU.
 
 ## Out of scope (v1)
 
-- `en_to_ko` / NLLB
+- NLLB (local `en_to_ko` without Gemini)
 - Karaoke / partials / word highlight
 - Application database
 - whisper.cpp Metal

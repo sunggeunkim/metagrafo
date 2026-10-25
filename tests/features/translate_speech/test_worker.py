@@ -259,3 +259,21 @@ async def test_captions_off_forgets_previous_text() -> None:
     await asyncio.sleep(0.1)
     task.cancel()
     assert whisper.calls[1]["initial_prompt"] == ""
+
+
+async def test_whisper_falls_back_to_sermon_mode_when_asked_for_korean() -> None:
+    bus = EventBus()
+    whisper = FakeWhisper("Prayer")
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(SubtitleEvent, handler)
+    worker = TranslateWorker(bus, whisper.transcribe, mode="en_to_ko")
+    task = asyncio.create_task(worker.run())
+    await bus.publish(_chunk())
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert whisper.calls[0]["task"] == "translate"
+    assert seen[0].mode == "ko_to_en"

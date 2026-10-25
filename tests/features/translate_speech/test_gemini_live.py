@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from core.event_bus import EventBus
 from features.capture_audio.events import ProgramAudioEvent
-from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent, TranslateMode
+from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent, TranslateMode, languages_for
 from features.translate_speech.events import SubtitleEvent
 from features.translate_speech.gemini_live import GeminiLiveTranslator, echoes_target_language
 
@@ -153,6 +153,26 @@ async def test_session_end_commits_the_open_line_before_the_next_socket() -> Non
 def test_guest_mode_echoes_english() -> None:
     assert echoes_target_language(TranslateMode.KO_TO_EN) is False
     assert echoes_target_language(TranslateMode.EN_TO_EN) is True
+    assert echoes_target_language(TranslateMode.EN_TO_KO) is False
+
+
+def test_korean_guest_mode_targets_korean() -> None:
+    assert languages_for(TranslateMode.EN_TO_KO) == ("en", "ko")
+
+
+async def test_korean_guest_mode_publishes_korean_subtitles() -> None:
+    bus = EventBus()
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(SubtitleEvent, handler)
+    translator = GeminiLiveTranslator(bus, connect=lambda _mode: HoldingSession(), mode="en_to_ko")
+    await translator.apply_transcript("안녕하세요, 여러분.")
+    assert [(e.text, e.source_language, e.target_language, e.mode) for e in seen] == [
+        ("안녕하세요, 여러분.", "en", "ko", "en_to_ko")
+    ]
 
 
 async def test_guest_mode_reconnects_the_socket() -> None:

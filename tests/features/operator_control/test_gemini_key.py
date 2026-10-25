@@ -93,3 +93,28 @@ def test_windowless_start_logs_to_a_file_so_uvicorn_can_configure(tmp_path, monk
     print("IN: hello", flush=True)
     sys.stdout.close()
     assert "IN: hello" in log_path.read_text(encoding="utf-8")
+
+
+def test_saved_key_unlocks_korean_captions(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("CAPTION_ENGINE", raising=False)
+    env_file = tmp_path / ".env"
+    targets: list[object] = []
+
+    def factory(_api_key: str):
+        def connect(mode: object) -> _HoldingSession:
+            targets.append(mode)
+            return _HoldingSession()
+
+        return connect
+
+    settings = Settings(caption_engine="whisper", gemini_api_key="", _env_file=env_file)
+    app = create_app(settings=settings, env_file=env_file, gemini_connect_factory=factory)
+    with TestClient(app) as client:
+        assert client.put("/mode", json={"mode": "en_to_ko"}).status_code == 409
+        client.put("/gemini-key", json={"api_key": "pasted-key-42"})
+        assert client.get("/mode").json()["gemini_live"] is True
+        response = client.put("/mode", json={"mode": "en_to_ko"})
+        assert response.status_code == 200
+        assert response.json()["source_language"] == "en"
+        assert response.json()["target_language"] == "ko"

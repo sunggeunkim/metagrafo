@@ -57,7 +57,7 @@ def gemini_connect(api_key: str) -> Connect:
             input_audio_transcription=types.AudioTranscriptionConfig(),
             output_audio_transcription=types.AudioTranscriptionConfig(),
             translation_config=types.TranslationConfig(
-                target_language_code="en",
+                target_language_code=languages_for(mode)[1],
                 echo_target_language=echoes_target_language(mode),
             ),
         )

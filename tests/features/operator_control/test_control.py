@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from core.event_bus import EventBus
+from core.settings import Settings
 from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent
 from main import create_app
 
@@ -46,8 +47,24 @@ def test_turning_captions_on_publishes_state_event() -> None:
 
 def test_invalid_mode_is_rejected() -> None:
     with TestClient(create_app()) as client:
-        response = client.put("/mode", json={"mode": "en_to_ko"})
+        response = client.put("/mode", json={"mode": "fr_to_en"})
         assert response.status_code == 422
+
+
+def test_korean_captions_are_refused_on_whisper() -> None:
+    settings = Settings(caption_engine="whisper", gemini_api_key="")
+    with TestClient(create_app(settings=settings)) as client:
+        assert client.get("/mode").json()["gemini_live"] is False
+        response = client.put("/mode", json={"mode": "en_to_ko"})
+        assert response.status_code == 409
+        assert "Gemini" in response.json()["detail"]
+        assert client.get("/mode").json()["mode"] == "ko_to_en"
+
+
+def test_whisper_start_ignores_a_korean_caption_mode_in_env() -> None:
+    settings = Settings(caption_engine="whisper", gemini_api_key="", translate_mode="en_to_ko")
+    with TestClient(create_app(settings=settings)) as client:
+        assert client.get("/mode").json()["mode"] == "ko_to_en"
 
 
 def test_guest_mode_publishes_mode_changed() -> None:
@@ -74,7 +91,7 @@ def test_control_page_has_booth_buttons() -> None:
         assert "Captions" in html
         assert "ko_to_en" in html
         assert "en_to_en" in html
-        assert "en_to_ko" not in html
+        assert "en_to_ko" in html
         assert "VAD pause (ms)" in html
         assert "Font size (vw)" in html
         assert "Vertical inset (%)" in html
