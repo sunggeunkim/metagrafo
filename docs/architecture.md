@@ -33,6 +33,7 @@ Allowed shared code:
 
 ```
 PGM audio → capture_audio --AudioChunkEvent--> translate_speech --SubtitleEvent--> broadcast_subtitles → OBS
+                                                                              └-----> youtube_captions → YouTube CC (optional)
 
 operator_control --CaptionsStateEvent / ModeChangedEvent-->  (the three slices above subscribe)
 ```
@@ -52,6 +53,7 @@ metagrafo/
     translate_speech/       # AudioChunkEvent → SubtitleEvent (no HTTP)
     broadcast_subtitles/    # /overlay, /ws, /health
     operator_control/       # /control, /mode, CaptionsStateEvent
+    youtube_captions/       # SubtitleEvent → YouTube caption ingestion URL, /youtube-captions
   docs/
     architecture.md
     aten-obs.md
@@ -90,7 +92,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - Device profile: see `docs/hardware-profiles.md`. Env always wins.
 - Queue max 4, **drop oldest**. Empty output is not published.
 - Captions off: **empty the queue**. When Whisper returns, if inactive, **do not publish**.
-- `CAPTION_ENGINE=gemini_live` plus `GEMINI_API_KEY` hears program audio as it arrives (`ProgramAudioEvent`, about 100 ms) instead of waiting for a VAD chunk. `gemini-3.5-live-translate-preview` translates Korean speech to English on one socket, the same four settings as the working mic test: no context-window compression and no session resumption. The bottom line grows (`SubtitleEvent.provisional`); a finished sentence, a model turn, or the end of a socket commits it. Captions off clears the open line and the overlay. English guest mode reconnects with echo so English speech is captioned. The microphone match prefers the WASAPI device, because the DirectSound copy of the same name does not wait for the clock. Missing key keeps Whisper. The older `Captioner` engine named `gemini` is not this path.
+- `CAPTION_ENGINE=gemini_live` plus `GEMINI_API_KEY` hears program audio as it arrives (`ProgramAudioEvent`, about 100 ms) instead of waiting for a VAD chunk. `gemini-3.5-live-translate-preview` translates Korean speech to English on one socket, the same four settings as the working mic test: no context-window compression and no session resumption. The bottom line grows (`SubtitleEvent.provisional`), and `spoken_at` is when its first English fragment arrived; a finished sentence, a model turn, or the end of a socket commits it. Captions off clears the open line and the overlay. English guest mode reconnects with echo so English speech is captioned. The microphone match prefers the WASAPI device, because the DirectSound copy of the same name does not wait for the clock. Missing key keeps Whisper. The older `Captioner` engine named `gemini` is not this path.
 
 ### `broadcast_subtitles`
 
@@ -112,6 +114,17 @@ Overlay lines: default **2** (newest at the bottom, older lines above). `/contro
   "duration_s": 2.4
 }
 ```
+
+### `youtube_captions`
+
+Optional. `YOUTUBE_CAPTION_URL` is the **Captions Ingestion URL** from YouTube Studio (**POST captions to URL**). Unset sends nothing.
+
+- Subscribes to `SubtitleEvent`. Skips `provisional` lines and blank text.
+- One line per POST to `<url>&seq=N`, `Content-Type: text/plain`, body `YYYY-MM-DDTHH:MM:SS.mmm\n<text>\n` in UTC. The stamp is `SubtitleEvent.spoken_at` (wall clock when the speech began: the VAD chunk start for Whisper, the line's first English fragment for Gemini live), or `created_at` when that is unset.
+- One sender task posts in order, so `seq` only rises. `seq` advances on a 2xx. A refused line (4xx/5xx) is dropped and its `seq` is reused. A timeout or broken connection retries the same line and `seq` twice (0.5 s, 1 s); if it still fails the line is dropped and `seq` moves on, because YouTube may already have it.
+- Queue max 16, **drop oldest**.
+- YouTube refuses lines until the stream is live: warn once, log once when it recovers. The URL is never logged (it carries the caption key); a filter on the `httpx` logger drops its INFO request lines for this URL.
+- `GET /youtube-captions` — `enabled`, `sent`, `failed`, `last_status`.
 
 ### `operator_control`
 
@@ -135,7 +148,7 @@ In-process asyncio pub/sub. Dispatch by exact type. `publish` isolates handler e
 Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
-- `SubtitleEvent` — `translate_speech`
+- `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`)
 - `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent` — `operator_control`
 
 ## Process model
@@ -149,13 +162,13 @@ One process, one asyncio loop, uvicorn.
 | faster-whisper | `asyncio.to_thread` |
 | WebSocket fan-out | asyncio |
 
-Startup: operator_control + translate + broadcast, then capture. Shutdown: stop capture first.
+Startup: operator_control + translate + broadcast + youtube_captions, then capture. Shutdown: stop capture first.
 
 ## Settings
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port. Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port, `YOUTUBE_CAPTION_URL` (optional). Captions active is **not** persisted; always starts on.
 
 ## Operator path
 

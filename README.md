@@ -8,7 +8,7 @@ Package management is **[uv](https://docs.astral.sh/uv/)**. Architecture (for de
 
 ## Where the captions appear
 
-The overlay is `http://127.0.0.1:8000/overlay`. Captions show up wherever OBS sends the program that contains that page: a stream, a projector, or another display of the same canvas.
+The overlay is `http://127.0.0.1:8000/overlay`. Captions show up wherever OBS sends the program that contains that page: a stream, a projector, or another display of the same canvas. They can also go to YouTube as closed captions; see [YouTube closed captions](#youtube-closed-captions-optional).
 
 ## Another Windows computer
 
@@ -192,6 +192,25 @@ uv run python -m main
 `GET /health` reports `model`, `device`, `compute_type`, `vram_gb`, captions on/off, and mode.
 
 To run the model on the Hermeneia GPU box instead of this PC, set `HERMENEIA_URL` (for example `https://hermeneia.stugen.net`) and `HERMENEIA_TOKEN`. `HERMENEIA_MODEL` defaults to `whisper` and stays fixed for the process. Leave the URL unset to keep local Whisper.
+
+## YouTube closed captions (optional)
+
+Metagrafo can also send each finished English line to YouTube as **closed captions** (the CC button). Viewers can turn them on or off, and they stay on the recording as a caption track. The OBS overlay keeps working either way.
+
+1. YouTube Studio → your stream → **Stream settings**. Set latency to **Normal** (YouTube only takes captions in Normal latency).
+2. Turn on **Closed captions**, choose **POST captions to URL**, and set **Source language** to **English** (Metagrafo always writes English).
+3. Copy the **Captions Ingestion URL** (`http://upload.youtube.com/closedcaption?cid=…`). Treat it like the stream key.
+4. Put it in `.env` (see **Settings**), then restart Metagrafo:
+
+```
+YOUTUBE_CAPTION_URL=http://upload.youtube.com/closedcaption?cid=...
+```
+
+The URL follows the stream key, so a reused stream key keeps the same URL. Leave it unset to send nothing.
+
+Only finished lines are sent. The Gemini live bottom line is sent once it is committed, not while it grows. Captions OFF on `/control` sends nothing, because no lines are made. Each line is stamped with when it was spoken: for Whisper, when its audio chunk began; for Gemini live, when the line's first English words arrived (a second or two after the Korean). Keep this PC's clock synced (Windows **Set time automatically**).
+
+YouTube refuses lines until the stream is live. Metagrafo logs one warning when that starts and one line when YouTube accepts captions again. `GET /youtube-captions` shows `sent`, `failed`, and the last HTTP status.
 
 ## Mac
 

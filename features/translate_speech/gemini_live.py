@@ -74,8 +74,10 @@ class GeminiLiveTranslator:
         connect: Connect,
         api_key: str = "",
         mode: str = "ko_to_en",
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self._bus = bus
+        self._clock = clock
         self._connect = connect
         self._api_key = api_key
         self._mode = TranslateMode(mode)
@@ -135,23 +137,28 @@ class GeminiLiveTranslator:
                 break
 
     async def _close_open_line(self) -> None:
+        spoken_at = self._line.opened_at
         finished = self._line.commit()
         if finished and self._active:
-            await self._publish(finished, provisional=False)
+            await self._publish(finished, provisional=False, spoken_at=spoken_at)
 
     async def apply_transcript(self, fragment: str, *, turn_complete: bool = False) -> None:
         if not self._active:
             return
-        shown = self._line.extend(fragment) if fragment.strip() else ""
+        # The first English fragment is the closest this socket gets to when the line was spoken.
+        shown = self._line.extend(fragment, at=self._clock()) if fragment.strip() else ""
+        spoken_at = self._line.opened_at
         if turn_complete or self._line.closes_sentence():
             finished = self._line.commit()
             if finished:
-                await self._publish(finished, provisional=False)
+                await self._publish(finished, provisional=False, spoken_at=spoken_at)
             return
         if shown:
-            await self._publish(shown, provisional=True)
+            await self._publish(shown, provisional=True, spoken_at=spoken_at)
 
-    async def _publish(self, text: str, *, provisional: bool) -> None:
+    async def _publish(
+        self, text: str, *, provisional: bool, spoken_at: float | None = None
+    ) -> None:
         if not self._active and provisional:
             return
         source, target = languages_for(self._mode)
@@ -162,9 +169,10 @@ class GeminiLiveTranslator:
                 source_language=source,
                 target_language=target,
                 mode=self._mode.value,
-                created_at=time.time(),
+                created_at=self._clock(),
                 duration_s=0.0,
                 provisional=provisional,
+                spoken_at=spoken_at,
             )
         )
 

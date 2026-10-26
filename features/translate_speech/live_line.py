@@ -8,11 +8,14 @@ class LiveLine:
 
     def __init__(self) -> None:
         self._open = ""
+        self.opened_at: float | None = None
 
-    def extend(self, fragment: str) -> str:
+    def extend(self, fragment: str, *, at: float | None = None) -> str:
         piece = " ".join(fragment.split())
         if not piece:
             return self._open
+        if not self._open:
+            self.opened_at = at
         self._open = piece if not self._open else f"{self._open} {piece}"
         return self._open
 
@@ -22,4 +25,5 @@ class LiveLine:
     def commit(self) -> str | None:
         text = self._open.strip()
         self._open = ""
+        self.opened_at = None
         return text or None

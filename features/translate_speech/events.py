@@ -11,3 +11,5 @@ class SubtitleEvent:
     created_at: float
     duration_s: float
     provisional: bool = False
+    # Wall clock (time.time()) when the speech began; None when unknown.
+    spoken_at: float | None = None

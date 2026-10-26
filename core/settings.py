@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     hermeneia_timeout_s: float = 30.0
     caption_engine: str = "whisper"
     gemini_api_key: str = ""
+    youtube_caption_url: str = ""
 
     def gemini_live(self) -> bool:
         return self.caption_engine == "gemini_live" and bool(self.gemini_api_key.strip())
