@@ -18,7 +18,7 @@ The first time, that file downloads Python and the Gemini pieces. It needs the i
 
 The next time, double-click the same file. Close the window after the page opens. Metagrafo keeps running.
 
-After you unzip a newer copy over the same folder, the same file installs any new pieces before it starts. A start that stopped halfway, for example when the internet dropped, picks up again on the next double-click. While it runs, **Show logs** on the booth page shows `metagrafo.log` and follows new lines, and **Show overlay** previews what OBS shows. To stop the captions, click **Stop captions**; **Start captions** brings them back. If Metagrafo does not start, the window says so and opens `metagrafo.log` in Notepad. The reason is at the end of that file.
+After you unzip a newer copy over the same folder, the same file installs any new pieces before it starts. A start that stopped halfway, for example when the internet dropped, picks up again on the next double-click. While it runs, the booth page shows `metagrafo.log`, following new lines, beside a preview of what OBS shows. **Hide logs** and **Hide overlay** close them. To stop the captions, click **Stop captions**; **Start captions** brings them back. If Metagrafo does not start, the window says so and opens `metagrafo.log` in Notepad. The reason is at the end of that file.
 
 ## Windows install
 

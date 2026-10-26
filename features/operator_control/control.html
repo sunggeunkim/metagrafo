@@ -45,17 +45,17 @@
   <p>Captions start with Metagrafo. Stop them during worship so music is not captioned, then Start them for the sermon.</p>
   <div>
     <button id="captions-toggle" class="off">Stop captions</button>
-    <button id="show-overlay" class="mode">Show overlay</button>
-    <button id="show-logs" class="mode">Show logs</button>
+    <button id="show-overlay" class="mode">Hide overlay</button>
+    <button id="show-logs" class="mode">Hide logs</button>
   </div>
-  <p class="hint">Show overlay and Show logs open side by side here: the overlay as OBS shows it on the left, Metagrafo's log on the right. The log keeps the newest line at the bottom and follows new lines while it is open.</p>
+  <p class="hint">The overlay as OBS shows it is on the left, Metagrafo's log on the right. The log keeps the newest line at the bottom and follows new lines while it is open. Hide either one to make room; it is open again the next time this page loads.</p>
   <div id="viewers">
-    <div id="overlay-panel" hidden>
+    <div id="overlay-panel">
       <div id="overlay-preview">
         <iframe id="overlay-frame" title="Overlay preview"></iframe>
       </div>
     </div>
-    <div id="log-panel" hidden>
+    <div id="log-panel">
       <pre id="log-view"></pre>
     </div>
   </div>
@@ -232,14 +232,14 @@
       document.getElementById("overlay-frame").style.transform = "scale(" + width / 1920 + ")";
     }
     new ResizeObserver(scaleOverlay).observe(document.getElementById("overlay-preview"));
-    document.getElementById("show-overlay").onclick = () => {
-      const panel = document.getElementById("overlay-panel");
-      const show = panel.hidden;
-      panel.hidden = !show;
+    function setOverlayShown(show) {
+      document.getElementById("overlay-panel").hidden = !show;
       // Only a shown preview keeps a caption connection open.
       document.getElementById("overlay-frame").src = show ? "/overlay" : "about:blank";
       document.getElementById("show-overlay").textContent = show ? "Hide overlay" : "Show overlay";
-    };
+    }
+    document.getElementById("show-overlay").onclick = () =>
+      setOverlayShown(document.getElementById("overlay-panel").hidden);
     let logOffset = null;
     let logTimer = null;
     let logBusy = false;
@@ -266,10 +266,8 @@
         logBusy = false;
       }
     }
-    document.getElementById("show-logs").onclick = () => {
-      const panel = document.getElementById("log-panel");
-      const show = panel.hidden;
-      panel.hidden = !show;
+    function setLogsShown(show) {
+      document.getElementById("log-panel").hidden = !show;
       document.getElementById("show-logs").textContent = show ? "Hide logs" : "Show logs";
       clearInterval(logTimer);
       if (show) {
@@ -277,7 +275,11 @@
         pollLogs();
         logTimer = setInterval(pollLogs, 2000);
       }
-    };
+    }
+    document.getElementById("show-logs").onclick = () =>
+      setLogsShown(document.getElementById("log-panel").hidden);
+    setOverlayShown(true);
+    setLogsShown(true);
     document.querySelectorAll(".mode").forEach((btn) => {
       if (!btn.dataset.mode) return;
       btn.onclick = async () => {
