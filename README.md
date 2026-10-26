@@ -48,7 +48,9 @@ Tests: `uv run pytest`.
 
 ## Input device
 
-Metagrafo opens one recording device. List the names this PC exposes:
+Metagrafo opens one recording device. The easiest way to change it is **Audio input** on `/control`: pick a name, then **Use this input**. Capture switches in about a second, and the choice is saved as `AUDIO_DEVICE_NAME` in `.env`, so the next start (including sign-in) uses it too. **Refresh list** picks up a device plugged in after the page opened. Under the list, the page says which input it is listening to, or why the one you picked would not open. If it would not open, pick another.
+
+Without the booth page, list the names this PC exposes:
 
 ```powershell
 uv run python -m main --list-devices
@@ -70,9 +72,9 @@ $env:AUDIO_DEVICE_NAME = "ATEN_Stream_to_USB"
 uv run python -m main
 ```
 
-Restart Metagrafo after a change. A process that is already running keeps the device it opened. The sign-in launcher does not set this variable.
+Restart Metagrafo after changing `.env` or the shell variable by hand. A running process keeps the device it opened until you pick another on `/control`. A shell variable still wins over the `.env` line that `/control` writes, at the next start. The sign-in launcher does not set this variable.
 
-When the same name is listed more than once, a name containing `ATEN_Stream_to_USB` opens that device. Other names prefer the 2-channel WASAPI copy. `AUDIO_DEVICE_INDEX` selects one PortAudio index and overrides the name. Indexes move when devices are plugged or unplugged, so leave it unset and use the name.
+When the same name is listed more than once, a name containing `ATEN_Stream_to_USB` opens that device. Other names prefer the 2-channel WASAPI copy. `AUDIO_DEVICE_INDEX` selects one PortAudio index and overrides the name. Indexes move when devices are plugged or unplugged, so leave it unset and use the name. While it is set, `/control` refuses to pick an input.
 
 On macOS, set `AUDIO_DEVICE_NAME` the same way. Typical names are BlackHole, an aggregate device, or a USB interface.
 

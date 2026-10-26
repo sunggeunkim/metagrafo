@@ -66,7 +66,7 @@ Each feature exposes `register(...)`. FastAPI routes live in the slice that owns
 
 ### `capture_audio`
 
-Opens the **named** recording device (Windows default `HDMI (Elgato 4K S)`). Among name matches, prefer a **2-channel** endpoint (WASAPI over 16-channel MME). Overridable by name/index (`AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX`).
+Opens the **named** recording device (Windows default `HDMI (Elgato 4K S)`). Among name matches, prefer a **2-channel** endpoint (WASAPI over 16-channel MME). Overridable by name/index (`AUDIO_DEVICE_NAME` / `AUDIO_DEVICE_INDEX`). Subscribe `AudioDeviceChangedEvent`: stop the capture thread and reopen with the name now on `Settings` (live, no restart). `status()` reports the device it opened, or why the open failed; `main.py` hands it to `operator_control`. PortAudio initialize/terminate are not thread-safe, so every PyAudio create/open/close/terminate holds `aten_mic.PORTAUDIO_LOCK`.
 
 - Windows: shared WASAPI (not exclusive) so OBS can use the same device.
 - Downmix stereo → mono, resample to 16 kHz, 512-sample frames.
@@ -131,8 +131,10 @@ Optional. `YOUTUBE_CAPTION_URL` is the **Captions Ingestion URL** from YouTube S
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts)
-- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style` / `PUT /gemini-key` / `PUT /youtube-caption-url`
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts), **audio input** (pick a listed recording device)
+- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style` / `PUT /gemini-key` / `PUT /youtube-caption-url` / `GET /audio-devices` / `PUT /audio-device`
+- `GET /audio-devices` — `{devices, selected, capturing, error}`: input names this PC lists now (each once; names with a line break are left out because `.env` cannot hold them), `AUDIO_DEVICE_NAME`, and capture's status. `main.py` injects the lister and the status, so this slice does not import capture code.
+- `PUT /audio-device` — `{name}`; must be one of the listed names (422 otherwise), and 409 while `AUDIO_DEVICE_INDEX` is set. Writes `AUDIO_DEVICE_NAME` to `.env`, keeping other lines, and publishes `AudioDeviceChangedEvent`. `/mode` shows `audio_device`, `audio_capturing`, and `audio_error`; the booth page polls those every 5 s.
 - `PUT /youtube-caption-url` — `{url}`; empty clears. Must be http(s) with a host and no whitespace (422 otherwise). Writes `YOUTUBE_CAPTION_URL` to `.env`, keeping other lines, and publishes `YouTubeCaptionUrlChangedEvent`. The URL is never echoed back; `/mode` shows only `youtube_url_set`.
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
@@ -151,7 +153,7 @@ Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
 - `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`)
-- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent` — `operator_control`
+- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent`, `AudioDeviceChangedEvent` — `operator_control`
 
 ## Process model
 
