@@ -143,6 +143,8 @@ def register(
         initial_mode = TranslateMode.KO_TO_EN
     if needs_gemini(initial_mode) and not settings.gemini_live():
         initial_mode = TranslateMode.KO_TO_EN
+    # A key pasted later starts Gemini from this setting, so it must match the booth.
+    settings.translate_mode = initial_mode.value
     pauses = settings.vad_pauses if settings.vad_pauses in (1, 2) else 1
     key_file = env_file or Path.cwd() / ".env"
     state = OperatorState(
