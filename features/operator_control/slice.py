@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -9,6 +11,7 @@ from pydantic import BaseModel, Field
 from core.event_bus import EventBus
 from core.settings import Settings
 from features.operator_control.events import (
+    AudioDeviceChangedEvent,
     CaptionsStateEvent,
     GeminiKeyChangedEvent,
     ModeChangedEvent,
@@ -109,6 +112,10 @@ class OverlayStyleBody(BaseModel):
     line_count: int = Field(default=2, ge=1, le=6)
 
 
+class AudioDeviceBody(BaseModel):
+    name: str = Field(description="One input name from GET /audio-devices")
+
+
 class YouTubeCaptionUrlBody(BaseModel):
     url: str = Field(description="Captions Ingestion URL from YouTube Studio; empty stops sending")
 
@@ -134,6 +141,10 @@ def write_gemini_key(env_file: Path, api_key: str) -> None:
     write_env_values(env_file, {"CAPTION_ENGINE": "gemini_live", "GEMINI_API_KEY": api_key})
 
 
+def _has_line_break(text: str) -> bool:
+    return "\n" in text or "\r" in text
+
+
 def is_caption_url(url: str) -> bool:
     parts = urlsplit(url)
     return parts.scheme in ("http", "https") and bool(parts.netloc) and not any(
@@ -147,6 +158,8 @@ def register(
     settings: Settings,
     *,
     env_file: Path | None = None,
+    list_input_devices: Callable[[], list[str]] | None = None,
+    capture_status: Callable[[], dict[str, str | None]] | None = None,
 ) -> OperatorState:
     try:
         initial_mode = TranslateMode(settings.translate_mode)
@@ -171,7 +184,29 @@ def register(
         body["gemini_key_set"] = bool(settings.gemini_api_key.strip())
         body["gemini_live"] = settings.gemini_live()
         body["youtube_url_set"] = bool(settings.youtube_caption_url.strip())
+        body["audio_device"] = settings.audio_device_name
+        status = capture_status() if capture_status is not None else {}
+        body["audio_capturing"] = status.get("capturing")
+        body["audio_error"] = status.get("error")
         return body
+
+    async def input_names() -> list[str]:
+        if list_input_devices is None:
+            return []
+        # Opening PortAudio to enumerate takes a moment; keep it off the event loop.
+        names = await asyncio.to_thread(list_input_devices)
+        # Some Windows Bluetooth names carry a line break; one line of .env cannot hold them.
+        return [n for n in names if not _has_line_break(n)]
+
+    def audio_devices(names: list[str]) -> dict[str, object]:
+        status = capture_status() if capture_status is not None else {}
+        return {
+            "devices": names,
+            "selected": settings.audio_device_name,
+            "capturing": status.get("capturing"),
+            "error": status.get("error"),
+        }
+
 
     @app.get("/control")
     async def control_page() -> object:
@@ -207,6 +242,28 @@ def register(
         settings.youtube_caption_url = url
         await bus.publish(YouTubeCaptionUrlChangedEvent())
         return public_state()
+
+    @app.get("/audio-devices")
+    async def get_audio_devices() -> dict[str, object]:
+        return audio_devices(await input_names())
+
+    @app.put("/audio-device")
+    async def put_audio_device(body: AudioDeviceBody) -> dict[str, object]:
+        name = body.name.strip()
+        if settings.audio_device_index is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="AUDIO_DEVICE_INDEX is set in .env; remove it to choose by name.",
+            )
+        # The name goes into .env, so only a name this PC lists is accepted.
+        names = await input_names()
+        if not name or _has_line_break(name) or name not in names:
+            raise HTTPException(status_code=422, detail=f"No input named {name!r} on this PC.")
+        write_env_values(key_file, {"AUDIO_DEVICE_NAME": name})
+        settings.audio_device_name = name
+        await bus.publish(AudioDeviceChangedEvent())
+        # Reuse the list: enumerating again would race capture reopening PortAudio.
+        return audio_devices(names)
 
     @app.put("/mode")
     async def put_mode(body: ModeBody) -> dict[str, object]:

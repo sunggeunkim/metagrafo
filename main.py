@@ -33,6 +33,7 @@ def create_app(
     load_whisper: bool = False,
     env_file: Path | None = None,
     gemini_connect_factory: Callable[[str], object] | None = None,
+    list_input_devices: Callable[[], list[str]] | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     bus = bus or EventBus()
@@ -55,7 +56,18 @@ def create_app(
     app = FastAPI(title="metagrafo", lifespan=lifespan)
     app.state.bus = bus
     app.state.settings = settings
-    operator_control.register(app, bus, settings, env_file=env_file)
+    if list_input_devices is None:
+        from features.capture_audio.aten_mic import list_input_names_now
+
+        list_input_devices = list_input_names_now
+    operator_control.register(
+        app,
+        bus,
+        settings,
+        env_file=env_file,
+        list_input_devices=list_input_devices,
+        capture_status=capture.status if capture is not None else None,
+    )
     app.state.translator = translate_speech.register(
         app,
         bus,

@@ -10,6 +10,7 @@
     label { display: block; margin: 1rem 0 0.3rem; }
     input { font-size: 1.2rem; padding: 0.4rem 0.6rem; width: 8rem; }
     input.key { width: 28rem; }
+    select { font-size: 1.2rem; padding: 0.4rem 0.6rem; min-width: 28rem; }
     .on { background: #2e7d32; color: #fff; }
     .off { background: #c62828; color: #fff; }
     .mode, .pos { background: #1565c0; color: #fff; }
@@ -30,6 +31,13 @@
     <button id="mode-en-ko" class="mode" data-mode="en_to_ko">Mode: en_to_ko (Guest → Korean)</button>
   </div>
   <p class="hint">en_to_ko puts English speech on screen in Korean. It needs a saved Gemini key; Whisper can only translate into English.</p>
+  <h2>Audio input</h2>
+  <p class="hint">The recording device Metagrafo listens to. Pick one, then Use this input. Capture switches in about a second, and this computer keeps the choice for the next time. OBS picks its own audio separately. Plugged a device in? Refresh list.</p>
+  <label for="audio-device">Input</label>
+  <select id="audio-device"></select>
+  <button id="audio-apply" class="mode">Use this input</button>
+  <button id="audio-refresh" class="mode">Refresh list</button>
+  <p id="audio-status" class="hint"></p>
   <h2>VAD pause</h2>
   <p class="hint">How long to wait after speech before cutting a caption. Allowed range <strong>100–3000 ms</strong>. Applies live (no restart).</p>
   <p class="hint">Guidelines: <strong>250 ms</strong> snappy (may split on a breath) · <strong>500 ms</strong> default · <strong>1000 ms</strong> more pause. Below 200 ms usually cuts words; above 1500 ms feels hung.</p>
@@ -91,12 +99,46 @@
           (y.last_status ? " (last reply " + y.last_status + ")" : "")
         : "Not sending to YouTube.";
     }
+    function fillAudioDevices(a) {
+      const select = document.getElementById("audio-device");
+      select.replaceChildren();
+      // Capture opens the first input whose name contains the saved text, ignoring case.
+      const needle = a.selected.toLowerCase();
+      const inUse = a.devices.includes(a.selected)
+        ? a.selected
+        : a.devices.find((name) => name.toLowerCase().includes(needle));
+      const names = inUse ? a.devices : [a.selected, ...a.devices];
+      for (const name of names) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = a.devices.includes(name) ? name : name + " (not found)";
+        option.selected = name === (inUse || a.selected);
+        select.appendChild(option);
+      }
+    }
+    async function loadAudioDevices() {
+      fillAudioDevices(await (await fetch("/audio-devices")).json());
+    }
+    function showAudioStatus(s) {
+      const status = document.getElementById("audio-status");
+      if (s.audio_error) {
+        status.textContent = "Could not open " + s.audio_device + ": " + s.audio_error + ". Pick another input.";
+        status.style.color = "#ef9a9a";
+      } else {
+        status.textContent = s.audio_capturing ? "Listening to " + s.audio_capturing + "." : "";
+        status.style.color = "";
+      }
+    }
+    async function refreshAudioStatus() {
+      showAudioStatus(await (await fetch("/mode")).json());
+    }
     async function refresh() {
       const r = await fetch("/mode");
       const s = await r.json();
       document.getElementById("status").textContent =
         "Captions " + (s.captions_active ? "ON" : "OFF") +
         " · " + s.mode +
+        " · input " + (s.audio_capturing || s.audio_device) +
         " · VAD " + s.vad_min_silence_ms + " ms" +
         " · pauses " + s.vad_pauses +
         " · previous text " + (s.condition_on_previous_text ? "on" : "off") +
@@ -108,6 +150,7 @@
         " · Gemini key " + (s.gemini_key_set ? "saved" : "needed") +
         " · YouTube captions " + (s.youtube_url_set ? "on" : "off");
       refreshYouTube();
+      showAudioStatus(s);
       document.getElementById("mode-ko").classList.toggle("active", s.mode === "ko_to_en");
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
       document.getElementById("mode-en-ko").classList.toggle("active", s.mode === "en_to_ko");
@@ -145,6 +188,26 @@
         refresh();
       };
     });
+    document.getElementById("audio-apply").onclick = async () => {
+      const name = document.getElementById("audio-device").value;
+      const response = await fetch("/audio-device", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      const body = await response.json();
+      if (response.ok) {
+        fillAudioDevices(body);
+        document.getElementById("audio-status").textContent = "Switching to " + name + "…";
+        // Capture reopens on its own thread; look again once it has had time to open.
+        setTimeout(refresh, 1500);
+      } else {
+        alert(typeof body.detail === "string" ? body.detail : "Input not changed");
+        loadAudioDevices();
+        refresh();
+      }
+    };
+    document.getElementById("audio-refresh").onclick = loadAudioDevices;
     document.getElementById("vad-apply").onclick = async () => {
       const ms = Number(document.getElementById("vad-ms").value);
       await fetch("/vad-silence", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vad_min_silence_ms: ms }) });
@@ -212,8 +275,10 @@
     };
     document.getElementById("youtube-clear").onclick = () => saveYouTubeUrl("");
     refresh();
-    // Only the YouTube counts poll; a full refresh would overwrite numbers being typed.
+    loadAudioDevices();
+    // Only the YouTube counts and capture status poll; a full refresh would overwrite numbers being typed.
     setInterval(refreshYouTube, 5000);
+    setInterval(refreshAudioStatus, 5000);
   </script>
 </body>
 </html>

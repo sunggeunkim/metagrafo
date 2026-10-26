@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 
-from features.capture_audio.devices import InputDevice, resolve_input_device
+from features.capture_audio.devices import InputDevice, list_input_names, resolve_input_device
 from features.capture_audio.pcm import downmix_to_mono, resample_s16le
 
 TARGET_RATE = 16000
 FRAME_SAMPLES = 512
+
+# PortAudio's initialize/terminate are not thread-safe: two threads creating PyAudio at once
+# crash the process. Hold this around creating, opening, closing and terminating.
+PORTAUDIO_LOCK = threading.Lock()
 
 
 def enumerate_input_devices(pa) -> list[InputDevice]:
@@ -23,6 +28,21 @@ def enumerate_input_devices(pa) -> list[InputDevice]:
             )
         )
     return devices
+
+
+def list_input_names_now(open_pa: Callable[[], object] | None = None) -> list[str]:
+    """Input names on this PC right now, each once (MME, DirectSound and WASAPI repeat them)."""
+    if open_pa is None:
+        import pyaudio
+
+        open_pa = pyaudio.PyAudio
+    with PORTAUDIO_LOCK:
+        pa = open_pa()
+        try:
+            names = list_input_names(enumerate_input_devices(pa))
+        finally:
+            pa.terminate()
+    return list(dict.fromkeys(names))
 
 
 def open_pgm_stream(pa, *, device_name: str, device_index: int | None):

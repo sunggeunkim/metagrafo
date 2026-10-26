@@ -52,6 +52,11 @@ class YouTubeCaptionUrlChangedEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class AudioDeviceChangedEvent:
+    """The operator picked a recording device. The name stays on Settings."""
+
+
+@dataclass(frozen=True, slots=True)
 class OverlayStyleEvent:
     position: str
     font_size_vw: float
