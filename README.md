@@ -14,7 +14,7 @@ The overlay is `http://127.0.0.1:8000/overlay`. Captions show up wherever OBS se
 
 Download the repo zip from GitHub and unzip it. Double-click `Start Metagrafo.cmd`.
 
-The first time, that file downloads Python and the Gemini pieces. It needs the internet. Leave the window open. When it finishes, the booth page opens in the browser. Paste the Gemini key and click **Save key**.
+The first time, that file downloads Python and the Gemini pieces. It needs the internet. Leave the window open. When it finishes, the booth page opens in the browser. Paste the Gemini key and click **Save key**. To get a key, sign in at [Google AI Studio](https://aistudio.google.com/api-keys) with a Google account and create an API key.
 
 The next time, double-click the same file. Close the window after the page opens. Metagrafo keeps running.
 
@@ -106,7 +106,7 @@ CAPTION_ENGINE=gemini_live
 GEMINI_API_KEY=your-key-here
 ```
 
-The model is `gemini-3.5-live-translate-preview`. Korean speech is translated to English while it is still coming in. With Gemini on, booth control also offers **en_to_ko**, which captions an English speaker in Korean. The key belongs only in `.env`. An empty key, or any other `CAPTION_ENGINE` value, stays on Whisper.
+The model is `gemini-3.5-live-translate-preview`. Korean speech is translated to English while it is still coming in. With Gemini on, booth control also offers **en_to_ko**, which captions an English speaker in Korean. Get the key from [Google AI Studio](https://aistudio.google.com/api-keys). The key belongs only in `.env`. An empty key, or any other `CAPTION_ENGINE` value, stays on Whisper.
 
 ## Sign-in autostart
 
