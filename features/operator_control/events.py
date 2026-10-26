@@ -47,6 +47,11 @@ class GeminiKeyChangedEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class YouTubeCaptionUrlChangedEvent:
+    """The operator saved or cleared the YouTube caption URL. The URL stays on Settings."""
+
+
+@dataclass(frozen=True, slots=True)
 class OverlayStyleEvent:
     position: str
     font_size_vw: float

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -17,6 +18,7 @@ from features.operator_control.events import (
     ConditionOnPreviousTextEvent,
     VadPausesEvent,
     VadSilenceMsEvent,
+    YouTubeCaptionUrlChangedEvent,
     languages_for,
     needs_gemini,
 )
@@ -107,27 +109,36 @@ class OverlayStyleBody(BaseModel):
     line_count: int = Field(default=2, ge=1, le=6)
 
 
-def write_gemini_key(env_file: Path, api_key: str) -> None:
+class YouTubeCaptionUrlBody(BaseModel):
+    url: str = Field(description="Captions Ingestion URL from YouTube Studio; empty stops sending")
+
+
+def write_env_values(env_file: Path, values: dict[str, str]) -> None:
+    """Set each NAME=value in .env, replacing the old line and keeping every other line."""
     existing = env_file.read_text(encoding="utf-8").splitlines() if env_file.exists() else []
-    wrote_engine = False
-    wrote_key = False
+    written: set[str] = set()
     lines: list[str] = []
     for line in existing:
-        stripped = line.strip()
-        if stripped.startswith("CAPTION_ENGINE="):
-            lines.append("CAPTION_ENGINE=gemini_live")
-            wrote_engine = True
-        elif stripped.startswith("GEMINI_API_KEY="):
-            lines.append(f"GEMINI_API_KEY={api_key}")
-            wrote_key = True
+        name = line.strip().split("=", 1)[0]
+        if "=" in line and name in values:
+            lines.append(f"{name}={values[name]}")
+            written.add(name)
         else:
             lines.append(line)
-    if not wrote_engine:
-        lines.append("CAPTION_ENGINE=gemini_live")
-    if not wrote_key:
-        lines.append(f"GEMINI_API_KEY={api_key}")
+    lines.extend(f"{name}={value}" for name, value in values.items() if name not in written)
     env_file.parent.mkdir(parents=True, exist_ok=True)
     env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def write_gemini_key(env_file: Path, api_key: str) -> None:
+    write_env_values(env_file, {"CAPTION_ENGINE": "gemini_live", "GEMINI_API_KEY": api_key})
+
+
+def is_caption_url(url: str) -> bool:
+    parts = urlsplit(url)
+    return parts.scheme in ("http", "https") and bool(parts.netloc) and not any(
+        ch.isspace() for ch in url
+    )
 
 
 def register(
@@ -159,6 +170,7 @@ def register(
         body = state.snapshot()
         body["gemini_key_set"] = bool(settings.gemini_api_key.strip())
         body["gemini_live"] = settings.gemini_live()
+        body["youtube_url_set"] = bool(settings.youtube_caption_url.strip())
         return body
 
     @app.get("/control")
@@ -180,6 +192,20 @@ def register(
         settings.gemini_api_key = key
         settings.caption_engine = "gemini_live"
         await bus.publish(GeminiKeyChangedEvent())
+        return public_state()
+
+    @app.put("/youtube-caption-url")
+    async def put_youtube_caption_url(body: YouTubeCaptionUrlBody) -> dict[str, object]:
+        # The URL carries the stream's caption key, so it is never echoed back.
+        url = body.url.strip()
+        if url and not is_caption_url(url):
+            raise HTTPException(
+                status_code=422,
+                detail="Paste the Captions Ingestion URL from YouTube Studio (http://upload.youtube.com/closedcaption?cid=…).",
+            )
+        write_env_values(key_file, {"YOUTUBE_CAPTION_URL": url})
+        settings.youtube_caption_url = url
+        await bus.publish(YouTubeCaptionUrlChangedEvent())
         return public_state()
 
     @app.put("/mode")

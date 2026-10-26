@@ -195,12 +195,14 @@ To run the model on the Hermeneia GPU box instead of this PC, set `HERMENEIA_URL
 
 ## YouTube closed captions (optional)
 
-Metagrafo can also send each finished English line to YouTube as **closed captions** (the CC button). Viewers can turn them on or off, and they stay on the recording as a caption track. The OBS overlay keeps working either way.
+Metagrafo can also send each finished caption line to YouTube as **closed captions** (the CC button). Viewers can turn them on or off, and they stay on the recording as a caption track. The OBS overlay keeps working either way.
 
 1. YouTube Studio → your stream → **Stream settings**. Set latency to **Normal** (YouTube only takes captions in Normal latency).
-2. Turn on **Closed captions**, choose **POST captions to URL**, and set **Source language** to **English** (Metagrafo always writes English).
+2. Turn on **Closed captions**, choose **POST captions to URL**, and set **Source language** to the caption language: **English**, or **Korean** if you caption with **en_to_ko**.
 3. Copy the **Captions Ingestion URL** (`http://upload.youtube.com/closedcaption?cid=…`). Treat it like the stream key.
-4. Put it in `.env` (see **Settings**), then restart Metagrafo:
+4. On booth control (`/control`), paste it under **YouTube captions** and click **Save URL**. Sending starts at once, no restart. The URL is saved to `.env` for the next time, and the page shows how many lines were sent. **Stop sending** clears it.
+
+Or put it in `.env` yourself (see **Settings**), then restart Metagrafo:
 
 ```
 YOUTUBE_CAPTION_URL=http://upload.youtube.com/closedcaption?cid=...
