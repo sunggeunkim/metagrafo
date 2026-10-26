@@ -68,10 +68,13 @@ def test_index_still_selects_multichannel_cable() -> None:
     assert chosen.max_input_channels == 16
 
 
-def test_default_settings_audio_device_is_elgato_hdmi() -> None:
+def test_default_settings_audio_device_is_elgato_hdmi(monkeypatch) -> None:
     from core.settings import Settings
 
-    settings = Settings()
+    # The default is what an unset PC gets, not what this PC's .env picked.
+    monkeypatch.delenv("AUDIO_DEVICE_NAME", raising=False)
+    monkeypatch.delenv("AUDIO_DEVICE_INDEX", raising=False)
+    settings = Settings(_env_file=None)
     assert settings.audio_device_name == "HDMI (Elgato 4K S)"
     assert settings.audio_device_index is None
 

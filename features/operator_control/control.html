@@ -163,7 +163,10 @@
       }
     }
     async function refreshAudioStatus() {
-      showAudioStatus(await (await fetch("/mode")).json());
+      const s = await (await fetch("/mode")).json();
+      showAudioStatus(s);
+      // Another /control tab may have started or stopped captions.
+      showCaptions(s.captions_active);
     }
     let captionsActive = true;
     function showCaptions(active) {
@@ -215,7 +218,9 @@
       // A second click before the reply would send the same state twice.
       toggle.disabled = true;
       try {
-        await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: !captionsActive }) });
+        const response = await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: !captionsActive }) });
+        // Take the new state before the button is clickable again, or the next click repeats this one.
+        if (response.ok) showCaptions((await response.json()).captions_active);
       } finally {
         toggle.disabled = false;
       }
