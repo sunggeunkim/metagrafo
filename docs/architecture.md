@@ -117,21 +117,23 @@ Overlay lines: default **2** (newest at the bottom, older lines above). `/contro
 
 ### `youtube_captions`
 
-Optional. `YOUTUBE_CAPTION_URL` is the **Captions Ingestion URL** from YouTube Studio (**POST captions to URL**). Unset sends nothing.
+Optional. `YOUTUBE_CAPTION_URL` is the **Captions Ingestion URL** from YouTube Studio (**POST captions to URL**). Unset sends nothing. `/control` can save or clear it live.
 
 - Subscribes to `SubtitleEvent`. Skips `provisional` lines and blank text.
 - One line per POST to `<url>&seq=N`, `Content-Type: text/plain`, body `YYYY-MM-DDTHH:MM:SS.mmm\n<text>\n` in UTC. The stamp is `SubtitleEvent.spoken_at` (wall clock when the speech began: the VAD chunk start for Whisper, the line's first English fragment for Gemini live), or `created_at` when that is unset.
 - One sender task posts in order, so `seq` only rises. `seq` advances on a 2xx. A refused line (4xx/5xx) is dropped and its `seq` is reused. A timeout or broken connection retries the same line and `seq` twice (0.5 s, 1 s); if it still fails the line is dropped and `seq` moves on, because YouTube may already have it.
 - Queue max 16, **drop oldest**.
 - YouTube refuses lines until the stream is live: warn once, log once when it recovers. The URL is never logged (it carries the caption key); a filter on the `httpx` logger drops its INFO request lines for this URL.
-- `GET /youtube-captions` — `enabled`, `sent`, `failed`, `last_status`.
+- `YouTubeCaptionUrlChangedEvent` — read the new URL from Settings. Empties the queue and starts `seq` and the counts over at 1/0 (a new URL is a new stream). An empty URL drops lines. A line still being sent when the URL changes is abandoned, never sent to the new URL.
+- `GET /youtube-captions` — `enabled`, `sent`, `failed`, `last_status` (only `enabled: false` without a URL).
 
 ### `operator_control`
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**
-- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style`
+- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts)
+- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style` / `PUT /gemini-key` / `PUT /youtube-caption-url`
+- `PUT /youtube-caption-url` — `{url}`; empty clears. Must be http(s) with a host and no whitespace (422 otherwise). Writes `YOUTUBE_CAPTION_URL` to `.env`, keeping other lines, and publishes `YouTubeCaptionUrlChangedEvent`. The URL is never echoed back; `/mode` shows only `youtube_url_set`.
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
 - `VadSilenceMsEvent` — live; capture updates the running chunker (100–3000 ms)
@@ -149,7 +151,7 @@ Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
 - `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`)
-- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent` — `operator_control`
+- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent` — `operator_control`
 
 ## Process model
 

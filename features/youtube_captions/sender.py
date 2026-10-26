@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
@@ -31,19 +32,22 @@ def sequenced_url(url: str, seq: int) -> str:
 class _HideCaptionKey(logging.Filter):
     """httpx logs every request URL at INFO, and this URL carries the stream's caption key."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, current_url: Callable[[], str]) -> None:
         super().__init__()
-        self._secret = urlsplit(url).query or url
+        self._current_url = current_url
 
     def filter(self, record: logging.LogRecord) -> bool:
-        return self._secret not in record.getMessage()
+        url = self._current_url()
+        secret = urlsplit(url).query or url
+        return not secret or secret not in record.getMessage()
 
 
 class YouTubeCaptionSender:
     """Posts each finished caption line to a YouTube live caption ingestion URL.
 
     Lines are sent one at a time, in order, so `seq` always rises. The bottom line
-    that Gemini live is still growing (`provisional`) is not sent.
+    that Gemini live is still growing (`provisional`) is not sent. With no URL,
+    lines are dropped until `use_url` gives one.
     """
 
     def __init__(
@@ -70,7 +74,28 @@ class YouTubeCaptionSender:
         self._failing = False
         bus.subscribe(SubtitleEvent, self._on_subtitle)
 
+    @property
+    def enabled(self) -> bool:
+        return bool(self._url)
+
+    def use_url(self, url: str) -> None:
+        """Send to a new URL (a new stream), or stop sending when it is empty."""
+        url = url.strip()
+        if url == self._url:
+            return
+        self._url = url
+        # Each ingestion URL counts its own seq from 1.
+        self._seq = 1
+        self.sent = 0
+        self.failed = 0
+        self.last_status = None
+        self._failing = False
+        while not self._queue.empty():
+            self._queue.get_nowait()
+
     def snapshot(self) -> dict[str, object]:
+        if not self.enabled:
+            return {"enabled": False}
         return {
             "enabled": True,
             "sent": self.sent,
@@ -79,7 +104,7 @@ class YouTubeCaptionSender:
         }
 
     async def _on_subtitle(self, event: SubtitleEvent) -> None:
-        if event.provisional or not event.text.strip():
+        if not self._url or event.provisional or not event.text.strip():
             return
         # Stamp the line when the speech began, so YouTube shows it with the words.
         spoken_at = event.spoken_at if event.spoken_at is not None else event.created_at
@@ -92,7 +117,7 @@ class YouTubeCaptionSender:
         if self._post is not None:
             await self._drain(self._post)
             return
-        hide = _HideCaptionKey(self._url)
+        hide = _HideCaptionKey(lambda: self._url)
         httpx_logger = logging.getLogger("httpx")
         httpx_logger.addFilter(hide)
         try:
@@ -110,10 +135,11 @@ class YouTubeCaptionSender:
 
     async def _send(self, post, body: str) -> None:
         # The URL carries the stream's caption key, so it is never logged.
+        url = self._url
         for delay_s in (*self._retry_delays_s, None):
             try:
                 response = await post(
-                    sequenced_url(self._url, self._seq),
+                    sequenced_url(url, self._seq),
                     content=body.encode("utf-8"),
                     headers={"Content-Type": "text/plain"},
                 )
@@ -122,7 +148,11 @@ class YouTubeCaptionSender:
                 # same line goes again with the same seq.
                 if delay_s is not None:
                     await asyncio.sleep(delay_s)
+                    if self._url != url:
+                        return
                     continue
+                if self._url != url:
+                    return
                 # Out of retries. A skipped seq is safe; a reused one can hide the next line.
                 self._seq += 1
                 self.last_status = None
@@ -133,6 +163,9 @@ class YouTubeCaptionSender:
                 self._record_failure(f"request failed: {type(exc).__name__}")
                 return
             break
+        if self._url != url:
+            # The operator switched streams mid-line; the new stream's counts start clean.
+            return
         self.last_status = response.status_code
         if 200 <= response.status_code < 300:
             self._seq += 1

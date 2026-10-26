@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from core.event_bus import EventBus
 from core.settings import Settings
+from features.operator_control.events import YouTubeCaptionUrlChangedEvent
 from features.youtube_captions.sender import YouTubeCaptionSender
 
 
@@ -29,13 +30,16 @@ class YouTubeCaptionsSlice:
 
 
 def register(app: FastAPI, bus: EventBus, settings: Settings, *, post=None) -> YouTubeCaptionsSlice:
-    url = settings.youtube_caption_url.strip()
-    sender = YouTubeCaptionSender(bus, url, post=post) if url else None
+    # The sender runs even without a URL, so one saved on /control starts sending at once.
+    sender = YouTubeCaptionSender(bus, settings.youtube_caption_url, post=post)
+
+    async def on_url_changed(_event: YouTubeCaptionUrlChangedEvent) -> None:
+        sender.use_url(settings.youtube_caption_url)
+
+    bus.subscribe(YouTubeCaptionUrlChangedEvent, on_url_changed)
 
     @app.get("/youtube-captions")
     async def youtube_captions() -> dict[str, object]:
-        if sender is None:
-            return {"enabled": False}
         return sender.snapshot()
 
     return YouTubeCaptionsSlice(sender)

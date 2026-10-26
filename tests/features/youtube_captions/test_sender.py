@@ -224,6 +224,64 @@ async def test_full_queue_drops_the_oldest_line() -> None:
     assert [c["body"].split("\n")[1] for c in fake.calls] == ["two", "three"]
 
 
+async def test_without_a_url_lines_are_dropped() -> None:
+    bus = EventBus()
+    fake = FakeYouTube()
+    sender = YouTubeCaptionSender(bus, "", post=fake.post)
+    await bus.publish(_line("lost"))
+    sender.use_url(URL)
+    await bus.publish(_line("kept"))
+    await _run_until(fake, sender, 1)
+
+    assert [c["body"].split("\n")[1] for c in fake.calls] == ["kept"]
+
+
+async def test_a_new_url_starts_seq_and_counts_over_and_drops_old_lines() -> None:
+    bus = EventBus()
+    fake = FakeYouTube()
+    sender = YouTubeCaptionSender(bus, URL, post=fake.post)
+    await bus.publish(_line("first stream"))
+    await _run_until(fake, sender, 1)
+    await bus.publish(_line("queued for the first stream"))
+
+    other = "http://upload.youtube.com/closedcaption?cid=xyz-789"
+    sender.use_url(other)
+    assert sender.snapshot() == {"enabled": True, "sent": 0, "failed": 0, "last_status": None}
+    await bus.publish(_line("second stream"))
+    await _run_until(fake, sender, 2)
+
+    assert fake.calls[1]["url"] == other + "&seq=1"
+    assert fake.calls[1]["body"].endswith("\nsecond stream\n")
+    sender.use_url("")
+    assert sender.snapshot() == {"enabled": False}
+
+
+async def test_switching_streams_mid_line_does_not_send_the_old_line_to_the_new_stream() -> None:
+    bus = EventBus()
+    calls: list[str] = []
+    other = "http://upload.youtube.com/closedcaption?cid=xyz-789"
+    sender: YouTubeCaptionSender
+
+    async def post(url, *, content, headers):
+        calls.append(url)
+        if len(calls) == 1:
+            sender.use_url(other)
+            raise httpx.ConnectError("offline")
+        return _Response(200)
+
+    sender = YouTubeCaptionSender(bus, URL, post=post, retry_delays_s=(0, 0))
+    await bus.publish(_line("one"))
+    task = asyncio.create_task(sender.run())
+    await asyncio.sleep(0.05)
+    await bus.publish(_line("two"))
+    async with asyncio.timeout(2):
+        while sender.sent < 1:
+            await asyncio.sleep(0)
+    task.cancel()
+    assert calls == [URL + "&seq=1", other + "&seq=1"]
+    assert sender.failed == 0
+
+
 def test_status_route_reports_disabled_without_a_url() -> None:
     app = create_app(settings=Settings(_env_file=None, youtube_caption_url=""))
     with TestClient(app) as client:

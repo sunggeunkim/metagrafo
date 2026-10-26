@@ -75,8 +75,22 @@
   <label for="gemini-key">Gemini key</label>
   <input id="gemini-key" class="key" type="password" autocomplete="off" />
   <button id="gemini-save" class="mode">Save key</button>
+  <h2>YouTube captions</h2>
+  <p class="hint">Sends each finished line to YouTube as closed captions (the CC button). In YouTube Studio, open the stream's <strong>Stream settings</strong>, set latency to <strong>Normal</strong>, turn on <strong>Closed captions</strong> with <strong>POST captions to URL</strong>, and set the source language to the caption language (English, or Korean for en_to_ko). Copy the <strong>Captions Ingestion URL</strong>, paste it here, then Save URL. Sending starts at once, and this computer keeps the URL for the next time. YouTube refuses lines until the stream is live.</p>
+  <label for="youtube-url">Captions Ingestion URL</label>
+  <input id="youtube-url" class="key" type="password" autocomplete="off" placeholder="http://upload.youtube.com/closedcaption?cid=…" />
+  <button id="youtube-save" class="mode">Save URL</button>
+  <button id="youtube-clear" class="off">Stop sending</button>
+  <p id="youtube-status" class="hint"></p>
   <p id="status"></p>
   <script>
+    async function refreshYouTube() {
+      const y = await (await fetch("/youtube-captions")).json();
+      document.getElementById("youtube-status").textContent = y.enabled
+        ? "Sending to YouTube: " + y.sent + " sent, " + y.failed + " refused or failed" +
+          (y.last_status ? " (last reply " + y.last_status + ")" : "")
+        : "Not sending to YouTube.";
+    }
     async function refresh() {
       const r = await fetch("/mode");
       const s = await r.json();
@@ -91,7 +105,9 @@
         " · " + s.font_size_vw + " vw" +
         " · box " + s.box_width_pct + "×" + s.box_height_pct + " %" +
         " · inset " + s.inset_vertical_pct + "/" + s.inset_horizontal_pct + " %" +
-        " · Gemini key " + (s.gemini_key_set ? "saved" : "needed");
+        " · Gemini key " + (s.gemini_key_set ? "saved" : "needed") +
+        " · YouTube captions " + (s.youtube_url_set ? "on" : "off");
+      refreshYouTube();
       document.getElementById("mode-ko").classList.toggle("active", s.mode === "ko_to_en");
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
       document.getElementById("mode-en-ko").classList.toggle("active", s.mode === "en_to_ko");
@@ -176,7 +192,28 @@
       }
       refresh();
     };
+    async function saveYouTubeUrl(url) {
+      const response = await fetch("/youtube-caption-url", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (response.ok) {
+        document.getElementById("youtube-url").value = "";
+      } else {
+        const body = await response.json();
+        alert(typeof body.detail === "string" ? body.detail : "URL not saved");
+      }
+      refresh();
+    }
+    document.getElementById("youtube-save").onclick = () => {
+      const url = document.getElementById("youtube-url").value.trim();
+      if (url) saveYouTubeUrl(url);
+    };
+    document.getElementById("youtube-clear").onclick = () => saveYouTubeUrl("");
     refresh();
+    // Only the YouTube counts poll; a full refresh would overwrite numbers being typed.
+    setInterval(refreshYouTube, 5000);
   </script>
 </body>
 </html>
