@@ -5,6 +5,7 @@ from enum import StrEnum
 class TranslateMode(StrEnum):
     KO_TO_EN = "ko_to_en"
     EN_TO_EN = "en_to_en"
+    EN_TO_KO = "en_to_ko"
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,4 +60,11 @@ class OverlayStyleEvent:
 def languages_for(mode: TranslateMode) -> tuple[str, str]:
     if mode is TranslateMode.EN_TO_EN:
         return "en", "en"
+    if mode is TranslateMode.EN_TO_KO:
+        return "en", "ko"
     return "ko", "en"
+
+
+def needs_gemini(mode: TranslateMode) -> bool:
+    """Whisper only translates into English, so Korean captions need Gemini live."""
+    return mode is TranslateMode.EN_TO_KO

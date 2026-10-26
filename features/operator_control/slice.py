@@ -18,6 +18,7 @@ from features.operator_control.events import (
     VadPausesEvent,
     VadSilenceMsEvent,
     languages_for,
+    needs_gemini,
 )
 
 _CONTROL_PAGE = Path(__file__).with_name("control.html")
@@ -81,7 +82,7 @@ class CaptionsBody(BaseModel):
 
 
 class ModeBody(BaseModel):
-    mode: TranslateMode = Field(description="ko_to_en or en_to_en")
+    mode: TranslateMode = Field(description="ko_to_en, en_to_en, or en_to_ko")
 
 
 class VadSilenceBody(BaseModel):
@@ -140,6 +141,10 @@ def register(
         initial_mode = TranslateMode(settings.translate_mode)
     except ValueError:
         initial_mode = TranslateMode.KO_TO_EN
+    if needs_gemini(initial_mode) and not settings.gemini_live():
+        initial_mode = TranslateMode.KO_TO_EN
+    # A key pasted later starts Gemini from this setting, so it must match the booth.
+    settings.translate_mode = initial_mode.value
     pauses = settings.vad_pauses if settings.vad_pauses in (1, 2) else 1
     key_file = env_file or Path.cwd() / ".env"
     state = OperatorState(
@@ -153,6 +158,7 @@ def register(
     def public_state() -> dict[str, object]:
         body = state.snapshot()
         body["gemini_key_set"] = bool(settings.gemini_api_key.strip())
+        body["gemini_live"] = settings.gemini_live()
         return body
 
     @app.get("/control")
@@ -178,6 +184,11 @@ def register(
 
     @app.put("/mode")
     async def put_mode(body: ModeBody) -> dict[str, object]:
+        if needs_gemini(body.mode) and not settings.gemini_live():
+            raise HTTPException(
+                status_code=409,
+                detail="Korean captions need Gemini. Save a Gemini key first.",
+            )
         state.mode = body.mode
         source, target = languages_for(state.mode)
         await bus.publish(

@@ -13,6 +13,7 @@ from features.operator_control.events import (
     ModeChangedEvent,
     TranslateMode,
     languages_for,
+    needs_gemini,
 )
 from features.translate_speech.captioner import Captioner
 from features.translate_speech.events import SubtitleEvent
@@ -41,7 +42,7 @@ class TranslateWorker:
             translate=translate,
             condition_on_previous_text=condition_on_previous_text,
         )
-        self._mode = TranslateMode(mode)
+        self._mode = _whisper_mode(TranslateMode(mode))
         self._queue: asyncio.Queue[AudioChunkEvent] = asyncio.Queue(maxsize=queue_size)
         self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
@@ -67,7 +68,7 @@ class TranslateWorker:
 
     async def _on_mode(self, event: ModeChangedEvent) -> None:
         try:
-            self._mode = TranslateMode(event.mode)
+            self._mode = _whisper_mode(TranslateMode(event.mode))
         except ValueError:
             self._mode = TranslateMode.KO_TO_EN
 
@@ -120,3 +121,8 @@ class TranslateWorker:
                 duration_s=event.duration_s,
             )
         )
+
+
+def _whisper_mode(mode: TranslateMode) -> TranslateMode:
+    """Whisper cannot write Korean, so a Gemini-only mode falls back to the sermon mode."""
+    return TranslateMode.KO_TO_EN if needs_gemini(mode) else mode
