@@ -14,9 +14,11 @@ The overlay is `http://127.0.0.1:8000/overlay`. Captions show up wherever OBS se
 
 Download the repo zip from GitHub and unzip it. Double-click `Start Metagrafo.cmd`.
 
-The first time, that file downloads Python and the Gemini pieces. It needs the internet. Leave the window open. When it finishes, the booth page opens in the browser. Paste the Gemini key and click **Save key**. To get a key, sign in at [Google AI Studio](https://aistudio.google.com/api-keys) with a Google account and create an API key.
+The first time, that file downloads Python and the Gemini pieces. It needs the internet. Leave the window open. When it finishes, the booth page opens in the browser. Paste the Gemini key and click **Save key**. To get a key, sign in at [Google AI Studio](https://aistudio.google.com/api-keys) with a Google account and create an API key. Then pick the PC's sound input under **Audio input** and click **Use this input**. Both are saved, so the next start remembers them.
 
 The next time, double-click the same file. Close the window after the page opens. Metagrafo keeps running.
+
+After you unzip a newer copy over the same folder, the same file installs any new pieces before it starts. A start that stopped halfway, for example when the internet dropped, picks up again on the next double-click. If Metagrafo does not start, the window says so and opens `metagrafo.log` in Notepad. The reason is at the end of that file.
 
 ## Windows install
 
