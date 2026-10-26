@@ -1,0 +1,2 @@
+# cmd.exe can miss goto labels in a batch file with LF endings, and the GitHub zip keeps these.
+*.cmd text eol=crlf
