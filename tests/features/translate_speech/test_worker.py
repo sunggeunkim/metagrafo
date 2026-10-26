@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import threading
+import time
 
 from core.event_bus import EventBus
 from features.capture_audio.events import AudioChunkEvent
@@ -259,3 +260,24 @@ async def test_captions_off_forgets_previous_text() -> None:
     await asyncio.sleep(0.1)
     task.cancel()
     assert whisper.calls[1]["initial_prompt"] == ""
+
+
+async def test_line_carries_the_wall_clock_time_its_chunk_began() -> None:
+    bus = EventBus()
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(SubtitleEvent, handler)
+    worker = TranslateWorker(bus, FakeWhisper("Amen.").transcribe)
+    chunk = AudioChunkEvent(
+        chunk_id="c1",
+        pcm_s16le=bytes([0, 16]) * 1600,
+        sample_rate=16000,
+        started_at=time.monotonic() - 3.0,
+        duration_s=2.0,
+    )
+    await worker._process(chunk)
+    assert len(seen) == 1
+    assert abs(seen[0].spoken_at - (time.time() - 3.0)) < 0.5

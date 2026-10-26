@@ -60,6 +60,7 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> SubtitleHub:
         operator = app.state.operator
         source, target = languages_for(operator.mode)
         chunk_id = str(uuid.uuid4())
+        now = time.time()
         await bus.publish(
             SubtitleEvent(
                 chunk_id=chunk_id,
@@ -67,8 +68,9 @@ def register(app: FastAPI, bus: EventBus, settings: Settings) -> SubtitleHub:
                 source_language=source,
                 target_language=target,
                 mode=operator.mode.value,
-                created_at=time.time(),
+                created_at=now,
                 duration_s=0.0,
+                spoken_at=now,
             )
         )
         return {"chunk_id": chunk_id}

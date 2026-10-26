@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 
 from fastapi import FastAPI
 
@@ -21,6 +22,9 @@ class YouTubeCaptionsSlice:
     async def stop(self) -> None:
         if self._task is not None:
             self._task.cancel()
+            # Wait so the HTTP client closes before the loop shuts down.
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._task
             self._task = None
 
 

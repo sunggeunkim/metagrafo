@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from datetime import UTC, datetime
 
 import httpx
@@ -13,6 +14,7 @@ from features.youtube_captions.sender import (
     format_timestamp,
     sequenced_url,
 )
+from features.youtube_captions.slice import YouTubeCaptionsSlice
 from main import create_app
 
 URL = "http://upload.youtube.com/closedcaption?cid=abc-123"
@@ -36,16 +38,19 @@ class FakeYouTube:
         return _Response(self.statuses.pop(0) if self.statuses else 200)
 
 
-def _line(text: str, *, provisional: bool = False, duration_s: float = 2.0) -> SubtitleEvent:
+def _line(
+    text: str, *, provisional: bool = False, spoken_at: float | None = NOON
+) -> SubtitleEvent:
     return SubtitleEvent(
         chunk_id="c1",
         text=text,
         source_language="ko",
         target_language="en",
         mode="ko_to_en",
-        created_at=NOON + duration_s,
-        duration_s=duration_s,
+        created_at=NOON + 3.0,
+        duration_s=2.0,
         provisional=provisional,
+        spoken_at=spoken_at,
     )
 
 
@@ -87,6 +92,16 @@ async def test_posts_finished_lines_in_order_with_rising_seq() -> None:
     assert sender.snapshot() == {"enabled": True, "sent": 2, "failed": 0, "last_status": 200}
 
 
+async def test_line_without_a_speech_time_is_stamped_when_it_was_made() -> None:
+    bus = EventBus()
+    fake = FakeYouTube()
+    sender = YouTubeCaptionSender(bus, URL, post=fake.post)
+    await bus.publish(_line("Amen.", spoken_at=None))
+    await _run_until(fake, sender, 1)
+
+    assert fake.calls[0]["body"] == "2026-10-25T17:00:03.250\nAmen.\n"
+
+
 async def test_skips_provisional_and_blank_lines() -> None:
     bus = EventBus()
     fake = FakeYouTube()
@@ -116,17 +131,40 @@ async def test_refused_line_keeps_seq_and_warns_once(caplog) -> None:
     assert "abc-123" not in caplog.text
 
 
-async def test_network_error_is_counted_not_raised() -> None:
+async def test_timeout_retries_the_same_line_and_seq() -> None:
+    bus = EventBus()
+    calls: list[tuple[str, bytes]] = []
+
+    async def post(url, *, content, headers):
+        calls.append((url, content))
+        if len(calls) == 1:
+            raise httpx.ReadTimeout("slow")
+        return _Response(200)
+
+    sender = YouTubeCaptionSender(bus, URL, post=post, retry_delays_s=(0, 0))
+    await bus.publish(_line("one"))
+    await bus.publish(_line("two"))
+    task = asyncio.create_task(sender.run())
+    async with asyncio.timeout(2):
+        while sender.sent < 2:
+            await asyncio.sleep(0)
+    task.cancel()
+    assert [url[-5:] for url, _ in calls] == ["seq=1", "seq=1", "seq=2"]
+    assert calls[0][1] == calls[1][1]
+    assert sender.failed == 0
+
+
+async def test_line_that_never_gets_through_is_dropped_and_seq_moves_on() -> None:
     bus = EventBus()
     calls: list[str] = []
 
     async def post(url, *, content, headers):
         calls.append(url)
-        if len(calls) == 1:
+        if b"one" in content:
             raise httpx.ConnectError("offline")
         return _Response(200)
 
-    sender = YouTubeCaptionSender(bus, URL, post=post)
+    sender = YouTubeCaptionSender(bus, URL, post=post, retry_delays_s=(0, 0))
     await bus.publish(_line("one"))
     await bus.publish(_line("two"))
     task = asyncio.create_task(sender.run())
@@ -134,8 +172,45 @@ async def test_network_error_is_counted_not_raised() -> None:
         while sender.sent < 1:
             await asyncio.sleep(0)
     task.cancel()
+    assert [url[-5:] for url in calls] == ["seq=1", "seq=1", "seq=1", "seq=2"]
     assert sender.failed == 1
-    assert calls == [URL + "&seq=1", URL + "&seq=1"]
+
+
+async def test_real_httpx_requests_do_not_log_the_caption_key(caplog) -> None:
+    bus = EventBus()
+    seen: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200 if len(seen) > 1 else 403, text="2026-10-25T17:00:00.000")
+
+    sender = YouTubeCaptionSender(bus, URL, transport=httpx.MockTransport(handle))
+    await bus.publish(_line("one"))
+    await bus.publish(_line("two"))
+    with caplog.at_level("DEBUG"):
+        task = asyncio.create_task(sender.run())
+        async with asyncio.timeout(2):
+            while sender.sent < 1:
+                await asyncio.sleep(0)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+    assert str(seen[0].url) == URL + "&seq=1"
+    assert seen[0].content == b"2026-10-25T17:00:00.250\none\n"
+    assert "abc-123" not in caplog.text
+    assert logging.getLogger("httpx").filters == []
+
+
+async def test_stop_waits_for_the_sender_to_close() -> None:
+    bus = EventBus()
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200))
+    sender = YouTubeCaptionSender(bus, URL, transport=transport)
+    slice_ = YouTubeCaptionsSlice(sender)
+    await slice_.start()
+    task = slice_._task
+    await asyncio.sleep(0)
+    await slice_.stop()
+    assert task is not None and task.done()
 
 
 async def test_full_queue_drops_the_oldest_line() -> None:

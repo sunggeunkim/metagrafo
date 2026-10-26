@@ -190,3 +190,22 @@ async def test_full_audio_queue_keeps_the_newest_chunk() -> None:
     while not translator._audio.empty():
         kept.append(translator._audio.get_nowait())
     assert kept == [bytes([index]) for index in range(2, 12)]
+
+
+async def test_finished_line_is_stamped_when_its_first_fragment_arrived() -> None:
+    bus = EventBus()
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(SubtitleEvent, handler)
+    # Each fragment reads the clock, then each publish reads it again.
+    ticks = iter([100.0, 100.1, 104.0, 104.1])
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), clock=lambda: next(ticks)
+    )
+    await translator.apply_transcript("Today's topical")
+    await translator.apply_transcript("sermon.")
+    assert [(e.provisional, e.spoken_at) for e in seen] == [(True, 100.0), (False, 100.0)]
+    assert seen[-1].created_at == 104.1

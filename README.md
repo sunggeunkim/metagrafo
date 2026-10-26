@@ -208,7 +208,7 @@ YOUTUBE_CAPTION_URL=http://upload.youtube.com/closedcaption?cid=...
 
 The URL follows the stream key, so a reused stream key keeps the same URL. Leave it unset to send nothing.
 
-Only finished lines are sent. The Gemini live bottom line is sent once it is committed, not while it grows. Captions OFF on `/control` sends nothing, because no lines are made. Each line is stamped with the time the speech began, so keep this PC's clock synced (Windows **Set time automatically**).
+Only finished lines are sent. The Gemini live bottom line is sent once it is committed, not while it grows. Captions OFF on `/control` sends nothing, because no lines are made. Each line is stamped with when it was spoken: for Whisper, when its audio chunk began; for Gemini live, when the line's first English words arrived (a second or two after the Korean). Keep this PC's clock synced (Windows **Set time automatically**).
 
 YouTube refuses lines until the stream is live. Metagrafo logs one warning when that starts and one line when YouTube accepts captions again. `GET /youtube-captions` shows `sent`, `failed`, and the last HTTP status.
 

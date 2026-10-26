@@ -109,6 +109,7 @@ class TranslateWorker:
             return
         logger.info("%s", cleaned)
         source, target = languages_for(self._mode)
+        now = time.time()
         await self._bus.publish(
             SubtitleEvent(
                 chunk_id=event.chunk_id,
@@ -116,7 +117,9 @@ class TranslateWorker:
                 source_language=source,
                 target_language=target,
                 mode=self._mode.value,
-                created_at=time.time(),
+                created_at=now,
                 duration_s=event.duration_s,
+                # The chunk's start is on the monotonic clock; move it to wall time.
+                spoken_at=now - (time.monotonic() - event.started_at),
             )
         )
