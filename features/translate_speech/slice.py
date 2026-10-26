@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from core.event_bus import EventBus
 from core.settings import Settings
-from features.operator_control.events import GeminiKeyChangedEvent
+from features.operator_control.events import GeminiKeyChangedEvent, ModeChangedEvent
 from features.translate_speech.device_profile import detect_vram_gb, resolve_profile
 from features.translate_speech.gemini_live import Connect, GeminiLiveTranslator, gemini_connect
 from features.translate_speech.worker import TranslateWorker
@@ -29,6 +29,7 @@ class TranslateSlice:
         self._settings: Settings | None = None
         self._connect_factory: Callable[[str], Connect] = gemini_connect
         self._bus: EventBus | None = None
+        self._mode: str | None = None
 
     def watch_gemini_key(
         self,
@@ -40,6 +41,11 @@ class TranslateSlice:
         self._settings = settings
         self._connect_factory = connect_factory
         bus.subscribe(GeminiKeyChangedEvent, self._on_gemini_key)
+        bus.subscribe(ModeChangedEvent, self._on_mode)
+
+    async def _on_mode(self, event: ModeChangedEvent) -> None:
+        """A key pasted later must start Gemini in the mode the booth shows, not the .env one."""
+        self._mode = event.mode
 
     async def _on_gemini_key(self, _event: GeminiKeyChangedEvent) -> None:
         settings = self._settings
@@ -59,7 +65,7 @@ class TranslateSlice:
             bus,
             connect=connect,
             api_key=key,
-            mode=settings.translate_mode,
+            mode=self._mode or settings.translate_mode,
         )
         if self._task is not None:
             self._task.cancel()
