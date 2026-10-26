@@ -28,7 +28,8 @@ if not exist "%PY%" echo First start installs Python and Metagrafo.
 echo This needs the internet and can take a few minutes.
 echo Leave this window open.
 echo.
-if exist "%PY%" goto pip
+rem python312._pth is near the end of the zip, so it is there only if tar finished.
+if exist "%PYDIR%\python312._pth" goto pip
 echo Downloading Python...
 if not exist "%ROOT%\runtime" mkdir "%ROOT%\runtime"
 if not exist "%PYDIR%" mkdir "%PYDIR%"
@@ -95,8 +96,10 @@ exit /b 1
 :notstarted
 echo.
 echo Metagrafo did not start.
+rem pythonw writes nothing until main.py runs, so an import error would never reach the log.
+"%PY%" -c "import main" >>"%ROOT%\metagrafo.log" 2>&1
 echo The reason is at the end of metagrafo.log in this folder.
-if exist "%ROOT%\metagrafo.log" start "" notepad "%ROOT%\metagrafo.log"
+start "" notepad "%ROOT%\metagrafo.log"
 echo.
 pause
 exit /b 1
