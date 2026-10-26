@@ -16,14 +16,48 @@
     .mode, .pos { background: #1565c0; color: #fff; }
     .active { outline: 4px solid #ffd54f; }
     .hint { color: #aaa; font-size: 0.95rem; max-width: 40rem; }
+    [hidden] { display: none !important; }
+    /* Overlay on the left, log on the right; the log drops below on a narrow window. */
+    #viewers { display: flex; flex-wrap: wrap; gap: 1rem; align-items: stretch; margin: 0.5rem; }
+    #overlay-panel { flex: 1 1 32rem; max-width: 48rem; }
+    /* The log fills the row's height instead of setting it, so long logs scroll. */
+    #log-panel { flex: 1 1 24rem; min-width: 0; min-height: 20rem; position: relative; }
+    #overlay-preview {
+      position: relative; width: 100%; aspect-ratio: 16 / 9;
+      overflow: hidden; border: 1px solid #555;
+      /* The overlay is transparent; the checks show where it is empty. */
+      background: repeating-conic-gradient(#333 0 25%, #222 0 50%) 0 0 / 24px 24px;
+    }
+    #overlay-frame {
+      position: absolute; top: 0; left: 0; width: 1920px; height: 1080px;
+      border: 0; transform-origin: 0 0;
+    }
+    #log-view {
+      position: absolute; inset: 0; box-sizing: border-box; margin: 0;
+      background: #000; color: #ccc; font-size: 0.85rem; border: 1px solid #555;
+      overflow: auto; padding: 0.6rem; white-space: pre-wrap;
+    }
+    #log-view:empty::before { content: "Nothing logged yet."; color: #777; }
   </style>
 </head>
 <body>
   <h1>Booth control</h1>
-  <p>Captions default ON. Turn OFF during worship so Whisper does not run on music.</p>
+  <p>Captions start with Metagrafo. Stop them during worship so music is not captioned, then Start them for the sermon.</p>
   <div>
-    <button id="captions-on" class="on">Captions ON</button>
-    <button id="captions-off" class="off">Captions OFF</button>
+    <button id="captions-toggle" class="off">Stop captions</button>
+    <button id="show-overlay" class="mode">Show overlay</button>
+    <button id="show-logs" class="mode">Show logs</button>
+  </div>
+  <p class="hint">Show overlay and Show logs open side by side here: the overlay as OBS shows it on the left, Metagrafo's log on the right. The log keeps the newest line at the bottom and follows new lines while it is open.</p>
+  <div id="viewers">
+    <div id="overlay-panel" hidden>
+      <div id="overlay-preview">
+        <iframe id="overlay-frame" title="Overlay preview"></iframe>
+      </div>
+    </div>
+    <div id="log-panel" hidden>
+      <pre id="log-view"></pre>
+    </div>
   </div>
   <div>
     <button id="mode-ko" class="mode" data-mode="ko_to_en">Mode: ko_to_en</button>
@@ -58,8 +92,7 @@
   <h2>Overlay</h2>
   <p class="hint">Keep the OBS Browser Source at <strong>1920×1080</strong>. Right-click the source → <strong>Transform → Reset Transform</strong> so the type is not stretched. Do not drag the red handles or change source Height to crop captions — that squashes letters. Size the caption band here instead.</p>
   <p class="hint">Position, font, box size, and insets apply live. Font is viewport width percent (<strong>vw</strong>), range <strong>1.0–8.0</strong>. Box width <strong>10–100</strong> and height <strong>5–100</strong> are percent of the 1920×1080 overlay (default <strong>100 × 30</strong>). Insets <strong>0–20</strong>. After overlay HTML changes, right-click the source → Refresh once.</p>
-  <p class="hint">Font: <strong>2.0 vw</strong> small · <strong>2.5 vw</strong> default · <strong>4.5 vw</strong> large. Box height <strong>10</strong> thin band · <strong>30</strong> default. If a line is sliced, raise box height, not OBS source height.</p>
-  <div>
+  <p class="hint">Font: <strong>2.0 vw</strong> small · <strong>2.5 vw</strong> default · <strong>4.5 vw</strong> large. Box height <strong>10</strong> thin band · <strong>30</strong> default. If a line is sliced, raise box height, not OBS source height.</p>  <div>
     <button class="pos" data-pos="top_left">Top left</button>
     <button class="pos" data-pos="top_center">Top center</button>
     <button class="pos" data-pos="bottom_center">Bottom center</button>
@@ -132,11 +165,19 @@
     async function refreshAudioStatus() {
       showAudioStatus(await (await fetch("/mode")).json());
     }
+    let captionsActive = true;
+    function showCaptions(active) {
+      captionsActive = active;
+      const toggle = document.getElementById("captions-toggle");
+      toggle.textContent = active ? "Stop captions" : "Start captions";
+      toggle.className = active ? "off" : "on";
+    }
     async function refresh() {
       const r = await fetch("/mode");
       const s = await r.json();
+      showCaptions(s.captions_active);
       document.getElementById("status").textContent =
-        "Captions " + (s.captions_active ? "ON" : "OFF") +
+        "Captions " + (s.captions_active ? "running" : "stopped") +
         " · " + s.mode +
         " · input " + (s.audio_capturing || s.audio_device) +
         " · VAD " + s.vad_min_silence_ms + " ms" +
@@ -169,13 +210,68 @@
       document.getElementById("inset-h").value = s.inset_horizontal_pct;
       document.getElementById("line-count").value = s.line_count;
     }
-    document.getElementById("captions-on").onclick = async () => {
-      await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: true }) });
+    document.getElementById("captions-toggle").onclick = async () => {
+      const toggle = document.getElementById("captions-toggle");
+      // A second click before the reply would send the same state twice.
+      toggle.disabled = true;
+      try {
+        await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: !captionsActive }) });
+      } finally {
+        toggle.disabled = false;
+      }
       refresh();
     };
-    document.getElementById("captions-off").onclick = async () => {
-      await fetch("/captions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ is_active: false }) });
-      refresh();
+    function scaleOverlay() {
+      // Drawn at 1920×1080 like the OBS source, then shrunk, so outlines keep their weight.
+      const width = document.getElementById("overlay-preview").clientWidth;
+      document.getElementById("overlay-frame").style.transform = "scale(" + width / 1920 + ")";
+    }
+    new ResizeObserver(scaleOverlay).observe(document.getElementById("overlay-preview"));
+    document.getElementById("show-overlay").onclick = () => {
+      const panel = document.getElementById("overlay-panel");
+      const show = panel.hidden;
+      panel.hidden = !show;
+      // Only a shown preview keeps a caption connection open.
+      document.getElementById("overlay-frame").src = show ? "/overlay" : "about:blank";
+      document.getElementById("show-overlay").textContent = show ? "Hide overlay" : "Show overlay";
+    };
+    let logOffset = null;
+    let logTimer = null;
+    let logBusy = false;
+    async function pollLogs() {
+      if (logBusy) return;
+      logBusy = true;
+      try {
+        const log = await (await fetch("/logs" + (logOffset === null ? "" : "?after=" + logOffset))).json();
+        const view = document.getElementById("log-view");
+        if (!log.available) {
+          view.textContent = "This Metagrafo writes its log to the console window it was started from.";
+          return;
+        }
+        // Stay on the newest line unless someone scrolled up to read.
+        const atBottom = view.scrollTop + view.clientHeight >= view.scrollHeight - 24;
+        // A smaller offset means the log file was replaced and read afresh.
+        if (logOffset === null || log.offset < logOffset) view.textContent = "";
+        let text = view.textContent + log.text.replace(/\r/g, "");
+        if (text.length > 400000) text = text.slice(text.indexOf("\n", text.length - 300000) + 1);
+        if (log.text) view.textContent = text;
+        logOffset = log.offset;
+        if (atBottom) view.scrollTop = view.scrollHeight;
+      } finally {
+        logBusy = false;
+      }
+    }
+    document.getElementById("show-logs").onclick = () => {
+      const panel = document.getElementById("log-panel");
+      const show = panel.hidden;
+      panel.hidden = !show;
+      document.getElementById("show-logs").textContent = show ? "Hide logs" : "Show logs";
+      clearInterval(logTimer);
+      if (show) {
+        logOffset = null;
+        pollLogs();
+        logTimer = setInterval(pollLogs, 2000);
+      }
     };
     document.querySelectorAll(".mode").forEach((btn) => {
       if (!btn.dataset.mode) return;

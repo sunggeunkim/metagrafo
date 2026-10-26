@@ -36,4 +36,4 @@ Capture always means **open the recording device named in settings**, never a ha
 
 ## Same-machine OBS
 
-The broadcast PC also runs OBS NVENC (and may fullscreen-project to the house). Whisper must leave VRAM for encoding. Captions OFF must **stop inference** so worship does not fight the 3060.
+The broadcast PC also runs OBS NVENC (and may fullscreen-project to the house). Whisper must leave VRAM for encoding. Stop captions must **stop inference** so worship does not fight the 3060.
