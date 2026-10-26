@@ -106,7 +106,7 @@ CAPTION_ENGINE=gemini_live
 GEMINI_API_KEY=your-key-here
 ```
 
-The model is `gemini-3.5-live-translate-preview`. Korean speech is translated to English while it is still coming in. The key belongs only in `.env`. An empty key, or any other `CAPTION_ENGINE` value, stays on Whisper.
+The model is `gemini-3.5-live-translate-preview`. Korean speech is translated to English while it is still coming in. With Gemini on, booth control also offers **en_to_ko**, which captions an English speaker in Korean. The key belongs only in `.env`. An empty key, or any other `CAPTION_ENGINE` value, stays on Whisper.
 
 ## Sign-in autostart
 
@@ -160,7 +160,7 @@ Captions **default ON** when the process starts. Turn **OFF** during worship so 
 | Pre-service / worship / hymns | Leave **Captions OFF**. Do not caption PGM music — Whisper will hallucinate. |
 | Pastor at the pulpit | **Captions ON**. Mode **ko_to_en** for a Korean sermon. |
 | Songs again | **Captions OFF**. Stops **new** capture and queued Whisper jobs. Not the same as hiding the OBS source. |
-| English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. No Korean captions in v1. |
+| English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. For Korean captions, set **en_to_ko (Guest → Korean)** instead; it needs a saved Gemini key. |
 
 Do **not** flip language verse-by-verse. Stay on `ko_to_en` for a Korean sermon.
 

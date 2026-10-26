@@ -6,6 +6,7 @@
   <style>
     body { font-family: sans-serif; background: #111; color: #eee; margin: 2rem; }
     button { font-size: 1.4rem; padding: 1rem 1.5rem; margin: 0.5rem; min-width: 12rem; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
     label { display: block; margin: 1rem 0 0.3rem; }
     input { font-size: 1.2rem; padding: 0.4rem 0.6rem; width: 8rem; }
     input.key { width: 28rem; }
@@ -26,7 +27,9 @@
   <div>
     <button id="mode-ko" class="mode" data-mode="ko_to_en">Mode: ko_to_en</button>
     <button id="mode-en" class="mode" data-mode="en_to_en">Mode: en_to_en (Guest)</button>
+    <button id="mode-en-ko" class="mode" data-mode="en_to_ko">Mode: en_to_ko (Guest → Korean)</button>
   </div>
+  <p class="hint">en_to_ko puts English speech on screen in Korean. It needs a saved Gemini key; Whisper can only translate into English.</p>
   <h2>VAD pause</h2>
   <p class="hint">How long to wait after speech before cutting a caption. Allowed range <strong>100–3000 ms</strong>. Applies live (no restart).</p>
   <p class="hint">Guidelines: <strong>250 ms</strong> snappy (may split on a breath) · <strong>500 ms</strong> default · <strong>1000 ms</strong> more pause. Below 200 ms usually cuts words; above 1500 ms feels hung.</p>
@@ -91,6 +94,8 @@
         " · Gemini key " + (s.gemini_key_set ? "saved" : "needed");
       document.getElementById("mode-ko").classList.toggle("active", s.mode === "ko_to_en");
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
+      document.getElementById("mode-en-ko").classList.toggle("active", s.mode === "en_to_ko");
+      document.getElementById("mode-en-ko").disabled = !s.gemini_live;
       document.querySelectorAll(".pos").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.pos === s.position);
       });
@@ -116,7 +121,11 @@
     document.querySelectorAll(".mode").forEach((btn) => {
       if (!btn.dataset.mode) return;
       btn.onclick = async () => {
-        await fetch("/mode", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: btn.dataset.mode }) });
+        const response = await fetch("/mode", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: btn.dataset.mode }) });
+        if (!response.ok) {
+          const body = await response.json();
+          alert(typeof body.detail === "string" ? body.detail : "Mode not changed");
+        }
         refresh();
       };
     });

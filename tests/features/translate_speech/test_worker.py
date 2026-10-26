@@ -281,3 +281,21 @@ async def test_line_carries_the_wall_clock_time_its_chunk_began() -> None:
     await worker._process(chunk)
     assert len(seen) == 1
     assert abs(seen[0].spoken_at - (time.time() - 3.0)) < 0.5
+
+
+async def test_whisper_falls_back_to_sermon_mode_when_asked_for_korean() -> None:
+    bus = EventBus()
+    whisper = FakeWhisper("Prayer")
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(SubtitleEvent, handler)
+    worker = TranslateWorker(bus, whisper.transcribe, mode="en_to_ko")
+    task = asyncio.create_task(worker.run())
+    await bus.publish(_chunk())
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert whisper.calls[0]["task"] == "translate"
+    assert seen[0].mode == "ko_to_en"
