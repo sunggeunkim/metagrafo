@@ -88,7 +88,9 @@ def test_control_page_has_booth_buttons() -> None:
         page = client.get("/control")
         assert page.status_code == 200
         html = page.text
-        assert "Captions" in html
+        assert "Stop captions" in html
+        assert "Show overlay" in html
+        assert "Show logs" in html
         assert "ko_to_en" in html
         assert "en_to_en" in html
         assert "en_to_ko" in html
@@ -169,3 +171,45 @@ def test_line_count_put_and_reject_out_of_range() -> None:
             },
         )
         assert bad.status_code == 422
+
+
+def test_logs_show_the_log_then_only_new_lines(tmp_path) -> None:
+    log_file = tmp_path / "metagrafo.log"
+    log_file.write_bytes("INFO: started\nINFO: 자막 ready\n".encode("utf-8"))
+    with TestClient(create_app(log_file=log_file)) as client:
+        first = client.get("/logs").json()
+        assert first["available"] is True
+        assert first["text"] == "INFO: started\nINFO: 자막 ready\n"
+        with log_file.open("ab") as log:
+            log.write(b"INFO: next\nINFO: half")
+        second = client.get("/logs", params={"after": first["offset"]}).json()
+        assert second["text"] == "INFO: next\n"
+        with log_file.open("ab") as log:
+            log.write(b" done\n")
+        third = client.get("/logs", params={"after": second["offset"]}).json()
+        assert third["text"] == "INFO: half done\n"
+
+
+def test_long_log_keeps_whole_lines_from_the_end(tmp_path) -> None:
+    from features.operator_control.slice import read_log
+
+    log_file = tmp_path / "metagrafo.log"
+    log_file.write_bytes("".join(f"line {n}\n" for n in range(1000)).encode("utf-8"))
+    tail, offset = read_log(log_file, max_bytes=50)
+    assert tail.endswith("line 999\n")
+    assert all(line.startswith("line ") for line in tail.splitlines())
+    assert "line 0\n" not in tail
+    assert offset == log_file.stat().st_size
+
+
+def test_replaced_log_is_read_from_its_start(tmp_path) -> None:
+    from features.operator_control.slice import read_log
+
+    log_file = tmp_path / "metagrafo.log"
+    log_file.write_bytes(b"fresh\n")
+    assert read_log(log_file, after=10_000) == ("fresh\n", 6)
+
+
+def test_logs_are_unavailable_when_not_writing_a_file() -> None:
+    with TestClient(create_app()) as client:
+        assert client.get("/logs").json()["available"] is False

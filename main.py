@@ -7,6 +7,7 @@ import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime
+from functools import partial
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -34,6 +35,7 @@ def create_app(
     env_file: Path | None = None,
     gemini_connect_factory: Callable[[str], object] | None = None,
     list_input_devices: Callable[[], list[str]] | None = None,
+    log_file: Path | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     bus = bus or EventBus()
@@ -67,6 +69,7 @@ def create_app(
         env_file=env_file,
         list_input_devices=list_input_devices,
         capture_status=capture.status if capture is not None else None,
+        log_file=log_file,
     )
     app.state.translator = translate_speech.register(
         app,
@@ -94,20 +97,24 @@ def _configure_logging() -> None:
         root.setLevel(logging.INFO)
 
 
-def _redirect_missing_stdio(log_path: Path) -> None:
-    """pythonw has no stdout/stderr, and uvicorn's log setup calls sys.stdout.isatty()."""
+def _redirect_missing_stdio(log_path: Path) -> Path | None:
+    """pythonw has no stdout/stderr, and uvicorn's log setup calls sys.stdout.isatty().
+
+    Returns the log file when output now goes there, or None when a console has it.
+    """
     if sys.stdout is not None and sys.stderr is not None:
-        return
+        return None
     log = open(log_path, "a", encoding="utf-8", buffering=1)
     if sys.stdout is None:
         sys.stdout = log
     if sys.stderr is None:
         sys.stderr = log
+    return log_path
 
 
-def create_production_app() -> FastAPI:
+def create_production_app(log_file: Path | None = None) -> FastAPI:
     _configure_logging()
-    return create_app(start_capture=True, load_whisper=True)
+    return create_app(start_capture=True, load_whisper=True, log_file=log_file)
 
 
 def print_input_devices() -> None:
@@ -310,10 +317,15 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(out)
         return
-    _redirect_missing_stdio(Path("metagrafo.log"))
+    log_file = _redirect_missing_stdio(Path("metagrafo.log"))
     import uvicorn
 
-    uvicorn.run(create_production_app, factory=True, host="127.0.0.1", port=8000)
+    uvicorn.run(
+        partial(create_production_app, log_file=log_file),
+        factory=True,
+        host="127.0.0.1",
+        port=8000,
+    )
 
 
 if __name__ == "__main__":

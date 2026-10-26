@@ -100,7 +100,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-Overlay lines: default **2** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries. New `text` shifts older lines up. Captions OFF **clears the lines**. Fade after a quiet interval.
+Overlay lines: default **2** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries. New `text` shifts older lines up. Stop captions **clears the lines**. Fade after a quiet interval.
 
 ```json
 {
@@ -131,10 +131,11 @@ Optional. `YOUTUBE_CAPTION_URL` is the **Captions Ingestion URL** from YouTube S
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Captions ON/OFF, Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts), **audio input** (pick a listed recording device)
+- `GET /control` — Start/Stop captions (one button that flips), Show/Hide overlay and Show/Hide logs (side by side under the top buttons: a scaled 1920×1080 `/overlay` frame on the left that connects only while shown, and a log panel on the right that polls `/logs` every 2 s while open), Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts), **audio input** (pick a listed recording device)
 - `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style` / `PUT /gemini-key` / `PUT /youtube-caption-url` / `GET /audio-devices` / `PUT /audio-device`
 - `GET /audio-devices` — `{devices, selected, capturing, error}`: input names this PC lists now (each once; names with a line break are left out because `.env` cannot hold them), `AUDIO_DEVICE_NAME`, and capture's status. `main.py` injects the lister and the status, so this slice does not import capture code.
 - `PUT /audio-device` — `{name}`; must be one of the listed names (422 otherwise), and 409 while `AUDIO_DEVICE_INDEX` is set. Writes `AUDIO_DEVICE_NAME` to `.env`, keeping other lines, and publishes `AudioDeviceChangedEvent`. `/mode` shows `audio_device`, `audio_capturing`, and `audio_error`; the booth page polls those every 5 s.
+- `GET /logs?after=<offset>` — `{available, text, offset}`: whole lines of `metagrafo.log` from byte `after` on (without it, the last ~250 KB), and the `offset` to pass next. A line still being written waits for the next call. Only a windowless start (`pythonw`, `Start Metagrafo.cmd`) writes that file, so `main.py` passes the path only then; a console start answers `available: false`.
 - `PUT /youtube-caption-url` — `{url}`; empty clears. Must be http(s) with a host and no whitespace (422 otherwise). Writes `YOUTUBE_CAPTION_URL` to `.env`, keeping other lines, and publishes `YouTubeCaptionUrlChangedEvent`. The URL is never echoed back; `/mode` shows only `youtube_url_set`.
 - `CaptionsStateEvent(is_active: bool)` — default **true** at process start
 - `ModeChangedEvent` — pre-service; not verse-by-verse
@@ -179,7 +180,7 @@ Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX
 1. Church PC: **thewaychurch** sign-in runs `scripts/Metagrafo.cmd` in that user session (not SYSTEM). Captions **ON**, mode `ko_to_en`.
 2. OBS: ATEN video + audio + Browser Source `/overlay`. House projector = program.
 3. `/control` in a booth browser.
-4. Pastor at pulpit → Captions ON. Worship → Captions OFF.
+4. Pastor at pulpit → Start captions. Worship → Stop captions.
 5. English guest: set **en_to_en** before service, or **en_to_ko** (Gemini only) to caption them in Korean.
 6. Rehearsal hitch: `WHISPER_MODEL=medium`, restart. Never hot-swap on the GPU.
 

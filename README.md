@@ -18,7 +18,7 @@ The first time, that file downloads Python and the Gemini pieces. It needs the i
 
 The next time, double-click the same file. Close the window after the page opens. Metagrafo keeps running.
 
-After you unzip a newer copy over the same folder, the same file installs any new pieces before it starts. A start that stopped halfway, for example when the internet dropped, picks up again on the next double-click. If Metagrafo does not start, the window says so and opens `metagrafo.log` in Notepad. The reason is at the end of that file.
+After you unzip a newer copy over the same folder, the same file installs any new pieces before it starts. A start that stopped halfway, for example when the internet dropped, picks up again on the next double-click. While it runs, **Show logs** on the booth page shows `metagrafo.log` and follows new lines, and **Show overlay** previews what OBS shows. To stop the captions, click **Stop captions**; **Start captions** brings them back. If Metagrafo does not start, the window says so and opens `metagrafo.log` in Notepad. The reason is at the end of that file.
 
 ## Windows install
 
@@ -161,14 +161,14 @@ Captions **default ON** when the process starts. Turn **OFF** during worship so 
 
 | When | Action |
 |---|---|
-| Pre-service / worship / hymns | Leave **Captions OFF**. Do not caption PGM music — Whisper will hallucinate. |
-| Pastor at the pulpit | **Captions ON**. Mode **ko_to_en** for a Korean sermon. |
-| Songs again | **Captions OFF**. Stops **new** capture and queued Whisper jobs. Not the same as hiding the OBS source. |
+| Pre-service / worship / hymns | Leave captions stopped (**Stop captions**). Do not caption PGM music — Whisper will hallucinate. |
+| Pastor at the pulpit | **Start captions**. Mode **ko_to_en** for a Korean sermon. |
+| Songs again | **Stop captions**. Stops **new** capture and queued Whisper jobs. Not the same as hiding the OBS source. |
 | English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. For Korean captions, set **en_to_ko (Guest → Korean)** instead; it needs a saved Gemini key. |
 
 Do **not** flip language verse-by-verse. Stay on `ko_to_en` for a Korean sermon.
 
-Hiding the OBS Browser Source does **not** rest the GPU. Use **Captions OFF** on `/control`. That drains the queue and drops frames so worship is not transcribed. An utterance **already on the GPU** can still finish (Whisper cannot be cancelled mid-chunk); that result is **discarded** and will not appear on the overlay. GPU load drops after that current chunk, not instantly.
+Hiding the OBS Browser Source does **not** rest the GPU. Use **Stop captions** on `/control`. That drains the queue and drops frames so worship is not transcribed. An utterance **already on the GPU** can still finish (Whisper cannot be cancelled mid-chunk); that result is **discarded** and will not appear on the overlay. GPU load drops after that current chunk, not instantly.
 
 ## Whisper model (NVIDIA)
 
@@ -214,7 +214,7 @@ YOUTUBE_CAPTION_URL=http://upload.youtube.com/closedcaption?cid=...
 
 The URL follows the stream key, so a reused stream key keeps the same URL. Leave it unset to send nothing.
 
-Only finished lines are sent. The Gemini live bottom line is sent once it is committed, not while it grows. Captions OFF on `/control` sends nothing, because no lines are made. Each line is stamped with when it was spoken: for Whisper, when its audio chunk began; for Gemini live, when the line's first English words arrived (a second or two after the Korean). Keep this PC's clock synced (Windows **Set time automatically**).
+Only finished lines are sent. The Gemini live bottom line is sent once it is committed, not while it grows. Stopped captions send nothing, because no lines are made. Each line is stamped with when it was spoken: for Whisper, when its audio chunk began; for Gemini live, when the line's first English words arrived (a second or two after the Korean). Keep this PC's clock synced (Windows **Set time automatically**).
 
 YouTube refuses lines until the stream is live. Metagrafo logs one warning when that starts and one line when YouTube accepts captions again. `GET /youtube-captions` shows `sent`, `failed`, and the last HTTP status.
 

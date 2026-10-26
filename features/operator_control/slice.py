@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.event_bus import EventBus
@@ -141,6 +141,33 @@ def write_gemini_key(env_file: Path, api_key: str) -> None:
     write_env_values(env_file, {"CAPTION_ENGINE": "gemini_live", "GEMINI_API_KEY": api_key})
 
 
+def read_log(log_file: Path, after: int | None = None, max_bytes: int = 256_000) -> tuple[str, int]:
+    """Whole lines from byte `after` on, or the end of the log, and where the next read starts.
+
+    Every start appends to the log and nothing trims it, so a first read takes only the end.
+    """
+    try:
+        with log_file.open("rb") as log:
+            size = log.seek(0, 2)
+            # An offset past the end means the file was replaced; read it afresh.
+            start = after if after is not None and after <= size else 0
+            cut = size - start > max_bytes
+            if cut:
+                start = size - max_bytes
+            log.seek(start)
+            data = log.read(size - start)
+    except FileNotFoundError:
+        return "", 0
+    if cut:
+        # The cut lands mid-line; start at the next whole one.
+        skip = data.find(b"\n") + 1
+        start += skip
+        data = data[skip:]
+    # A line still being written waits for the next read.
+    end = data.rfind(b"\n") + 1
+    return data[:end].decode("utf-8", errors="replace"), start + end
+
+
 def _has_line_break(text: str) -> bool:
     return "\n" in text or "\r" in text
 
@@ -160,6 +187,7 @@ def register(
     env_file: Path | None = None,
     list_input_devices: Callable[[], list[str]] | None = None,
     capture_status: Callable[[], dict[str, str | None]] | None = None,
+    log_file: Path | None = None,
 ) -> OperatorState:
     try:
         initial_mode = TranslateMode(settings.translate_mode)
@@ -213,6 +241,14 @@ def register(
         from fastapi.responses import HTMLResponse
 
         return HTMLResponse(_CONTROL_PAGE.read_text(encoding="utf-8"))
+
+    @app.get("/logs")
+    async def get_logs(after: int | None = Query(default=None, ge=0)) -> dict[str, object]:
+        # A copy started in a console logs there; an old metagrafo.log would mislead.
+        if log_file is None:
+            return {"available": False, "text": "", "offset": 0}
+        text, offset = await asyncio.to_thread(read_log, log_file, after)
+        return {"available": True, "text": text, "offset": offset}
 
     @app.get("/mode")
     async def get_mode() -> dict[str, object]:

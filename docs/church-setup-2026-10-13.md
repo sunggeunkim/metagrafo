@@ -124,8 +124,8 @@ Hold Shift during sign-in to skip Startup items once. Captions come up **ON**. T
 
 | When | Action |
 |---|---|
-| Before the sermon, and during music | **Captions OFF** on `/control` |
-| Korean sermon | **Captions ON**. Mode **ko_to_en** |
+| Before the sermon, and during music | **Stop captions** on `/control` |
+| Korean sermon | **Start captions**. Mode **ko_to_en** |
 | English guest | Mode **en_to_en (Guest)** before they speak, or **en_to_ko (Guest → Korean)** for Korean captions (Gemini key needed) |
 
 Stay on `ko_to_en` for a Korean sermon. The projector shows captions only while the Caption source is visible and Metagrafo is running.
