@@ -30,6 +30,11 @@ class CaptureGate:
         bus.subscribe(VadSilenceMsEvent, self._on_vad_silence)
         bus.subscribe(VadPausesEvent, self._on_vad_pauses)
 
+    def set_stream_program_audio(self, on: bool) -> None:
+        if not on:
+            self._pending.clear()
+        self._stream_program_audio = on
+
     async def _on_vad_silence(self, event: VadSilenceMsEvent) -> None:
         self._chunker.set_min_silence_ms(event.vad_min_silence_ms)
 

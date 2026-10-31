@@ -9,7 +9,7 @@ from core.settings import Settings
 from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.gate import CaptureGate
 from features.capture_audio.silero import load_is_speech
-from features.operator_control.events import AudioDeviceChangedEvent
+from features.operator_control.events import AudioDeviceChangedEvent, GeminiKeyChangedEvent
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,10 @@ class CaptureSlice:
         await self.stop()
         await self.start()
 
+    async def on_gemini_key(self, _event: GeminiKeyChangedEvent) -> None:
+        """A key saved on booth control swaps in Gemini, which listens to the raw stream, not VAD cuts."""
+        self.gate.set_stream_program_audio(self._settings.gemini_live())
+
     def _run(self, stop: threading.Event) -> None:
         try:
             import pyaudio
@@ -121,4 +125,5 @@ class CaptureSlice:
 def register(bus: EventBus, settings: Settings) -> CaptureSlice:
     capture = CaptureSlice(bus, settings)
     bus.subscribe(AudioDeviceChangedEvent, capture.on_device_changed)
+    bus.subscribe(GeminiKeyChangedEvent, capture.on_gemini_key)
     return capture

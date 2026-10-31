@@ -68,3 +68,32 @@ async def test_status_says_why_an_input_would_not_open(monkeypatch) -> None:
     await capture.stop()
 
     assert capture.status() == {"capturing": None, "error": "[Errno -9999] Unanticipated host error"}
+
+
+async def test_a_gemini_key_saved_on_booth_control_streams_audio_to_gemini(monkeypatch) -> None:
+    from features.capture_audio.events import ProgramAudioEvent
+    from features.operator_control.events import CaptionsStateEvent, GeminiKeyChangedEvent
+
+    monkeypatch.setattr(capture_slice, "load_is_speech", lambda: lambda _frame: False)
+    bus = EventBus()
+    settings = Settings(_env_file=None)
+    capture = capture_slice.register(bus, settings)
+    seen: list[ProgramAudioEvent] = []
+
+    async def handler(event: ProgramAudioEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(ProgramAudioEvent, handler)
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    silence = bytes(1024)
+    for _ in range(4):
+        await capture.gate.accept_frame(silence)
+    assert seen == []
+
+    settings.gemini_api_key = "key"
+    settings.caption_engine = "gemini_live"
+    await bus.publish(GeminiKeyChangedEvent())
+    for _ in range(4):
+        await capture.gate.accept_frame(silence)
+
+    assert len(seen) == 1
