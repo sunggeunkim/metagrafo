@@ -135,7 +135,7 @@ def test_gemini_cleans_each_finished_line_with_the_saved_key_and_the_default_mod
     with TestClient(app) as client:
         _wait_for_a_finished_line(client, seen)
     assert seen == [("TODAY'S TOPICAL SERMON IS ABOUT PRAYER.", False)]
-    assert made == [("saved-key", "gemini-3.1-flash-lite")]
+    assert made == [("saved-key", "gemini-3.5-flash-lite")]
 
 
 def test_a_pasted_key_cleans_lines_with_that_key_and_the_cleanup_model_from_env(env_file, monkeypatch) -> None:
