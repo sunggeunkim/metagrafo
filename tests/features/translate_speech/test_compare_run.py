@@ -188,3 +188,35 @@ async def test_a_failed_c_translation_is_noted_without_the_key_and_the_run_goes_
     assert "secret-key-7" not in out.read_text(encoding="utf-8")
     assert "secret-key-7" not in caplog.text
     assert "translation failed: 429 quota exhausted for key [key]" in caplog.text
+
+
+async def test_the_run_reconnects_when_the_socket_goes_away_and_carries_on_from_the_same_audio(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 6.0)
+    out = tmp_path / "sermon.compare.md"
+    going_away = SimpleNamespace(go_away=SimpleNamespace(time_left="0s"), server_content=None)
+    sockets = [
+        _ScriptedSocket([(1.0, _said("The first line of the sermon today.")), (2.0, going_away)]),
+        # This socket's times count from its own first chunk, 2.0 s into the recording.
+        _ScriptedSocket([(1.0, _said("The second line of the sermon today."))]),
+    ]
+    opened: list[_ScriptedSocket] = []
+
+    def connect(_mode: object) -> _ScriptedSocket:
+        opened.append(sockets[len(opened)])
+        return opened[-1]
+
+    await compare_wav(
+        wav_path=wav,
+        out_path=out,
+        connect=connect,
+        cleanup=_cleaned,
+        translate=_cleaned,
+        pace=_no_wait,
+        cleanup_timeout_s=0.05,
+    )
+    assert _rows(out) == [
+        "| 0:01.0 | THE FIRST LINE OF THE SERMON TODAY. (+0.0 s) | | |",
+        "| 0:03.0 | THE SECOND LINE OF THE SERMON TODAY. (+0.0 s) | | |",
+    ]
+    assert len(opened) == 2
