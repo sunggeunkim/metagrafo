@@ -100,11 +100,12 @@ class GeminiLiveTranslator:
         cleanup: Cleanup | None = None,
         cleanup_timeout_s: float = CLEANUP_TIMEOUT_S,
     ) -> None:
-        self._cleanup_timeout_s = cleanup_timeout_s
         self._bus = bus
+        # Like whole sentences, the open line keeps the cleanup setting it started with.
         self._clean_up_wording = clean_up_wording
         self._next_clean_up_wording = clean_up_wording
         self._cleanup = cleanup
+        self._cleanup_timeout_s = cleanup_timeout_s
         # The lines most recently shown, for the text model to read the new one against.
         self._shown: deque[str] = deque(maxlen=CLEANUP_CONTEXT_LINES)
         # Committed lines not shown yet, oldest first, and the task that shows them in that order.
