@@ -39,6 +39,8 @@ Pace = Callable[[float], Awaitable[None]]
 BYTES_PER_S = 32000  # 16 kHz mono s16le
 CHUNK_BYTES = 3200  # 100 ms, like the booth's program audio
 TAIL_S = 5.0
+# Sockets in a row that fail without sending any audio before the run gives up.
+MAX_FAILURES = 3
 CONTEXT_LINES = 3
 
 
@@ -119,6 +121,7 @@ async def compare_wav(
     quiet_s: float = 1.2,
     cleanup_timeout_s: float = CLEANUP_TIMEOUT_S,
     tail_s: float = TAIL_S,
+    retry_wait_s: float = 1.0,
 ) -> Path:
     pcm = b"".join(frames_from_wav(wav_path, min_silence_ms=0, start_s=start_s, end_s=end_s))
     # Silence after the recording lets the socket finish the last lines.
@@ -133,10 +136,14 @@ async def compare_wav(
         pace=pace or real_time(),
         quiet_s=quiet_s,
         cleanup_timeout_s=cleanup_timeout_s,
+        retry_wait_s=retry_wait_s,
     )
-    await run.go()
     out_path = Path(out_path)
-    out_path.write_text(_markdown(Path(wav_path).name, run.rows), encoding="utf-8")
+    try:
+        await run.go()
+    finally:
+        # A run that gives up still keeps the lines it captioned.
+        out_path.write_text(_markdown(Path(wav_path).name, run.rows), encoding="utf-8")
     return out_path
 
 
@@ -153,7 +160,9 @@ class _CompareRun:
         pace: Pace,
         quiet_s: float,
         cleanup_timeout_s: float,
+        retry_wait_s: float,
     ) -> None:
+        self._retry_wait_s = retry_wait_s
         self._pcm = pcm
         self._sent = 0
         self._connect = connect
@@ -189,9 +198,18 @@ class _CompareRun:
     async def go(self) -> None:
         translator = asyncio.create_task(self._translate_in_order(), name="compare-c")
         try:
+            failures = 0
             while self._sent < len(self._pcm):
-                async with self._connect(TranslateMode.KO_TO_EN) as session:
-                    await self._pump(session)
+                sent_before = self._sent
+                try:
+                    async with self._connect(TranslateMode.KO_TO_EN) as session:
+                        await self._pump(session)
+                except Exception as exc:
+                    failures = 1 if self._sent > sent_before else failures + 1
+                    if failures >= MAX_FAILURES:
+                        raise
+                    logger.warning("socket failed, reconnecting: %s", _redact(exc, self._api_key))
+                    await asyncio.sleep(self._retry_wait_s)
                 await self._b.apply_transcript("", turn_complete=True)
             self._close_korean()
             await self._sentences.join()

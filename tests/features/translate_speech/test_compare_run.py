@@ -5,6 +5,8 @@ import wave
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from features.translate_speech.compare_run import compare_wav
 
 BYTES_PER_S = 32000
@@ -220,3 +222,57 @@ async def test_the_run_reconnects_when_the_socket_goes_away_and_carries_on_from_
         "| 0:03.0 | THE SECOND LINE OF THE SERMON TODAY. (+0.0 s) | | |",
     ]
     assert len(opened) == 2
+
+
+async def test_a_socket_that_fails_is_retried_and_logged_without_the_key(tmp_path: Path, caplog) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 3.0)
+    out = tmp_path / "sermon.compare.md"
+    working = _ScriptedSocket([(1.0, _said("The first line of the sermon today."))])
+    attempts: list[int] = []
+
+    def connect(_mode: object) -> _ScriptedSocket:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("503 unavailable for key secret-key-7")
+        return working
+
+    with caplog.at_level("WARNING"):
+        await compare_wav(
+            wav_path=wav,
+            out_path=out,
+            connect=connect,
+            cleanup=_cleaned,
+            translate=_cleaned,
+            api_key="secret-key-7",
+            pace=_no_wait,
+            cleanup_timeout_s=0.05,
+            retry_wait_s=0.0,
+        )
+    assert _rows(out) == ["| 0:01.0 | THE FIRST LINE OF THE SERMON TODAY. (+0.0 s) | | |"]
+    assert "socket failed, reconnecting: 503 unavailable for key [key]" in caplog.text
+    assert "secret-key-7" not in caplog.text
+
+
+async def test_a_socket_that_keeps_failing_ends_the_run(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 3.0)
+
+    def connect(_mode: object) -> _ScriptedSocket:
+        raise RuntimeError("401 bad key")
+
+    with pytest.raises(RuntimeError, match="401 bad key"):
+        await asyncio.wait_for(
+            compare_wav(
+                wav_path=wav,
+                out_path=tmp_path / "sermon.compare.md",
+                connect=connect,
+                cleanup=_cleaned,
+                translate=_cleaned,
+                pace=_no_wait,
+                cleanup_timeout_s=0.05,
+                retry_wait_s=0.0,
+            ),
+            timeout=10,
+        )
+    assert (tmp_path / "sermon.compare.md").exists()
