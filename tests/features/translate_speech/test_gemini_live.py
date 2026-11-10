@@ -873,3 +873,29 @@ async def test_a_growing_line_waits_for_the_line_still_being_cleaned_before_it()
         ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", False),
         ("And so we pray", True),
     ]
+
+
+async def test_whole_sentences_marks_finished_lines_for_pacing() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("Today's topical sermon is about prayer.")
+    assert [(e.text, e.paced) for e in seen] == [
+        ("Today's topical sermon is about prayer.", True)
+    ]
+
+
+async def test_whole_sentences_off_does_not_mark_lines_for_pacing() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=False
+    )
+    await translator.apply_transcript("Today's topical")
+    await translator.apply_transcript("sermon is about prayer.")
+    assert [(e.text, e.provisional, e.paced) for e in seen] == [
+        ("Today's topical", True, False),
+        ("Today's topical sermon is about prayer.", False, False),
+    ]

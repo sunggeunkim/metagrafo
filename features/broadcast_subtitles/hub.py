@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections import deque
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
@@ -17,8 +19,22 @@ logger = logging.getLogger(__name__)
 
 
 class SubtitleHub:
-    def __init__(self, bus: EventBus) -> None:
+    def __init__(
+        self,
+        bus: EventBus,
+        *,
+        min_on_screen_s: float = 2.5,
+        chars_per_s: float = 13.0,
+        max_behind_s: float = 5.0,
+    ) -> None:
         self._clients: set[WebSocket] = set()
+        self._min_on_screen_s = min_on_screen_s
+        self._chars_per_s = chars_per_s
+        self._max_behind_s = max_behind_s
+        # Paced lines waiting for the one on screen to be read, oldest first.
+        self._waiting: deque[dict[str, object]] = deque()
+        self._shown_until = 0.0
+        self._pacer: asyncio.Task[None] | None = None
         self._overlay_style = {
             "type": "overlay_style",
             "position": "top_left",
@@ -47,21 +63,69 @@ class SubtitleHub:
         self._clients.discard(websocket)
 
     async def _on_subtitle(self, event: SubtitleEvent) -> None:
-        await self._broadcast(
-            {
-                "type": "subtitle",
-                "text": event.text,
-                "chunk_id": event.chunk_id,
-                "source_language": event.source_language,
-                "target_language": event.target_language,
-                "mode": event.mode,
-                "ts": event.created_at,
-                "duration_s": event.duration_s,
-                "provisional": event.provisional,
-            }
+        payload: dict[str, object] = {
+            "type": "subtitle",
+            "text": event.text,
+            "chunk_id": event.chunk_id,
+            "source_language": event.source_language,
+            "target_language": event.target_language,
+            "mode": event.mode,
+            "ts": event.created_at,
+            "duration_s": event.duration_s,
+            "provisional": event.provisional,
+        }
+        if not event.paced:
+            await self._broadcast(payload)
+            return
+        now = asyncio.get_running_loop().time()
+        if not self._waiting and now >= self._shown_until:
+            await self._show(payload)
+            return
+        self._waiting.append(payload)
+        self._catch_up(now)
+        if self._pacer is None:
+            self._pacer = asyncio.create_task(self._pace(), name="subtitle-pacer")
+
+    def _catch_up(self, now: float) -> None:
+        """Drop the oldest waiting line while the newest would show more than max_behind_s late.
+
+        Dropping, not merging: a merged line needs as long to read as its parts, so only
+        dropping catches up. The newest line is never dropped, so it waits at most the rest
+        of the line on screen.
+        """
+        behind = self._shown_until - now + sum(
+            self._time_on_screen(waiting) for waiting in list(self._waiting)[:-1]
         )
+        while behind > self._max_behind_s and len(self._waiting) > 1:
+            behind -= self._time_on_screen(self._waiting.popleft())
+
+    def _time_on_screen(self, payload: dict[str, object]) -> float:
+        return max(self._min_on_screen_s, len(str(payload["text"])) / self._chars_per_s)
+
+    async def _show(self, payload: dict[str, object]) -> None:
+        # Set before the send, so a line arriving mid-send waits its turn.
+        self._shown_until = asyncio.get_running_loop().time() + self._time_on_screen(payload)
+        await self._broadcast(payload)
+
+    async def _pace(self) -> None:
+        loop = asyncio.get_running_loop()
+        while self._waiting:
+            await asyncio.sleep(max(0.0, self._shown_until - loop.time()))
+            await self._show(self._waiting.popleft())
+        self._pacer = None
+
+    def _stop_pacing(self) -> None:
+        """Captions off: the waiting lines go, and so does the pacer's wait, so none is sent later."""
+        self._waiting.clear()
+        # The overlay is cleared, so the next line need not wait for the old one to be read.
+        self._shown_until = 0.0
+        if self._pacer is not None:
+            self._pacer.cancel()
+            self._pacer = None
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
+        if not event.is_active:
+            self._stop_pacing()
         await self._broadcast({"type": "captions_state", "is_active": event.is_active})
 
     async def _on_overlay_style(self, event: OverlayStyleEvent) -> None:

@@ -102,6 +102,8 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 
 Overlay lines: default **2** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries; Korean breaks only at spaces. Each box shows exactly one row, so the line count is the row count. New `text` shifts older lines up. Stop captions **clears the lines**. Fade after a quiet interval.
 
+- Pacing (`/ws` only; YouTube CC is not paced). A `SubtitleEvent.paced` line stays up at least `max(2.5 s, characters / 13 per second)` before the next paced line is sent. Paced lines that arrive sooner wait in order. If the newest waiting line would show more than ~5 s after it arrived, the **oldest waiting line is dropped** (repeat); the newest is never dropped. Dropping, not merging: a merged line takes as long to read as its parts. Unpaced lines (Whisper, `provisional`, Whole sentences off, `/inject`) go out at once, past any waiting lines, and do not restart the wait. Stop captions empties the waiting lines and cancels the pending wait, so none is sent later; the next paced line shows at once. `SubtitleHub(min_on_screen_s, chars_per_s, max_behind_s)`.
+
 ```json
 {
   "type": "subtitle",
@@ -157,7 +159,7 @@ In-process asyncio pub/sub. Dispatch by exact type. `publish` isolates handler e
 Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
-- `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`)
+- `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`). `paced` (default false) asks the overlay to keep the line up long enough to read; Gemini live sets it on committed lines while Whole sentences is on, Whisper never does
 - `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `WholeSentencesEvent`, `CleanUpWordingEvent`, `OverlayStyleEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent`, `AudioDeviceChangedEvent` — `operator_control`
 
 ## Process model

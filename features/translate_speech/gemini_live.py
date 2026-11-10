@@ -344,6 +344,7 @@ class GeminiLiveTranslator:
                 duration_s=0.0,
                 provisional=provisional,
                 spoken_at=spoken_at,
+                paced=self._whole_sentences and not provisional,
             )
         )
 
