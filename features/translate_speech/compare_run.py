@@ -25,6 +25,7 @@ from features.translate_speech.gemini_live import (
     GeminiLiveTranslator,
     LiveConnection,
     _pcm_blob,
+    _redact,
 )
 from features.translate_speech.live_line import LiveLine
 
@@ -215,7 +216,14 @@ class _CompareRun:
         while True:
             korean, heard_at = await self._sentences.get()
             try:
-                english = (await self._translate(korean, self._english[-CONTEXT_LINES:])).strip()
+                try:
+                    english = (await self._translate(korean, self._english[-CONTEXT_LINES:])).strip()
+                except Exception as exc:
+                    # A failed line is noted where it would have been; the run goes on.
+                    reason = _redact(exc, self._api_key)
+                    logger.warning("translation failed: %s", reason)
+                    self.rows.append(_Row(self._now(), c=f"(translation failed: {reason})", korean=korean))
+                    continue
                 self._english.append(english)
                 now = self._now()
                 self.rows.append(_Row(now, c=f"{english}{_delay(now, heard_at)}", korean=korean))

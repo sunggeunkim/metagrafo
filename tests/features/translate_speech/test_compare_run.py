@@ -154,3 +154,37 @@ async def test_c_closes_a_korean_sentence_at_a_pause_and_gives_the_model_its_las
     )
     assert asked[-1] == ("넷째 그리고 다섯째", ["Line 1.", "Line 2.", "Line 3."])
     assert _rows(out)[-1] == "| 0:05.7 | | Line 4. (+1.7 s) | 넷째 그리고 다섯째 |"
+
+
+async def test_a_failed_c_translation_is_noted_without_the_key_and_the_run_goes_on(tmp_path: Path, caplog) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 4.0)
+    out = tmp_path / "sermon.compare.md"
+    socket = _ScriptedSocket([(1.0, _heard("첫째.")), (2.0, _heard("둘째."))])
+
+    async def translate(korean: str, _previous: list[str]) -> str:
+        if korean == "첫째.":
+            raise RuntimeError("429 quota exhausted for key secret-key-7")
+        return "Second."
+
+    with caplog.at_level("WARNING"):
+        await asyncio.wait_for(
+            compare_wav(
+                wav_path=wav,
+                out_path=out,
+                connect=lambda _mode: socket,
+                cleanup=_cleaned,
+                translate=translate,
+                api_key="secret-key-7",
+                pace=_no_wait,
+                cleanup_timeout_s=0.05,
+            ),
+            timeout=10,
+        )
+    assert _rows(out) == [
+        "| 0:01.0 | | (translation failed: 429 quota exhausted for key [key]) | 첫째. |",
+        "| 0:02.0 | | Second. (+0.0 s) | 둘째. |",
+    ]
+    assert "secret-key-7" not in out.read_text(encoding="utf-8")
+    assert "secret-key-7" not in caplog.text
+    assert "translation failed: 429 quota exhausted for key [key]" in caplog.text
