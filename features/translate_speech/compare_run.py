@@ -41,6 +41,8 @@ CHUNK_BYTES = 3200  # 100 ms, like the booth's program audio
 TAIL_S = 5.0
 # Sockets in a row that fail without sending any audio before the run gives up.
 MAX_FAILURES = 3
+# How long the socket is still read after the last audio, for lines Gemini says late.
+DRAIN_S = 5.0
 CONTEXT_LINES = 3
 
 
@@ -122,6 +124,7 @@ async def compare_wav(
     cleanup_timeout_s: float = CLEANUP_TIMEOUT_S,
     tail_s: float = TAIL_S,
     retry_wait_s: float = 1.0,
+    drain_s: float = DRAIN_S,
 ) -> Path:
     pcm = b"".join(frames_from_wav(wav_path, min_silence_ms=0, start_s=start_s, end_s=end_s))
     # Silence after the recording lets the socket finish the last lines.
@@ -137,6 +140,7 @@ async def compare_wav(
         quiet_s=quiet_s,
         cleanup_timeout_s=cleanup_timeout_s,
         retry_wait_s=retry_wait_s,
+        drain_s=drain_s,
     )
     out_path = Path(out_path)
     try:
@@ -161,8 +165,10 @@ class _CompareRun:
         quiet_s: float,
         cleanup_timeout_s: float,
         retry_wait_s: float,
+        drain_s: float,
     ) -> None:
         self._retry_wait_s = retry_wait_s
+        self._drain_s = drain_s
         self._pcm = pcm
         self._sent = 0
         self._connect = connect
@@ -227,6 +233,11 @@ class _CompareRun:
             done, _ = await asyncio.wait({sender, receiver}, return_when=asyncio.FIRST_COMPLETED)
             for task in done:
                 task.result()
+            if receiver not in done:
+                # All audio is sent; Gemini may still be saying the last lines.
+                done, _ = await asyncio.wait({receiver}, timeout=self._drain_s)
+                for task in done:
+                    task.result()
         finally:
             for task in (sender, receiver):
                 task.cancel()

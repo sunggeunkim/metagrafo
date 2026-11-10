@@ -328,3 +328,37 @@ async def test_sends_that_keep_failing_end_the_run(tmp_path: Path) -> None:
         await asyncio.wait_for(
             _run_on([_SendFailsSocket(ok=0) for _ in range(3)], wav, tmp_path / "out.md"), timeout=10
         )
+
+
+class _LateSocket(_ScriptedSocket):
+    """Says its last line only after the audio has stopped coming."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+
+    async def receive(self):
+        while True:
+            before = self.sent_bytes
+            await asyncio.sleep(0.05)
+            if self.sent_bytes == before:
+                break
+        yield _said("The last line of the sermon for today.", turn_complete=True)
+        await asyncio.Event().wait()
+        yield None
+
+
+async def test_a_line_gemini_says_after_the_last_audio_is_still_written(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 1.0)
+    out = tmp_path / "sermon.compare.md"
+    await compare_wav(
+        wav_path=wav,
+        out_path=out,
+        connect=lambda _mode: _LateSocket(),
+        cleanup=_cleaned,
+        translate=_cleaned,
+        pace=_no_wait,
+        cleanup_timeout_s=0.05,
+        drain_s=1.0,
+    )
+    assert [row.split(" | ")[1] for row in _rows(out)] == ["THE LAST LINE OF THE SERMON FOR TODAY. (+0.0 s)"]
