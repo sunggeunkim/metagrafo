@@ -236,8 +236,14 @@ class _CompareRun:
     async def _send(self, session: LiveConnection) -> None:
         while self._sent < len(self._pcm):
             chunk = self._pcm[self._sent : self._sent + CHUNK_BYTES]
+            # Moved first so lines heard during the send are timed at its end.
             self._sent += len(chunk)
-            await session.send_realtime_input(audio=_pcm_blob(chunk))
+            try:
+                await session.send_realtime_input(audio=_pcm_blob(chunk))
+            except Exception:
+                # Unsent audio goes again on the next socket and isn't progress.
+                self._sent -= len(chunk)
+                raise
             if self._korean.text and self._now() - self._last_heard_s >= self._quiet_s:
                 self._close_korean()
             await self._pace(self._sent / BYTES_PER_S)

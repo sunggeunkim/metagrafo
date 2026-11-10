@@ -276,3 +276,55 @@ async def test_a_socket_that_keeps_failing_ends_the_run(tmp_path: Path) -> None:
             timeout=10,
         )
     assert (tmp_path / "sermon.compare.md").exists()
+
+
+class _SendFailsSocket(_ScriptedSocket):
+    """Takes `ok` chunks, then fails to send the next one."""
+
+    def __init__(self, ok: int) -> None:
+        super().__init__([])
+        self._ok = ok
+
+    async def send_realtime_input(self, *, audio: object) -> None:
+        if self._ok == 0:
+            raise RuntimeError("socket closed")
+        self._ok -= 1
+        await super().send_realtime_input(audio=audio)
+
+
+async def _run_on(sockets: list[_ScriptedSocket], wav: Path, out: Path) -> None:
+    opened: list[_ScriptedSocket] = []
+
+    def connect(_mode: object) -> _ScriptedSocket:
+        opened.append(sockets[len(opened)])
+        return opened[-1]
+
+    await compare_wav(
+        wav_path=wav,
+        out_path=out,
+        connect=connect,
+        cleanup=_cleaned,
+        translate=_cleaned,
+        pace=_no_wait,
+        cleanup_timeout_s=0.05,
+        retry_wait_s=0.0,
+    )
+
+
+async def test_a_chunk_that_fails_to_send_is_sent_again_on_the_next_socket(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 2.0)
+    healthy = _ScriptedSocket([])
+    await _run_on([healthy], wav, tmp_path / "healthy.md")
+    failing, retried = _SendFailsSocket(ok=5), _ScriptedSocket([])
+    await _run_on([failing, retried], wav, tmp_path / "retried.md")
+    assert failing.sent_bytes + retried.sent_bytes == healthy.sent_bytes
+
+
+async def test_sends_that_keep_failing_end_the_run(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 2.0)
+    with pytest.raises(RuntimeError, match="socket closed"):
+        await asyncio.wait_for(
+            _run_on([_SendFailsSocket(ok=0) for _ in range(3)], wav, tmp_path / "out.md"), timeout=10
+        )
