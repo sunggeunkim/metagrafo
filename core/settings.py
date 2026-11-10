@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     condition_on_previous_text: bool = True
     whole_sentences: bool = True
     whole_sentences_quiet_s: float = 1.2
+    clean_up_wording: bool = True
     vad_max_utterance_s: float = 12
     vad_min_speech_ms: int = 250
     whisper_model: str | None = "large-v3"
