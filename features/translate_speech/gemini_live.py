@@ -51,7 +51,8 @@ def gemini_connect(api_key: str) -> Connect:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key)
+        # google-genai 3.0 defaults to an API version that 404s the Live preview model.
+        client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))
         config = types.LiveConnectConfig(
             response_modalities=["AUDIO"],
             input_audio_transcription=types.AudioTranscriptionConfig(),
