@@ -541,3 +541,29 @@ async def test_whole_sentences_off_shows_the_line_as_spoken() -> None:
         ("Uh, yes, the the Lord.", False),
         ("And so", True),
     ]
+
+
+async def test_whole_sentences_marks_finished_lines_for_pacing() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("Today's topical sermon is about prayer.")
+    assert [(e.text, e.paced) for e in seen] == [
+        ("Today's topical sermon is about prayer.", True)
+    ]
+
+
+async def test_whole_sentences_off_does_not_mark_lines_for_pacing() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=False
+    )
+    await translator.apply_transcript("Today's topical")
+    await translator.apply_transcript("sermon is about prayer.")
+    assert [(e.text, e.provisional, e.paced) for e in seen] == [
+        ("Today's topical", True, False),
+        ("Today's topical sermon is about prayer.", False, False),
+    ]
