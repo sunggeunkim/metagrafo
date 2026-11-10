@@ -7,7 +7,7 @@ from core.event_bus import EventBus
 from features.capture_audio.events import ProgramAudioEvent
 from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent, TranslateMode, languages_for
 from features.translate_speech.events import SubtitleEvent
-from features.translate_speech.gemini_live import GeminiLiveTranslator, echoes_target_language
+from features.translate_speech.gemini_live import GeminiLiveTranslator, echoes_target_language, gemini_connect
 
 
 class ScriptedSession:
@@ -229,3 +229,21 @@ async def test_finished_line_is_stamped_when_its_first_fragment_arrived() -> Non
     await translator.apply_transcript("sermon.")
     assert [(e.provisional, e.spoken_at) for e in seen] == [(True, 100.0), (False, 100.0)]
     assert seen[-1].created_at == 104.1
+
+
+def test_live_socket_uses_the_api_version_that_serves_the_translate_model(monkeypatch) -> None:
+    # google-genai 3.0's default API version answers the Live translate preview model with HTTP 404.
+    from google import genai
+
+    built: dict[str, object] = {}
+
+    class RecordingClient:
+        def __init__(self, **kwargs: object) -> None:
+            built.update(kwargs)
+            self.aio = SimpleNamespace(live=SimpleNamespace(connect=lambda **kw: kw))
+
+    monkeypatch.setattr(genai, "Client", RecordingClient)
+    gemini_connect("test-key")(TranslateMode.EN_TO_KO)
+    options = built.get("http_options")
+    api_version = options.get("api_version") if isinstance(options, dict) else getattr(options, "api_version", None)
+    assert api_version == "v1beta"
