@@ -42,10 +42,12 @@ class TranslateSlice:
         bus: EventBus,
         settings: Settings,
         connect_factory: Callable[[str], Connect],
+        cleanup_factory: Callable[[str, str], Cleanup] = gemini_cleanup,
     ) -> None:
         self._bus = bus
         self._settings = settings
         self._connect_factory = connect_factory
+        self._cleanup_factory = cleanup_factory
         bus.subscribe(GeminiKeyChangedEvent, self._on_gemini_key)
         bus.subscribe(ModeChangedEvent, self._on_mode)
 
@@ -62,8 +64,9 @@ class TranslateSlice:
         if not key:
             return
         connect = self._connect_factory(key)
+        cleanup = self._cleanup_factory(key, settings.cleanup_model)
         if self.live is not None:
-            self.live.use_key(key, connect)
+            self.live.use_key(key, connect, cleanup=cleanup)
             for _ in range(10):
                 await asyncio.sleep(0)
             return
@@ -74,6 +77,8 @@ class TranslateSlice:
             mode=self._mode or settings.translate_mode,
             whole_sentences=settings.whole_sentences,
             quiet_s=settings.whole_sentences_quiet_s,
+            clean_up_wording=settings.clean_up_wording,
+            cleanup=cleanup,
         )
         if self._task is not None:
             self._task.cancel()
@@ -133,7 +138,7 @@ def register(
         if app is not None:
             app.state.whisper_profile = profile
         slice_ = TranslateSlice(live=live)
-        slice_.watch_gemini_key(bus, settings, connect_factory)
+        slice_.watch_gemini_key(bus, settings, connect_factory, cleanup_factory)
         return slice_
     if transcribe is None and settings.hermeneia_url:
         from features.translate_speech.hermeneia_client import make_hermeneia_transcribe
@@ -168,5 +173,5 @@ def register(
     if app is not None:
         app.state.whisper_profile = profile
     slice_ = TranslateSlice(worker)
-    slice_.watch_gemini_key(bus, settings, connect_factory)
+    slice_.watch_gemini_key(bus, settings, connect_factory, cleanup_factory)
     return slice_

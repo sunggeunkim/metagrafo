@@ -137,9 +137,10 @@ class GeminiLiveTranslator:
     async def _on_clean_up_wording(self, event: CleanUpWordingEvent) -> None:
         self._next_clean_up_wording = event.clean_up_wording
 
-    def use_key(self, api_key: str, connect: Connect) -> None:
+    def use_key(self, api_key: str, connect: Connect, *, cleanup: Cleanup | None = None) -> None:
         self._api_key = api_key
         self._connect = connect
+        self._cleanup = cleanup
         self._reconnect.set()
 
     async def _on_mode(self, event: ModeChangedEvent) -> None:

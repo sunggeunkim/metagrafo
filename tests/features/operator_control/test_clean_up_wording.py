@@ -136,3 +136,24 @@ def test_gemini_cleans_each_finished_line_with_the_saved_key_and_the_default_mod
         _wait_for_a_finished_line(client, seen)
     assert seen == [("TODAY'S TOPICAL SERMON IS ABOUT PRAYER.", False)]
     assert made == [("saved-key", "gemini-3.1-flash-lite")]
+
+
+def test_a_pasted_key_cleans_lines_with_that_key_and_the_cleanup_model_from_env(env_file, monkeypatch) -> None:
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    monkeypatch.delenv("CAPTION_ENGINE", raising=False)
+    monkeypatch.setenv("CLEANUP_MODEL", "gemini-test-lite")
+    bus = EventBus()
+    seen = _captions(bus)
+    made: list[tuple[str, str]] = []
+    app = _app(
+        env_file,
+        bus=bus,
+        gemini_connect_factory=_speaking,
+        gemini_cleanup_factory=_shouting_cleanup(made),
+    )
+    with TestClient(app) as client:
+        client.put("/gemini-key", json={"api_key": "pasted-key-42"})
+        _wait_for_a_finished_line(client, seen)
+        assert seen[:1] == [("TODAY'S TOPICAL SERMON IS ABOUT PRAYER.", False)]
+        client.put("/gemini-key", json={"api_key": "replacement-key"})
+    assert made == [("pasted-key-42", "gemini-test-lite"), ("replacement-key", "gemini-test-lite")]
