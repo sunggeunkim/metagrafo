@@ -655,3 +655,37 @@ async def test_a_failed_cleanup_shows_the_line_as_heard_and_logs_why_without_the
     ]
     assert "cleanup skipped: 429 quota exhausted for key [key]" in caplog.text
     assert "secret-key-7" not in caplog.text
+
+
+async def test_cleaned_lines_show_in_the_order_they_were_spoken() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        if line.startswith("Today"):
+            await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    # The socket keeps reading while a line is being cleaned.
+    await asyncio.wait_for(
+        translator.apply_transcript("Today we read from the letter to the Romans."), timeout=0.5
+    )
+    await asyncio.wait_for(
+        translator.apply_transcript("Paul writes to the church in the city of Rome."), timeout=0.5
+    )
+    await _settle()
+    assert seen == []
+    first_may_finish.set()
+    await _settle()
+    assert [e.text for e in seen] == [
+        "TODAY WE READ FROM THE LETTER TO THE ROMANS.",
+        "PAUL WRITES TO THE CHURCH IN THE CITY OF ROME.",
+    ]
