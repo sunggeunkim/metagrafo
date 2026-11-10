@@ -754,3 +754,46 @@ async def test_switching_clean_up_wording_off_shows_the_next_line_as_heard_after
         "TODAY WE READ FROM THE LETTER TO THE ROMANS.",
         "Paul writes to the church in the city of Rome.",
     ]
+
+
+async def test_clean_up_wording_leaves_lines_alone_while_whole_sentences_is_off() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[str] = []
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        asked.append(line)
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=False,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Uh, today we read")
+    await translator.apply_transcript("from Romans.")
+    await _settle()
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Uh, today we read", True),
+        ("Uh, today we read from Romans.", False),
+    ]
+    assert asked == []
+
+
+async def test_clean_up_wording_without_a_key_shows_the_line_as_heard_and_logs_why(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=None,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript("And so we come before the Lord in prayer.")
+        await _settle()
+    assert [e.text for e in seen] == ["And so we come before the Lord in prayer."]
+    assert "cleanup skipped: no Gemini key" in caplog.text

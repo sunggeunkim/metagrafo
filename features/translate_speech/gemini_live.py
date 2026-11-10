@@ -263,7 +263,11 @@ class GeminiLiveTranslator:
 
     async def _show(self, text: str, *, spoken_at: float | None) -> None:
         """A committed line, rewritten by the text model when the booth asks for clean wording."""
-        if self._whole_sentences and self._clean_up_wording and self._cleanup is not None:
+        cleaning = self._whole_sentences and self._clean_up_wording
+        if cleaning and self._cleanup is None:
+            logger.warning("cleanup skipped: no Gemini key")
+            cleaning = False
+        if cleaning:
             # The socket keeps reading while the model works; lines still show in spoken order.
             line: asyncio.Future[str] = asyncio.create_task(self._cleaned(text), name="gemini-live-cleanup")
         elif self._in_order is None:
