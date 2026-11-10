@@ -86,6 +86,10 @@ class _Row:
     c: str = ""
     korean: str = ""
 
+    def __post_init__(self) -> None:
+        # A real run takes as long as the recording; each line shows as it lands.
+        logger.info("%s %s %s", _time(self.at_s), "B" if self.b else "C", self.b or self.c)
+
 
 def real_time() -> Pace:
     """Send audio as fast as it was spoken, as the booth does."""
