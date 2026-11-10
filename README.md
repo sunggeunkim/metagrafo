@@ -138,6 +138,21 @@ uv run python -m main --youtube "https://www.youtube.com/watch?v=VIDEO_ID"
 
 Saves video + wav (kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current directory, and writes `{VIDEO_ID}.en.txt` there (English lines, one per VAD cut). Optional: `--out captions.txt`, `--file sermon.wav` (wav in only, skip download), `--vad-silence-ms 250`, `--pauses 2`, `--condition-on-previous-text`, `--start 1`, `--end 3`. `--start` and `--end` are minutes into the wav. Omit them to translate the whole file (`--start` defaults to 0, `--end` to the end). `--pauses` is 1 or 2 (default 1). Previous text is on unless you pass `--no-condition-on-previous-text`. `--condition-on-previous-text` forces it on. A YouTube URL still downloads the full video; the flags only limit translation.
 
+### Compare live + cleanup with sentence translation (#41)
+
+A prototype for judging which English older viewers follow more easily. It needs `GEMINI_API_KEY` (the key saved on booth control works) and runs **in real time**, so a 40-minute sermon takes 40 minutes; use `--start`/`--end` to try a slice.
+
+```powershell
+uv run python -m main --compare --file sermon.wav --start 5 --end 15
+```
+
+One Gemini live pass feeds both:
+
+- **B:** what the overlay shows, with Whole sentences and Clean up wording on.
+- **C:** each Korean sentence Gemini heard (closed at its end mark or a 1.2 s pause), translated and cleaned in one `CLEANUP_MODEL` call with the last 3 English lines as context.
+
+It writes `sermon.compare.md` (or `{VIDEO_ID}.compare.md` with `--youtube`; `--out` to choose), a table ordered by time from the start of the recording, with B, C, and the Korean C translated. `(+N s)` is each line's delay from its first heard word (B: first English fragment; C: first Korean fragment). Each line is also logged as it lands. Booth control and live captions are unchanged.
+
 ## OBS scene
 
 Put the video in OBS the way you already do. Add the captions as a Browser Source on top of it.

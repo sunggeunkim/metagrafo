@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import logging
 import math
 import os
@@ -153,6 +154,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="YouTube sermon URL (save video+wav under metagrafo_job/<yyyyMMddHHmm>/, then translate)",
     )
     source.add_argument("--file", help="Existing wav (skip download)")
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Caption the recording two ways through Gemini (live + cleanup, and sentence "
+        "translation) in real time, and write them side by side to <name>.compare.md",
+    )
     parser.add_argument("--out", help="Caption text file path")
     parser.add_argument("--vad-silence-ms", type=int, default=None)
     parser.add_argument(
@@ -299,11 +306,101 @@ def run_offline(
     return out_path
 
 
+def run_compare(
+    *,
+    youtube: str | None,
+    file: str | None,
+    out: str | None,
+    start_minutes: float = 0.0,
+    end_minutes: float | None = None,
+) -> Path:
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    return asyncio.run(
+        run_compare_async(
+            youtube=youtube,
+            file=file,
+            out=out,
+            start_minutes=start_minutes,
+            end_minutes=end_minutes,
+        )
+    )
+
+
+async def run_compare_async(
+    *,
+    youtube: str | None,
+    file: str | None,
+    out: str | None,
+    start_minutes: float = 0.0,
+    end_minutes: float | None = None,
+    settings: Settings | None = None,
+    connect_factory: Callable[[str], object] | None = None,
+    cleanup_factory: Callable[[str, str], object] | None = None,
+    translate_factory: Callable[[str, str], object] | None = None,
+    pace: Callable[[float], object] | None = None,
+    download: Callable[[str, Path], Path] | None = None,
+    now: datetime | None = None,
+    cwd: Path | None = None,
+) -> Path:
+    """Issue #41's prototype: B (live + cleanup) and C (sentence translation) side by side."""
+    from features.translate_speech.cleanup import gemini_cleanup
+    from features.translate_speech.compare_run import compare_wav, gemini_translate_sentence
+    from features.translate_speech.gemini_live import gemini_connect
+
+    start_s, end_s = _window_seconds(start_minutes, end_minutes)
+    settings = settings or Settings()
+    key = settings.gemini_api_key.strip()
+    if not key:
+        raise ValueError("--compare needs GEMINI_API_KEY (save a key on booth control, or set it in .env)")
+    if youtube:
+        video_id = youtube_video_id(youtube)
+        job_path = make_job_dir(cwd=cwd, now=now)
+        out_path = Path(out) if out else job_path / f"{video_id}.compare.md"
+        fetch = download if download is not None else download_media
+        wav_path = await asyncio.to_thread(fetch, youtube, job_path)
+    elif file:
+        wav_path = Path(file)
+        out_path = Path(out) if out else wav_path.with_suffix(".compare.md")
+    else:
+        raise ValueError("need --youtube or --file")
+    connect = (connect_factory or gemini_connect)(key)
+    cleanup = (cleanup_factory or gemini_cleanup)(key, settings.cleanup_model)
+    translate = (translate_factory or gemini_translate_sentence)(key, settings.cleanup_model)
+    return await compare_wav(
+        wav_path=wav_path,
+        out_path=out_path.resolve(),
+        connect=connect,
+        cleanup=cleanup,
+        translate=translate,
+        api_key=key,
+        start_s=start_s,
+        end_s=end_s,
+        pace=pace,
+        quiet_s=settings.whole_sentences_quiet_s,
+        cleanup_timeout_s=settings.cleanup_timeout_s,
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.list_devices:
         print_input_devices()
+        return
+    if args.compare:
+        if not (args.youtube or args.file):
+            parser.error("--compare needs --file or --youtube")
+        if args.end is not None and args.end <= args.start:
+            parser.error("--end must be later than --start")
+        print(
+            run_compare(
+                youtube=args.youtube,
+                file=args.file,
+                out=args.out,
+                start_minutes=args.start,
+                end_minutes=args.end,
+            )
+        )
         return
     if args.youtube or args.file:
         if args.end is not None and args.end <= args.start:
