@@ -310,3 +310,17 @@ async def test_an_unpaced_line_is_sent_at_once_while_paced_lines_wait() -> None:
     assert _shown(socket) == ["Paced one.", "Whisper line."]
     await asyncio.sleep(0.4)
     assert _shown(socket) == ["Paced one.", "Whisper line.", "Paced two."]
+
+
+async def test_a_backlog_too_far_behind_drops_the_oldest_waiting_line() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.1, chars_per_s=1000.0, max_behind_s=0.25)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("A."))
+    await bus.publish(_line("B."))
+    await bus.publish(_line("C."))
+    # D would show 0.3 s from now, past 0.25 s behind, so B (the oldest waiting) goes.
+    await bus.publish(_line("D."))
+    await asyncio.sleep(0.45)
+    assert _shown(socket) == ["A.", "C.", "D."]

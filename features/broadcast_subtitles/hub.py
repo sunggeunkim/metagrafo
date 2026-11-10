@@ -25,10 +25,12 @@ class SubtitleHub:
         *,
         min_on_screen_s: float = 2.5,
         chars_per_s: float = 13.0,
+        max_behind_s: float = 5.0,
     ) -> None:
         self._clients: set[WebSocket] = set()
         self._min_on_screen_s = min_on_screen_s
         self._chars_per_s = chars_per_s
+        self._max_behind_s = max_behind_s
         # Paced lines waiting for the one on screen to be read, oldest first.
         self._waiting: deque[dict[str, object]] = deque()
         self._shown_until = 0.0
@@ -80,8 +82,22 @@ class SubtitleHub:
             await self._show(payload)
             return
         self._waiting.append(payload)
+        self._catch_up(now)
         if self._pacer is None:
             self._pacer = asyncio.create_task(self._pace(), name="subtitle-pacer")
+
+    def _catch_up(self, now: float) -> None:
+        """Drop the oldest waiting line while the newest would show more than max_behind_s late.
+
+        Dropping, not merging: a merged line needs as long to read as its parts, so only
+        dropping catches up. The newest line is never dropped, so it waits at most the rest
+        of the line on screen.
+        """
+        behind = self._shown_until - now + sum(
+            self._time_on_screen(waiting) for waiting in list(self._waiting)[:-1]
+        )
+        while behind > self._max_behind_s and len(self._waiting) > 1:
+            behind -= self._time_on_screen(self._waiting.popleft())
 
     def _time_on_screen(self, payload: dict[str, object]) -> float:
         return max(self._min_on_screen_s, len(str(payload["text"])) / self._chars_per_s)
