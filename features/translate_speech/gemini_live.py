@@ -13,6 +13,7 @@ from core.event_bus import EventBus
 from features.capture_audio.events import ProgramAudioEvent
 from features.operator_control.events import (
     CaptionsStateEvent,
+    CleanUpWordingEvent,
     ModeChangedEvent,
     TranslateMode,
     WholeSentencesEvent,
@@ -102,6 +103,7 @@ class GeminiLiveTranslator:
         self._cleanup_timeout_s = cleanup_timeout_s
         self._bus = bus
         self._clean_up_wording = clean_up_wording
+        self._next_clean_up_wording = clean_up_wording
         self._cleanup = cleanup
         # The lines most recently shown, for the text model to read the new one against.
         self._shown: deque[str] = deque(maxlen=CLEANUP_CONTEXT_LINES)
@@ -127,9 +129,13 @@ class GeminiLiveTranslator:
         bus.subscribe(ModeChangedEvent, self._on_mode)
         bus.subscribe(ProgramAudioEvent, self._on_audio)
         bus.subscribe(WholeSentencesEvent, self._on_whole_sentences)
+        bus.subscribe(CleanUpWordingEvent, self._on_clean_up_wording)
 
     async def _on_whole_sentences(self, event: WholeSentencesEvent) -> None:
         self._next_whole_sentences = event.whole_sentences
+
+    async def _on_clean_up_wording(self, event: CleanUpWordingEvent) -> None:
+        self._next_clean_up_wording = event.clean_up_wording
 
     def use_key(self, api_key: str, connect: Connect) -> None:
         self._api_key = api_key
@@ -190,6 +196,7 @@ class GeminiLiveTranslator:
             return
         if not self._line.text:
             self._whole_sentences = self._next_whole_sentences
+            self._clean_up_wording = self._next_clean_up_wording
         # The first English fragment is the closest this socket gets to when the line was spoken.
         at = self._clock() if fragment.strip() else None
         shown = self._line.extend(fragment, at=at) if fragment.strip() else ""
