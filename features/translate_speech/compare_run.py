@@ -42,6 +42,43 @@ TAIL_S = 5.0
 CONTEXT_LINES = 3
 
 
+INSTRUCTION = (
+    "You write live English captions of a Korean church sermon, one sentence at a time. "
+    'Translate the Korean under "Translate:" into English that is plain and easy to follow. '
+    "Ignore Korean fillers (어, 음, 그, 이제, 뭐) and drop false starts. Keep the meaning. "
+    "Add nothing. Keep scripture references and names as spoken. "
+    'The lines under "Shown before:" are the English captions already on screen; use them only '
+    "to understand the sentence and never repeat them. Reply with the English caption only."
+)
+
+
+def prompt_for(korean: str, shown: list[str]) -> str:
+    before = "".join(f"{text}\n" for text in shown)
+    return f"Shown before:\n{before}\nTranslate:\n{korean}" if shown else f"Translate:\n{korean}"
+
+
+def gemini_translate_sentence(api_key: str, model: str) -> Translate:
+    """C's text model: one Korean sentence in, its cleaned English caption out."""
+    from google import genai
+    from google.genai import types
+
+    # Pinned like the live socket and cleanup: google-genai 3.x changed the default API version.
+    client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))
+    config = types.GenerateContentConfig(
+        system_instruction=INSTRUCTION,
+        temperature=0.0,
+        automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+    )
+
+    async def translate(korean: str, shown: list[str]) -> str:
+        response = await client.aio.models.generate_content(
+            model=model, contents=prompt_for(korean, shown), config=config
+        )
+        return (response.text or "").strip()
+
+    return translate
+
+
 @dataclass
 class _Row:
     at_s: float
