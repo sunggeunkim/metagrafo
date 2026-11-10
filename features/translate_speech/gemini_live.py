@@ -186,7 +186,8 @@ class GeminiLiveTranslator:
                 await self._publish(text, provisional=False, spoken_at=spoken_at)
             return
         if self._whole_sentences:
-            self._commit_when_quiet()
+            if self._line.text:
+                self._commit_when_quiet()
         elif shown:
             await self._publish(shown, provisional=True, spoken_at=spoken_at)
 

@@ -475,6 +475,19 @@ async def test_a_finished_sentence_stops_its_quiet_wait_so_the_next_line_is_not_
     ]
 
 
+async def test_an_empty_turn_starts_no_quiet_wait_that_could_cut_the_next_line_short() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True, quiet_s=0.05
+    )
+    await translator.apply_transcript("", turn_complete=True)
+    await bus.publish(WholeSentencesEvent(whole_sentences=False))
+    await translator.apply_transcript("And so")
+    await asyncio.sleep(0.1)
+    assert [(e.text, e.provisional) for e in seen] == [("And so", True)]
+
+
 async def test_whole_sentences_off_shows_the_line_as_spoken() -> None:
     bus = EventBus()
     seen = _collect(bus)
