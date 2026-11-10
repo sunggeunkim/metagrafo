@@ -30,3 +30,5 @@ dev = [
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 pythonpath = ["."]
+# The booth's embedded Python under runtime/ carries other packages' test suites.
+testpaths = ["tests"]
