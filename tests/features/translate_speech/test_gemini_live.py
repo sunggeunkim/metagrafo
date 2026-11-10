@@ -797,3 +797,28 @@ async def test_clean_up_wording_without_a_key_shows_the_line_as_heard_and_logs_w
         await _settle()
     assert [e.text for e in seen] == ["And so we come before the Lord in prayer."]
     assert "cleanup skipped: no Gemini key" in caplog.text
+
+
+async def test_a_line_cleaned_across_a_mode_change_keeps_the_mode_it_was_spoken_in() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read from the letter to the Romans.")
+    await bus.publish(ModeChangedEvent(mode="en_to_en", source_language="en", target_language="en"))
+    first_may_finish.set()
+    await _settle()
+    assert [(e.text, e.mode, e.source_language) for e in seen] == [
+        ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", "ko_to_en", "ko")
+    ]
