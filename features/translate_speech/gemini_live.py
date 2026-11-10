@@ -35,7 +35,7 @@ SHORT_SENTENCE_CHARS = 25
 LONG_LINE_CHARS = 120
 CLEANUP_CONTEXT_LINES = 3
 # Captions never wait longer than this for the text model; the line shows as heard instead.
-CLEANUP_TIMEOUT_S = 1.5
+CLEANUP_TIMEOUT_S = 4.0
 
 
 def echoes_target_language(mode: TranslateMode) -> bool:

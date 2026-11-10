@@ -138,6 +138,35 @@ def test_gemini_cleans_each_finished_line_with_the_saved_key_and_the_default_mod
     assert made == [("saved-key", "gemini-3.5-flash-lite")]
 
 
+def test_cleanup_waits_four_seconds_by_default() -> None:
+    assert Settings(_env_file=None).cleanup_timeout_s == 4.0
+
+
+def test_gemini_shows_the_line_as_heard_when_cleanup_outlasts_the_timeout_from_env(env_file, monkeypatch) -> None:
+    monkeypatch.setenv("CLEANUP_TIMEOUT_S", "0.05")
+
+    def slow_cleanup(_api_key: str, _model: str):
+        async def clean(line: str, _shown: list[str]) -> str:
+            await asyncio.sleep(0.5)
+            return line.upper()
+
+        return clean
+
+    bus = EventBus()
+    seen = _captions(bus)
+    settings = Settings(caption_engine="gemini_live", gemini_api_key="saved-key", _env_file=env_file)
+    app = create_app(
+        bus=bus,
+        settings=settings,
+        env_file=env_file,
+        gemini_connect_factory=_speaking,
+        gemini_cleanup_factory=slow_cleanup,
+    )
+    with TestClient(app) as client:
+        _wait_for_a_finished_line(client, seen)
+    assert seen == [("Today's topical sermon is about prayer.", False)]
+
+
 def test_a_pasted_key_cleans_lines_with_that_key_and_the_cleanup_model_from_env(env_file, monkeypatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("CAPTION_ENGINE", raising=False)

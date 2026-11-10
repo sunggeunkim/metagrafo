@@ -78,6 +78,7 @@ class TranslateSlice:
             whole_sentences=settings.whole_sentences,
             quiet_s=settings.whole_sentences_quiet_s,
             clean_up_wording=settings.clean_up_wording,
+            cleanup_timeout_s=settings.cleanup_timeout_s,
             cleanup=cleanup,
         )
         if self._task is not None:
@@ -133,6 +134,7 @@ def register(
             whole_sentences=settings.whole_sentences,
             quiet_s=settings.whole_sentences_quiet_s,
             clean_up_wording=settings.clean_up_wording,
+            cleanup_timeout_s=settings.cleanup_timeout_s,
             cleanup=cleanup_factory(settings.gemini_api_key, settings.cleanup_model),
         )
         if app is not None:
