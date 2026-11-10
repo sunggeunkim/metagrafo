@@ -362,3 +362,52 @@ async def test_after_captions_off_the_next_paced_line_shows_at_once() -> None:
     await bus.publish(CaptionsStateEvent(is_active=True))
     await bus.publish(_line("After the song."))
     assert _shown(socket) == ["Before the song.", "After the song."]
+
+
+async def test_a_wait_from_before_captions_off_does_not_send_a_later_line_early() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.3, chars_per_s=1000.0)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("A."))
+    await bus.publish(_line("B."))
+    await asyncio.sleep(0.15)
+    await bus.publish(CaptionsStateEvent(is_active=False))
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    await bus.publish(_line("C."))
+    await bus.publish(_line("D."))
+    # The wait for B would have ended at 0.3 s; D waits for C, until 0.45 s.
+    await asyncio.sleep(0.23)
+    assert _shown(socket) == ["A.", "C."]
+    await asyncio.sleep(0.17)
+    assert _shown(socket) == ["A.", "C.", "D."]
+
+
+class _SlowSocket(_Socket):
+    """Takes a while to send one line, so captions can go off part-way through a broadcast."""
+
+    def __init__(self, slow_text: str) -> None:
+        super().__init__()
+        self._slow_text = slow_text
+
+    async def send_json(self, data: dict) -> None:
+        if data.get("text") == self._slow_text:
+            await asyncio.sleep(0.2)
+        self.sent.append(data)
+
+
+async def test_captions_off_while_a_waiting_line_is_being_sent_stops_it_reaching_any_client() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.1, chars_per_s=1000.0)
+    sockets = [_SlowSocket("B."), _SlowSocket("B.")]
+    for socket in sockets:
+        await hub.connect(socket)
+    await bus.publish(_line("A."))
+    await bus.publish(_line("B."))
+    # B starts going out at 0.1 s and the first send takes until 0.3 s.
+    await asyncio.sleep(0.15)
+    await bus.publish(CaptionsStateEvent(is_active=False))
+    await asyncio.sleep(0.3)
+    for socket in sockets:
+        assert _shown(socket) == ["A."]
+        assert socket.sent[-1] == {"type": "captions_state", "is_active": False}
