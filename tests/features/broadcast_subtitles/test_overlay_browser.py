@@ -6,6 +6,7 @@ Skips when either is missing.
 
 from __future__ import annotations
 
+import json
 import socket
 import threading
 import time
@@ -173,3 +174,28 @@ def test_korean_caption_breaks_only_at_spaces(browser, server, width) -> None:
     shown = [word for box in boxes for word in box["text"].split()]
     words = KOREAN.split()
     assert shown == words[len(words) - len(shown) :]
+
+
+def test_a_paced_line_stays_up_past_the_hide_timer_until_it_has_been_read(browser, server) -> None:
+    context = browser.new_context(viewport={"width": 1920, "height": 1080})
+    page = context.new_page()
+    sockets: list[object] = []
+    # The test plays the server's /ws, so it controls what the overlay hears and when.
+    page.route_web_socket("**/ws", lambda ws: sockets.append(ws))
+    page.clock.install()
+    try:
+        page.goto(f"{server}/overlay")
+        deadline = time.monotonic() + 10
+        while not sockets:
+            if time.monotonic() > deadline:
+                raise RuntimeError("overlay did not open /ws")
+            page.wait_for_timeout(50)
+        line = {"type": "subtitle", "text": "A long line.", "provisional": False, "min_on_screen_s": 9.2}
+        sockets[0].send(json.dumps(line))
+        page.wait_for_selector("#stage:not(.hidden) #lines .line", state="attached")
+        page.clock.run_for(8_500)
+        assert page.locator("#stage.hidden").count() == 0
+        page.clock.run_for(1_000)
+        assert page.locator("#stage.hidden").count() == 1
+    finally:
+        context.close()

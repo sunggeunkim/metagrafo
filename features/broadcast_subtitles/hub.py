@@ -103,9 +103,11 @@ class SubtitleHub:
         return max(self._min_on_screen_s, len(str(payload["text"])) / self._chars_per_s)
 
     async def _show(self, payload: dict[str, object]) -> None:
+        on_screen = self._time_on_screen(payload)
         # Set before the send, so a line arriving mid-send waits its turn.
-        self._shown_until = asyncio.get_running_loop().time() + self._time_on_screen(payload)
-        await self._broadcast(payload)
+        self._shown_until = asyncio.get_running_loop().time() + on_screen
+        # The overlay keeps the line up at least this long, past its own hide timer.
+        await self._broadcast({**payload, "min_on_screen_s": on_screen})
 
     async def _pace(self) -> None:
         loop = asyncio.get_running_loop()

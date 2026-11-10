@@ -284,6 +284,20 @@ async def test_a_long_paced_line_stays_up_long_enough_to_read_its_characters() -
     assert _shown(socket) == ["A line of exactly forty characters long.", "Next."]
 
 
+async def test_a_paced_line_tells_the_overlay_how_long_to_keep_it_up() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.05, chars_per_s=100.0)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("A line of exactly forty characters long."))
+    await bus.publish(_line("Hi.", paced=False))
+    subtitles = [m for m in socket.sent if m["type"] == "subtitle"]
+    assert [(m["text"], m.get("min_on_screen_s")) for m in subtitles] == [
+        ("A line of exactly forty characters long.", 0.4),
+        ("Hi.", None),
+    ]
+
+
 async def test_paced_lines_that_arrive_early_wait_and_show_in_order() -> None:
     bus = EventBus()
     hub = SubtitleHub(bus, min_on_screen_s=0.2, chars_per_s=1000.0)
@@ -347,6 +361,7 @@ async def test_captions_off_clears_the_waiting_paced_lines() -> None:
             "ts": 1.0,
             "duration_s": 0.0,
             "provisional": False,
+            "min_on_screen_s": 0.1,
         },
         {"type": "captions_state", "is_active": False},
     ]
