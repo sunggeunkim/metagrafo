@@ -64,16 +64,9 @@ echo.
 
 :launch
 echo Opening Metagrafo...
-start "" /D "%ROOT%" "%PYW%" -m main
-set /a TRIES=0
-:wait
-set /a TRIES+=1
-if %TRIES% GTR 60 goto notstarted
-curl -sf -o NUL --max-time 2 http://127.0.0.1:8000/health
-if errorlevel 1 (
-  ping -n 2 127.0.0.1 >nul
-  goto wait
-)
+rem Starts pythonw -m main, and stops waiting as soon as it exits.
+"%PY%" "%ROOT%\scripts\start_server.py"
+if errorlevel 1 goto notstarted
 
 :open
 start "" http://127.0.0.1:8000/control
@@ -96,8 +89,6 @@ exit /b 1
 :notstarted
 echo.
 echo Metagrafo did not start.
-rem pythonw writes nothing until main.py runs, so an import error would never reach the log.
-"%PY%" -c "import main" >>"%ROOT%\metagrafo.log" 2>&1
 echo The reason is at the end of metagrafo.log in this folder.
 start "" notepad "%ROOT%\metagrafo.log"
 echo.
