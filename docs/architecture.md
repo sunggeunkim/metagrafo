@@ -88,6 +88,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 
 - `large-v3` (`turbo` ignores `task="translate"`). Inference in `asyncio.to_thread`.
 - `HERMENEIA_URL` sends each VAD chunk to that box (`/v1/translations`) instead of local Whisper. `HERMENEIA_TOKEN` is the bearer token. An unset URL keeps local Whisper. Gemini live does not call Hermeneia.
+- `--compare` (prototype for #41, `compare_run.py`): one real-time Gemini live pass over a wav writes `<name>.compare.md`. B feeds the English into a private `GeminiLiveTranslator` (Whole sentences and Clean up wording on). C closes each Korean `input_transcription` sentence at `.?!` or a `WHOLE_SENTENCES_QUIET_S` pause and translates it in one `CLEANUP_MODEL` call with the last 3 C lines as context, ignoring Korean fillers. Reconnects on `go_away`. Not wired into the live pipeline or booth control.
 - `condition_on_previous_text` defaults **on** (the caption just written is passed into the next phrase). **Off** translates each phrase alone. Live from `/control`. A file run turns it off with `--no-condition-on-previous-text`.
 - Device profile: see `docs/hardware-profiles.md`. Env always wins.
 - Queue max 4, **drop oldest**. Empty output is not published.
