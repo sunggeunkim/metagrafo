@@ -222,6 +222,9 @@ class GeminiLiveTranslator:
             spoken_at = self._line.opened_at
             self._line.commit()
             await self._publish(text[:cut].strip(), provisional=False, spoken_at=spoken_at)
+            if not self._active:
+                # Captions went off while the front was shown; the off switch already cleared the line.
+                return
             self._line.extend(text[cut:], at=at)
 
     def _holds_short_sentence(self, text: str) -> bool:

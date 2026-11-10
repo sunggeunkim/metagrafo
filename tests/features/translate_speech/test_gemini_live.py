@@ -356,6 +356,27 @@ async def test_whole_sentences_does_not_cut_at_a_comma_that_leaves_a_stub() -> N
     ]
 
 
+async def test_captions_off_while_a_cut_line_is_shown_drops_the_rest_of_it() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def stop_captions_once(event: SubtitleEvent) -> None:
+        if len(seen) == 1:
+            await bus.publish(CaptionsStateEvent(is_active=False))
+
+    bus.subscribe(SubtitleEvent, stop_captions_once)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript(
+        "Brothers, we give thanks for the sisters who came from the north side of the city this morning"
+    )
+    await translator.apply_transcript("to worship with us and to share the meal after the service.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Brothers, we give thanks for the sisters who came from the north side of the city this morning to worship with us and to", False),
+    ]
+
+
 async def test_whole_sentences_removes_fillers() -> None:
     bus = EventBus()
     seen = _collect(bus)
