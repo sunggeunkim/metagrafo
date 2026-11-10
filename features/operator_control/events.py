@@ -49,6 +49,13 @@ class WholeSentencesEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class CleanUpWordingEvent:
+    """A text model rewrites each finished Gemini live line. Takes effect at the next line."""
+
+    clean_up_wording: bool
+
+
+@dataclass(frozen=True, slots=True)
 class GeminiKeyChangedEvent:
     """The operator saved a Gemini key. The key itself stays on Settings."""
 

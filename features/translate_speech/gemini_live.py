@@ -5,13 +5,15 @@ import contextlib
 import logging
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections import deque
+from collections.abc import AsyncIterator, Awaitable, Callable
 from types import TracebackType
 
 from core.event_bus import EventBus
 from features.capture_audio.events import ProgramAudioEvent
 from features.operator_control.events import (
     CaptionsStateEvent,
+    CleanUpWordingEvent,
     ModeChangedEvent,
     TranslateMode,
     WholeSentencesEvent,
@@ -25,10 +27,15 @@ logger = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-live-translate-preview"
 Connect = Callable[[TranslateMode], "LiveConnection"]
+# A finished line and the lines shown before it in; the line a text model rewrote out.
+Cleanup = Callable[[str, list[str]], Awaitable[str]]
 SHORT_SENTENCE_CHARS = 25
 # Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
 # slack because the overlay can wrap a full two rows onto a third (issue #36).
 LONG_LINE_CHARS = 120
+CLEANUP_CONTEXT_LINES = 3
+# Captions never wait longer than this for the text model; the line shows as heard instead.
+CLEANUP_TIMEOUT_S = 4.0
 
 
 def echoes_target_language(mode: TranslateMode) -> bool:
@@ -89,8 +96,21 @@ class GeminiLiveTranslator:
         clock: Callable[[], float] = time.time,
         whole_sentences: bool = False,
         quiet_s: float = 1.2,
+        clean_up_wording: bool = False,
+        cleanup: Cleanup | None = None,
+        cleanup_timeout_s: float = CLEANUP_TIMEOUT_S,
     ) -> None:
         self._bus = bus
+        # Like whole sentences, the open line keeps the cleanup setting it started with.
+        self._clean_up_wording = clean_up_wording
+        self._next_clean_up_wording = clean_up_wording
+        self._cleanup = cleanup
+        self._cleanup_timeout_s = cleanup_timeout_s
+        # The lines most recently shown, for the text model to read the new one against.
+        self._shown: deque[str] = deque(maxlen=CLEANUP_CONTEXT_LINES)
+        # Committed lines not shown yet, oldest first, and the task that shows them in that order.
+        self._waiting: deque[tuple[asyncio.Future[str], float | None, TranslateMode, bool]] = deque()
+        self._in_order: asyncio.Task[None] | None = None
         # The open line keeps the setting it started with; the booth's choice waits for the next.
         self._whole_sentences = whole_sentences
         self._next_whole_sentences = whole_sentences
@@ -110,13 +130,18 @@ class GeminiLiveTranslator:
         bus.subscribe(ModeChangedEvent, self._on_mode)
         bus.subscribe(ProgramAudioEvent, self._on_audio)
         bus.subscribe(WholeSentencesEvent, self._on_whole_sentences)
+        bus.subscribe(CleanUpWordingEvent, self._on_clean_up_wording)
 
     async def _on_whole_sentences(self, event: WholeSentencesEvent) -> None:
         self._next_whole_sentences = event.whole_sentences
 
-    def use_key(self, api_key: str, connect: Connect) -> None:
+    async def _on_clean_up_wording(self, event: CleanUpWordingEvent) -> None:
+        self._next_clean_up_wording = event.clean_up_wording
+
+    def use_key(self, api_key: str, connect: Connect, *, cleanup: Cleanup | None = None) -> None:
         self._api_key = api_key
         self._connect = connect
+        self._cleanup = cleanup
         self._reconnect.set()
 
     async def _on_mode(self, event: ModeChangedEvent) -> None:
@@ -141,6 +166,7 @@ class GeminiLiveTranslator:
         self._drain_audio()
         self._stop_quiet_wait()
         self._line.commit()
+        self._drop_waiting_lines()
 
     async def _on_audio(self, event: ProgramAudioEvent) -> None:
         if not self._active:
@@ -165,13 +191,14 @@ class GeminiLiveTranslator:
         spoken_at = self._line.opened_at
         finished = self._finish(self._line.commit())
         if finished and self._active:
-            await self._publish(finished, provisional=False, spoken_at=spoken_at)
+            await self._show(finished, spoken_at=spoken_at)
 
     async def apply_transcript(self, fragment: str, *, turn_complete: bool = False) -> None:
         if not self._active:
             return
         if not self._line.text:
             self._whole_sentences = self._next_whole_sentences
+            self._clean_up_wording = self._next_clean_up_wording
         # The first English fragment is the closest this socket gets to when the line was spoken.
         at = self._clock() if fragment.strip() else None
         shown = self._line.extend(fragment, at=at) if fragment.strip() else ""
@@ -183,12 +210,13 @@ class GeminiLiveTranslator:
             self._stop_quiet_wait()
             self._line.commit()
             if text:
-                await self._publish(text, provisional=False, spoken_at=spoken_at)
+                await self._show(text, spoken_at=spoken_at)
             return
         if self._whole_sentences:
             if self._line.text:
                 self._commit_when_quiet()
-        elif shown:
+        elif shown and self._in_order is None:
+            # A line still being cleaned shows first; the next fragment shows this one grown.
             await self._publish(shown, provisional=True, spoken_at=spoken_at)
 
     def _commit_when_quiet(self) -> None:
@@ -224,7 +252,7 @@ class GeminiLiveTranslator:
             times = _times_of_kept(self._line.text.split(), self._line.word_times, words)
             front = len(text[:cut].split())
             self._line.commit()
-            await self._publish(text[:cut].strip(), provisional=False, spoken_at=spoken_at)
+            await self._show(text[:cut].strip(), spoken_at=spoken_at)
             if not self._active:
                 # Captions went off while the front was shown; the off switch already cleared the line.
                 return
@@ -236,24 +264,90 @@ class GeminiLiveTranslator:
         """A sentence like "Yes." waits to join the next one instead of filling a line alone."""
         return self._whole_sentences and len(text) < SHORT_SENTENCE_CHARS
 
+    async def _show(self, text: str, *, spoken_at: float | None) -> None:
+        """A committed line, rewritten by the text model when the booth asks for clean wording."""
+        # Decided now: a line still being cleaned keeps it if Whole sentences changes meanwhile.
+        paced = self._whole_sentences
+        cleaning = paced and self._clean_up_wording
+        if cleaning and self._cleanup is None:
+            logger.warning("cleanup skipped: no Gemini key")
+            cleaning = False
+        if cleaning:
+            # The socket keeps reading while the model works; lines still show in spoken order.
+            line: asyncio.Future[str] = asyncio.create_task(self._cleaned(text), name="gemini-live-cleanup")
+        elif self._in_order is None:
+            await self._publish(text, provisional=False, spoken_at=spoken_at, paced=paced)
+            self._shown.append(text)
+            return
+        else:
+            line = asyncio.get_running_loop().create_future()
+            line.set_result(text)
+        self._waiting.append((line, spoken_at, self._mode, paced))
+        if self._in_order is None:
+            self._in_order = asyncio.create_task(self._show_in_order(), name="gemini-live-in-order")
+
+    def _drop_waiting_lines(self) -> None:
+        """Captions off: lines still being cleaned never show, and their model calls stop."""
+        for line, *_ in self._waiting:
+            line.cancel()
+        self._waiting.clear()
+
+    async def _show_in_order(self) -> None:
+        while self._waiting:
+            entry = self._waiting[0]
+            line, spoken_at, mode, paced = entry
+            await asyncio.wait({line})
+            if not self._waiting or self._waiting[0] is not entry:
+                # Captions went off while it was cleaned; lines after it are newer.
+                continue
+            self._waiting.popleft()
+            text = line.result()
+            await self._publish(text, provisional=False, spoken_at=spoken_at, mode=mode, paced=paced)
+            self._shown.append(text)
+        self._in_order = None
+
+    async def _cleaned(self, text: str) -> str:
+        """The text model's wording of a line, or the line as heard when the model can't answer."""
+        assert self._cleanup is not None
+        try:
+            cleaned = await asyncio.wait_for(
+                self._cleanup(text, list(self._shown)), timeout=self._cleanup_timeout_s
+            )
+            if cleaned.strip():
+                return cleaned.strip()
+            logger.warning("cleanup skipped: empty reply")
+        except asyncio.TimeoutError:
+            logger.warning("cleanup skipped: no reply within %s s", self._cleanup_timeout_s)
+        except Exception as exc:
+            logger.warning("cleanup skipped: %s", _redact(exc, self._api_key))
+        return text
+
     async def _publish(
-        self, text: str, *, provisional: bool, spoken_at: float | None = None
+        self,
+        text: str,
+        *,
+        provisional: bool,
+        spoken_at: float | None = None,
+        mode: TranslateMode | None = None,
+        paced: bool = False,
     ) -> None:
         if not self._active and provisional:
             return
-        source, target = languages_for(self._mode)
+        # A line that waited on cleanup keeps the mode it was spoken in.
+        mode = mode or self._mode
+        source, target = languages_for(mode)
         await self._bus.publish(
             SubtitleEvent(
                 chunk_id=str(uuid.uuid4()),
                 text=text,
                 source_language=source,
                 target_language=target,
-                mode=self._mode.value,
+                mode=mode.value,
                 created_at=self._clock(),
                 duration_s=0.0,
                 provisional=provisional,
                 spoken_at=spoken_at,
-                paced=self._whole_sentences and not provisional,
+                paced=paced,
             )
         )
 

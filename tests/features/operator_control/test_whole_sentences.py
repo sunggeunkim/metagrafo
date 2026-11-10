@@ -65,9 +65,18 @@ def _speaking(_api_key: str):
     return lambda _mode: _SpeakingSession()
 
 
+def _as_heard(_api_key: str, _model: str):
+    """Clean up wording is on by default; this stands in for the text model, offline."""
+
+    async def clean(line: str, _shown: list[str]) -> str:
+        return line
+
+    return clean
+
+
 def _app(env_file, **kwargs):
     settings = Settings(caption_engine="whisper", gemini_api_key="", _env_file=env_file)
-    return create_app(settings=settings, env_file=env_file, **kwargs)
+    return create_app(settings=settings, env_file=env_file, gemini_cleanup_factory=_as_heard, **kwargs)
 
 
 def test_whole_sentences_starts_on(env_file) -> None:
@@ -106,7 +115,13 @@ def test_gemini_starts_with_whole_sentences_on(env_file) -> None:
     bus = EventBus()
     seen = _captions(bus)
     settings = Settings(caption_engine="gemini_live", gemini_api_key="saved-key", _env_file=env_file)
-    app = create_app(bus=bus, settings=settings, env_file=env_file, gemini_connect_factory=_speaking)
+    app = create_app(
+        bus=bus,
+        settings=settings,
+        env_file=env_file,
+        gemini_connect_factory=_speaking,
+        gemini_cleanup_factory=_as_heard,
+    )
     with TestClient(app) as client:
         _wait_for_a_finished_line(client, seen)
     assert seen == [("Today's topical sermon is about prayer.", False)]
@@ -129,7 +144,13 @@ def test_gemini_starts_with_the_choice_saved_on_the_booth(env_file) -> None:
     bus = EventBus()
     seen = _captions(bus)
     settings = Settings(caption_engine="gemini_live", gemini_api_key="saved-key", _env_file=env_file)
-    app = create_app(bus=bus, settings=settings, env_file=env_file, gemini_connect_factory=_speaking)
+    app = create_app(
+        bus=bus,
+        settings=settings,
+        env_file=env_file,
+        gemini_connect_factory=_speaking,
+        gemini_cleanup_factory=_as_heard,
+    )
     with TestClient(app) as client:
         _wait_for_a_finished_line(client, seen)
     assert seen == [

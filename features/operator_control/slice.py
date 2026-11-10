@@ -13,6 +13,7 @@ from core.settings import Settings
 from features.operator_control.events import (
     AudioDeviceChangedEvent,
     CaptionsStateEvent,
+    CleanUpWordingEvent,
     GeminiKeyChangedEvent,
     ModeChangedEvent,
     OverlayPosition,
@@ -39,6 +40,7 @@ class OperatorState:
         vad_pauses: int = 1,
         condition_on_previous_text: bool = True,
         whole_sentences: bool = True,
+        clean_up_wording: bool = True,
         overlay_position: OverlayPosition = OverlayPosition.TOP_LEFT,
         font_size_vw: float = 2.5,
         inset_vertical_pct: float = 1.0,
@@ -53,6 +55,7 @@ class OperatorState:
         self.vad_pauses = vad_pauses
         self.condition_on_previous_text = condition_on_previous_text
         self.whole_sentences = whole_sentences
+        self.clean_up_wording = clean_up_wording
         self.overlay_position = overlay_position
         self.font_size_vw = font_size_vw
         self.inset_vertical_pct = inset_vertical_pct
@@ -72,6 +75,7 @@ class OperatorState:
             "vad_pauses": self.vad_pauses,
             "condition_on_previous_text": self.condition_on_previous_text,
             "whole_sentences": self.whole_sentences,
+            "clean_up_wording": self.clean_up_wording,
             "position": self.overlay_position.value,
             "font_size_vw": self.font_size_vw,
             "inset_vertical_pct": self.inset_vertical_pct,
@@ -108,6 +112,10 @@ class ConditionOnPreviousTextBody(BaseModel):
 
 class WholeSentencesBody(BaseModel):
     whole_sentences: bool
+
+
+class CleanUpWordingBody(BaseModel):
+    clean_up_wording: bool
 
 
 class OverlayStyleBody(BaseModel):
@@ -213,6 +221,7 @@ def register(
         vad_pauses=pauses,
         condition_on_previous_text=settings.condition_on_previous_text,
         whole_sentences=settings.whole_sentences,
+        clean_up_wording=settings.clean_up_wording,
     )
     app.state.operator = state
 
@@ -365,6 +374,15 @@ def register(
         settings.whole_sentences = body.whole_sentences
         state.whole_sentences = body.whole_sentences
         await bus.publish(WholeSentencesEvent(whole_sentences=body.whole_sentences))
+        return public_state()
+
+    @app.put("/clean-up-wording")
+    async def put_clean_up_wording(body: CleanUpWordingBody) -> dict[str, object]:
+        # Kept in .env so the booth's choice survives a restart.
+        write_env_values(key_file, {"CLEAN_UP_WORDING": "true" if body.clean_up_wording else "false"})
+        settings.clean_up_wording = body.clean_up_wording
+        state.clean_up_wording = body.clean_up_wording
+        await bus.publish(CleanUpWordingEvent(clean_up_wording=body.clean_up_wording))
         return public_state()
 
     @app.put("/overlay-style")

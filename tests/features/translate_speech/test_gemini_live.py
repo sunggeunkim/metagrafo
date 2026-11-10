@@ -543,6 +543,338 @@ async def test_whole_sentences_off_shows_the_line_as_spoken() -> None:
     ]
 
 
+async def _settle() -> None:
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+
+async def test_clean_up_wording_shows_the_cleaned_line() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        return "Paul says nothing can separate us from the love of God."
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(
+        "And so Paul, what he says is, nothing can separate us from the love of God."
+    )
+    await _settle()
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Paul says nothing can separate us from the love of God.", False)
+    ]
+
+
+async def test_clean_up_wording_gives_the_model_the_last_three_shown_lines() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[tuple[str, list[str]]] = []
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        asked.append((line, context))
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    for sentence in (
+        "Today we read from the letter to the Romans.",
+        "Paul writes to the church in the city of Rome.",
+        "He has never visited them in person before.",
+        "So he tells them who he is and what he believes.",
+        "He begins with the good news about Jesus.",
+    ):
+        await translator.apply_transcript(sentence)
+        await _settle()
+    assert asked[0] == ("Today we read from the letter to the Romans.", [])
+    assert asked[-1] == (
+        "He begins with the good news about Jesus.",
+        [
+            "PAUL WRITES TO THE CHURCH IN THE CITY OF ROME.",
+            "HE HAS NEVER VISITED THEM IN PERSON BEFORE.",
+            "SO HE TELLS THEM WHO HE IS AND WHAT HE BELIEVES.",
+        ],
+    )
+
+
+async def test_a_slow_cleanup_shows_the_line_as_heard_and_logs_why(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await asyncio.sleep(5)
+        return "Too late."
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+        cleanup_timeout_s=0.05,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript("And so we come before the Lord in prayer.")
+        await asyncio.sleep(0.2)
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("And so we come before the Lord in prayer.", False)
+    ]
+    assert "cleanup skipped: no reply within 0.05 s" in caplog.text
+
+
+async def test_a_failed_cleanup_shows_the_line_as_heard_and_logs_why_without_the_key(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        raise RuntimeError("429 quota exhausted for key secret-key-7")
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        api_key="secret-key-7",
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript("And so we come before the Lord in prayer.")
+        await _settle()
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("And so we come before the Lord in prayer.", False)
+    ]
+    assert "cleanup skipped: 429 quota exhausted for key [key]" in caplog.text
+    assert "secret-key-7" not in caplog.text
+
+
+async def test_cleaned_lines_show_in_the_order_they_were_spoken() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        if line.startswith("Today"):
+            await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    # The socket keeps reading while a line is being cleaned.
+    await asyncio.wait_for(
+        translator.apply_transcript("Today we read from the letter to the Romans."), timeout=0.5
+    )
+    await asyncio.wait_for(
+        translator.apply_transcript("Paul writes to the church in the city of Rome."), timeout=0.5
+    )
+    await _settle()
+    assert seen == []
+    first_may_finish.set()
+    await _settle()
+    assert [e.text for e in seen] == [
+        "TODAY WE READ FROM THE LETTER TO THE ROMANS.",
+        "PAUL WRITES TO THE CHURCH IN THE CITY OF ROME.",
+    ]
+
+
+async def test_captions_off_drops_a_line_still_being_cleaned_and_stops_its_call() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+    stopped: list[str] = []
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        if line.startswith("Today"):
+            try:
+                await first_may_finish.wait()
+            except asyncio.CancelledError:
+                stopped.append(line)
+                raise
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read from the letter to the Romans.")
+    await _settle()
+    await bus.publish(CaptionsStateEvent(is_active=False))
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    await translator.apply_transcript("Paul writes to the church in the city of Rome.")
+    first_may_finish.set()
+    await _settle()
+    assert [e.text for e in seen] == ["PAUL WRITES TO THE CHURCH IN THE CITY OF ROME."]
+    assert stopped == ["Today we read from the letter to the Romans."]
+
+
+async def test_switching_clean_up_wording_off_shows_the_next_line_as_heard_after_the_one_being_cleaned() -> None:
+    from features.operator_control.events import CleanUpWordingEvent
+
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read")
+    await bus.publish(CleanUpWordingEvent(clean_up_wording=False))
+    await translator.apply_transcript("from the letter to the Romans.")
+    await translator.apply_transcript("Paul writes to the church in the city of Rome.")
+    await _settle()
+    assert seen == []
+    first_may_finish.set()
+    await _settle()
+    assert [e.text for e in seen] == [
+        "TODAY WE READ FROM THE LETTER TO THE ROMANS.",
+        "Paul writes to the church in the city of Rome.",
+    ]
+
+
+async def test_clean_up_wording_leaves_lines_alone_while_whole_sentences_is_off() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[str] = []
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        asked.append(line)
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=False,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Uh, today we read")
+    await translator.apply_transcript("from Romans.")
+    await _settle()
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Uh, today we read", True),
+        ("Uh, today we read from Romans.", False),
+    ]
+    assert asked == []
+
+
+async def test_clean_up_wording_without_a_key_shows_the_line_as_heard_and_logs_why(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=None,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript("And so we come before the Lord in prayer.")
+        await _settle()
+    assert [e.text for e in seen] == ["And so we come before the Lord in prayer."]
+    assert "cleanup skipped: no Gemini key" in caplog.text
+
+
+async def test_a_line_cleaned_across_a_mode_change_keeps_the_mode_it_was_spoken_in() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read from the letter to the Romans.")
+    await bus.publish(ModeChangedEvent(mode="en_to_en", source_language="en", target_language="en"))
+    first_may_finish.set()
+    await _settle()
+    assert [(e.text, e.mode, e.source_language) for e in seen] == [
+        ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", "ko_to_en", "ko")
+    ]
+
+
+async def test_an_empty_cleanup_reply_shows_the_line_as_heard(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        return "  "
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript("And so we come before the Lord in prayer.")
+        await _settle()
+    assert [e.text for e in seen] == ["And so we come before the Lord in prayer."]
+    assert "cleanup skipped: empty reply" in caplog.text
+
+
+async def test_a_growing_line_waits_for_the_line_still_being_cleaned_before_it() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read from the letter to the Romans.")
+    await bus.publish(WholeSentencesEvent(whole_sentences=False))
+    await translator.apply_transcript("And so")
+    await _settle()
+    assert seen == []
+    first_may_finish.set()
+    await _settle()
+    await translator.apply_transcript("we pray")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", False),
+        ("And so we pray", True),
+    ]
+
+
 async def test_whole_sentences_marks_finished_lines_for_pacing() -> None:
     bus = EventBus()
     seen = _collect(bus)
@@ -566,4 +898,30 @@ async def test_whole_sentences_off_does_not_mark_lines_for_pacing() -> None:
     assert [(e.text, e.provisional, e.paced) for e in seen] == [
         ("Today's topical", True, False),
         ("Today's topical sermon is about prayer.", False, False),
+    ]
+
+
+async def test_a_line_cleaned_across_whole_sentences_going_off_is_still_paced() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read from the letter to the Romans.")
+    await bus.publish(WholeSentencesEvent(whole_sentences=False))
+    await translator.apply_transcript("And so")
+    first_may_finish.set()
+    await _settle()
+    assert [(e.text, e.paced) for e in seen][:1] == [
+        ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", True)
     ]
