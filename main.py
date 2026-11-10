@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import logging
 import math
+import os
 import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -317,7 +318,9 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(out)
         return
-    log_file = _redirect_missing_stdio(Path("metagrafo.log"))
+    # Start Metagrafo.cmd already sends this process's output to its log.
+    launcher_log = os.environ.get("METAGRAFO_LOG")
+    log_file = Path(launcher_log) if launcher_log else _redirect_missing_stdio(Path("metagrafo.log"))
     import uvicorn
 
     uvicorn.run(
