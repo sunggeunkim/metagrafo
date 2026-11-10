@@ -247,3 +247,104 @@ def test_live_socket_uses_the_api_version_that_serves_the_translate_model(monkey
     options = built.get("http_options")
     api_version = options.get("api_version") if isinstance(options, dict) else getattr(options, "api_version", None)
     assert api_version == "v1beta"
+
+
+def _collect(bus: EventBus) -> list[SubtitleEvent]:
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(SubtitleEvent, handler)
+    return seen
+
+
+async def test_whole_sentences_shows_only_the_finished_line() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("Today's topical")
+    await translator.apply_transcript("sermon is about prayer.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Today's topical sermon is about prayer.", False)
+    ]
+
+
+async def test_whole_sentences_joins_a_short_sentence_to_the_next() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("Yes.")
+    await translator.apply_transcript("Today we read from Romans eight.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Yes. Today we read from Romans eight.", False)
+    ]
+
+
+async def test_whole_sentences_commits_a_long_line_when_the_turn_ends() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("And so we come before the Lord")
+    await translator.apply_transcript("", turn_complete=True)
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("And so we come before the Lord", False)
+    ]
+
+
+async def test_whole_sentences_cuts_a_long_line_at_the_last_comma() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript(
+        "When we gather on Sunday morning to pray for our neighbours and our city,"
+    )
+    await translator.apply_transcript(
+        "we remember that the Lord hears every word we say and answers in his time"
+    )
+    await translator.apply_transcript("and in his way.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("When we gather on Sunday morning to pray for our neighbours and our city,", False),
+        ("we remember that the Lord hears every word we say and answers in his time and in his way.", False),
+    ]
+
+
+async def test_whole_sentences_cuts_a_long_line_without_a_comma_between_words() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript(
+        "We give thanks for the brothers and sisters who came from the north side of the city this morning"
+    )
+    await translator.apply_transcript("to worship with us and to share the meal")
+    await translator.apply_transcript("after the service.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("We give thanks for the brothers and sisters who came from the north side of the city this morning to worship with us and", False),
+        ("to share the meal after the service.", False),
+    ]
+
+
+async def test_whole_sentences_does_not_cut_at_a_comma_that_leaves_a_stub() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript(
+        "Brothers, we give thanks for the sisters who came from the north side of the city this morning"
+    )
+    await translator.apply_transcript("to worship with us and to share the meal after the service.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Brothers, we give thanks for the sisters who came from the north side of the city this morning to worship with us and to", False),
+        ("share the meal after the service.", False),
+    ]

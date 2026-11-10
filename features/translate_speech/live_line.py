@@ -10,6 +10,10 @@ class LiveLine:
         self._open = ""
         self.opened_at: float | None = None
 
+    @property
+    def text(self) -> str:
+        return self._open
+
     def extend(self, fragment: str, *, at: float | None = None) -> str:
         piece = " ".join(fragment.split())
         if not piece:

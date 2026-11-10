@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-live-translate-preview"
 Connect = Callable[[TranslateMode], "LiveConnection"]
+SHORT_SENTENCE_CHARS = 25
+# Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
+# slack because the overlay can wrap a full two rows onto a third (issue #36).
+LONG_LINE_CHARS = 120
 
 
 def echoes_target_language(mode: TranslateMode) -> bool:
@@ -76,8 +80,10 @@ class GeminiLiveTranslator:
         api_key: str = "",
         mode: str = "ko_to_en",
         clock: Callable[[], float] = time.time,
+        whole_sentences: bool = False,
     ) -> None:
         self._bus = bus
+        self._whole_sentences = whole_sentences
         self._clock = clock
         self._connect = connect
         self._api_key = api_key
@@ -147,15 +153,34 @@ class GeminiLiveTranslator:
         if not self._active:
             return
         # The first English fragment is the closest this socket gets to when the line was spoken.
-        shown = self._line.extend(fragment, at=self._clock()) if fragment.strip() else ""
+        at = self._clock() if fragment.strip() else None
+        shown = self._line.extend(fragment, at=at) if fragment.strip() else ""
+        if self._whole_sentences:
+            await self._cut_long_line(at)
         spoken_at = self._line.opened_at
-        if turn_complete or self._line.closes_sentence():
+        if (turn_complete or self._line.closes_sentence()) and not self._holds_short_sentence(self._line.text):
             finished = self._line.commit()
             if finished:
                 await self._publish(finished, provisional=False, spoken_at=spoken_at)
             return
-        if shown:
+        if shown and not self._whole_sentences:
             await self._publish(shown, provisional=True, spoken_at=spoken_at)
+
+    async def _cut_long_line(self, at: float | None) -> None:
+        """Publish the front of a line that would overflow the overlay; the rest opens the next line."""
+        while len(self._line.text) > LONG_LINE_CHARS:
+            cut = _cut_point(self._line.text, LONG_LINE_CHARS)
+            if cut is None:
+                return
+            text = self._line.text
+            spoken_at = self._line.opened_at
+            self._line.commit()
+            await self._publish(text[:cut].strip(), provisional=False, spoken_at=spoken_at)
+            self._line.extend(text[cut:], at=at)
+
+    def _holds_short_sentence(self, text: str) -> bool:
+        """A sentence like "Yes." waits to join the next one instead of filling a line alone."""
+        return self._whole_sentences and len(text) < SHORT_SENTENCE_CHARS
 
     async def _publish(
         self, text: str, *, provisional: bool, spoken_at: float | None = None
@@ -239,6 +264,18 @@ class GeminiLiveTranslator:
                     await self.apply_transcript(fragment or "", turn_complete=turn_complete)
             if getattr(response, "go_away", None) is not None or not self._active:
                 return
+
+
+def _cut_point(text: str, limit: int) -> int | None:
+    """Where to end a line of at most `limit` characters: its last comma, else its last space.
+
+    A comma in the first half would leave a stub of a line, so the space wins there.
+    """
+    comma = text.rfind(",", 0, limit)
+    if comma >= limit // 2:
+        return comma + 1
+    space = text.rfind(" ", 0, limit + 1)
+    return space if space > 0 else None
 
 
 def _pcm_blob(pcm: bytes) -> object:
