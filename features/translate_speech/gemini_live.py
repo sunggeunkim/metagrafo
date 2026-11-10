@@ -158,6 +158,7 @@ class GeminiLiveTranslator:
         self._drain_audio()
         self._stop_quiet_wait()
         self._line.commit()
+        self._drop_waiting_lines()
 
     async def _on_audio(self, event: ProgramAudioEvent) -> None:
         if not self._active:
@@ -269,10 +270,21 @@ class GeminiLiveTranslator:
         if self._in_order is None:
             self._in_order = asyncio.create_task(self._show_in_order(), name="gemini-live-in-order")
 
+    def _drop_waiting_lines(self) -> None:
+        """Captions off: lines still being cleaned never show, and their model calls stop."""
+        for line, _spoken_at in self._waiting:
+            line.cancel()
+        self._waiting.clear()
+
     async def _show_in_order(self) -> None:
         while self._waiting:
-            line, spoken_at = self._waiting.popleft()
+            entry = self._waiting[0]
+            line, spoken_at = entry
             await asyncio.wait({line})
+            if not self._waiting or self._waiting[0] is not entry:
+                # Captions went off while it was cleaned; lines after it are newer.
+                continue
+            self._waiting.popleft()
             text = line.result()
             await self._publish(text, provisional=False, spoken_at=spoken_at)
             self._shown.append(text)

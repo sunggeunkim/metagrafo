@@ -689,3 +689,36 @@ async def test_cleaned_lines_show_in_the_order_they_were_spoken() -> None:
         "TODAY WE READ FROM THE LETTER TO THE ROMANS.",
         "PAUL WRITES TO THE CHURCH IN THE CITY OF ROME.",
     ]
+
+
+async def test_captions_off_drops_a_line_still_being_cleaned_and_stops_its_call() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+    stopped: list[str] = []
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        if line.startswith("Today"):
+            try:
+                await first_may_finish.wait()
+            except asyncio.CancelledError:
+                stopped.append(line)
+                raise
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read from the letter to the Romans.")
+    await _settle()
+    await bus.publish(CaptionsStateEvent(is_active=False))
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    await translator.apply_transcript("Paul writes to the church in the city of Rome.")
+    first_may_finish.set()
+    await _settle()
+    assert [e.text for e in seen] == ["PAUL WRITES TO THE CHURCH IN THE CITY OF ROME."]
+    assert stopped == ["Today we read from the letter to the Romans."]
