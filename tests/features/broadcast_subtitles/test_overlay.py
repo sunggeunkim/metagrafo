@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketState
 
@@ -235,3 +237,47 @@ def test_overlay_html_has_position_classes() -> None:
         assert "var(--box-h)" in html
         assert "overflow-wrap: normal" in html
         assert "function fitCaptionBox" not in html
+
+
+def _line(text: str, *, paced: bool = True) -> SubtitleEvent:
+    return SubtitleEvent(
+        chunk_id=text,
+        text=text,
+        source_language="ko",
+        target_language="en",
+        mode="ko_to_en",
+        created_at=1.0,
+        duration_s=0.0,
+        paced=paced,
+    )
+
+
+def _shown(socket: _Socket) -> list[str]:
+    return [m["text"] for m in socket.sent if m["type"] == "subtitle"]
+
+
+async def test_a_paced_line_stays_up_its_minimum_time_before_the_next() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.3, chars_per_s=1000.0)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("First line."))
+    await bus.publish(_line("Second line."))
+    await asyncio.sleep(0.2)
+    assert _shown(socket) == ["First line."]
+    await asyncio.sleep(0.2)
+    assert _shown(socket) == ["First line.", "Second line."]
+
+
+async def test_a_long_paced_line_stays_up_long_enough_to_read_its_characters() -> None:
+    bus = EventBus()
+    # 40 characters at 100 per second: 0.4 s, longer than the 0.05 s minimum.
+    hub = SubtitleHub(bus, min_on_screen_s=0.05, chars_per_s=100.0)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("A line of exactly forty characters long."))
+    await bus.publish(_line("Next."))
+    await asyncio.sleep(0.25)
+    assert _shown(socket) == ["A line of exactly forty characters long."]
+    await asyncio.sleep(0.3)
+    assert _shown(socket) == ["A line of exactly forty characters long.", "Next."]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from collections import deque
 
 from fastapi import WebSocket
 from starlette.websockets import WebSocketDisconnect, WebSocketState
@@ -17,8 +19,20 @@ logger = logging.getLogger(__name__)
 
 
 class SubtitleHub:
-    def __init__(self, bus: EventBus) -> None:
+    def __init__(
+        self,
+        bus: EventBus,
+        *,
+        min_on_screen_s: float = 2.5,
+        chars_per_s: float = 13.0,
+    ) -> None:
         self._clients: set[WebSocket] = set()
+        self._min_on_screen_s = min_on_screen_s
+        self._chars_per_s = chars_per_s
+        # Paced lines waiting for the one on screen to be read, oldest first.
+        self._waiting: deque[dict[str, object]] = deque()
+        self._shown_until = 0.0
+        self._pacer: asyncio.Task[None] | None = None
         self._overlay_style = {
             "type": "overlay_style",
             "position": "top_left",
@@ -47,19 +61,42 @@ class SubtitleHub:
         self._clients.discard(websocket)
 
     async def _on_subtitle(self, event: SubtitleEvent) -> None:
-        await self._broadcast(
-            {
-                "type": "subtitle",
-                "text": event.text,
-                "chunk_id": event.chunk_id,
-                "source_language": event.source_language,
-                "target_language": event.target_language,
-                "mode": event.mode,
-                "ts": event.created_at,
-                "duration_s": event.duration_s,
-                "provisional": event.provisional,
-            }
-        )
+        payload: dict[str, object] = {
+            "type": "subtitle",
+            "text": event.text,
+            "chunk_id": event.chunk_id,
+            "source_language": event.source_language,
+            "target_language": event.target_language,
+            "mode": event.mode,
+            "ts": event.created_at,
+            "duration_s": event.duration_s,
+            "provisional": event.provisional,
+        }
+        if not event.paced:
+            await self._broadcast(payload)
+            return
+        now = asyncio.get_running_loop().time()
+        if not self._waiting and now >= self._shown_until:
+            await self._show(payload)
+            return
+        self._waiting.append(payload)
+        if self._pacer is None:
+            self._pacer = asyncio.create_task(self._pace(), name="subtitle-pacer")
+
+    def _time_on_screen(self, payload: dict[str, object]) -> float:
+        return max(self._min_on_screen_s, len(str(payload["text"])) / self._chars_per_s)
+
+    async def _show(self, payload: dict[str, object]) -> None:
+        # Set before the send, so a line arriving mid-send waits its turn.
+        self._shown_until = asyncio.get_running_loop().time() + self._time_on_screen(payload)
+        await self._broadcast(payload)
+
+    async def _pace(self) -> None:
+        loop = asyncio.get_running_loop()
+        while self._waiting:
+            await asyncio.sleep(max(0.0, self._shown_until - loop.time()))
+            await self._show(self._waiting.popleft())
+        self._pacer = None
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
         await self._broadcast({"type": "captions_state", "is_active": event.is_active})
