@@ -1,9 +1,14 @@
+import asyncio
+import time
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
 from core.event_bus import EventBus
 from core.settings import Settings
 from features.operator_control.events import CleanUpWordingEvent
+from features.translate_speech.events import SubtitleEvent
 from main import create_app
 
 
@@ -14,6 +19,65 @@ def env_file(tmp_path, monkeypatch):
     path = tmp_path / ".env"
     path.write_text("AUDIO_DEVICE_NAME=Booth Mic\n", encoding="utf-8")
     return path
+
+
+class _SpeakingSession:
+    """A Gemini socket that says one sentence in two fragments, then stays open."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args: object) -> bool:
+        return False
+
+    async def send_realtime_input(self, **_kwargs: object) -> None:
+        return None
+
+    async def receive(self):
+        for text in ("Today's topical", "sermon is about prayer."):
+            yield SimpleNamespace(
+                go_away=None,
+                server_content=SimpleNamespace(
+                    output_transcription=SimpleNamespace(text=text), turn_complete=False
+                ),
+            )
+        await asyncio.Event().wait()
+
+
+def _speaking(_api_key: str):
+    return lambda _mode: _SpeakingSession()
+
+
+def _captions(bus: EventBus) -> list[tuple[str, bool]]:
+    seen: list[tuple[str, bool]] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append((event.text, event.provisional))
+
+    bus.subscribe(SubtitleEvent, handler)
+    return seen
+
+
+def _wait_for_a_finished_line(client: TestClient, seen: list[tuple[str, bool]]) -> None:
+    for _ in range(100):
+        if any(not provisional for _text, provisional in seen):
+            return
+        client.get("/health")
+        time.sleep(0.01)
+
+
+def _shouting_cleanup(made: list[tuple[str, str]]):
+    """Stands in for the text model; records which key and model each cleanup was made with."""
+
+    def factory(api_key: str, model: str):
+        made.append((api_key, model))
+
+        async def clean(line: str, _shown: list[str]) -> str:
+            return line.upper()
+
+        return clean
+
+    return factory
 
 
 def _app(env_file, **kwargs):
@@ -54,3 +118,21 @@ def test_switching_off_tells_gemini_and_keeps_it_for_next_time(env_file) -> None
     assert env_file.read_text(encoding="utf-8") == "AUDIO_DEVICE_NAME=Booth Mic\nCLEAN_UP_WORDING=false\n"
     with TestClient(_app(env_file)) as client:
         assert client.get("/health").json()["clean_up_wording"] is False
+
+
+def test_gemini_cleans_each_finished_line_with_the_saved_key_and_the_default_model(env_file) -> None:
+    bus = EventBus()
+    seen = _captions(bus)
+    made: list[tuple[str, str]] = []
+    settings = Settings(caption_engine="gemini_live", gemini_api_key="saved-key", _env_file=env_file)
+    app = create_app(
+        bus=bus,
+        settings=settings,
+        env_file=env_file,
+        gemini_connect_factory=_speaking,
+        gemini_cleanup_factory=_shouting_cleanup(made),
+    )
+    with TestClient(app) as client:
+        _wait_for_a_finished_line(client, seen)
+    assert seen == [("TODAY'S TOPICAL SERMON IS ABOUT PRAYER.", False)]
+    assert made == [("saved-key", "gemini-3.1-flash-lite")]

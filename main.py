@@ -35,6 +35,7 @@ def create_app(
     load_whisper: bool = False,
     env_file: Path | None = None,
     gemini_connect_factory: Callable[[str], object] | None = None,
+    gemini_cleanup_factory: Callable[[str, str], object] | None = None,
     list_input_devices: Callable[[], list[str]] | None = None,
     log_file: Path | None = None,
 ) -> FastAPI:
@@ -78,6 +79,7 @@ def create_app(
         settings,
         load_whisper=load_whisper,
         gemini_connect_factory=gemini_connect_factory,
+        gemini_cleanup_factory=gemini_cleanup_factory,
     )
     broadcast_subtitles.register(app, bus, settings)
     app.state.youtube_captions = youtube_captions.register(app, bus, settings)

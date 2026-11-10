@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     whole_sentences: bool = True
     whole_sentences_quiet_s: float = 1.2
     clean_up_wording: bool = True
+    # Newest flash-lite text model that answers inside the 1.5 s cleanup budget: on 2026-11-09
+    # 3.1 Flash Lite took about 0.5 s a line, 3.5 Flash Lite 1–8 s.
+    cleanup_model: str = "gemini-3.1-flash-lite"
     vad_max_utterance_s: float = 12
     vad_min_speech_ms: int = 250
     whisper_model: str | None = "large-v3"

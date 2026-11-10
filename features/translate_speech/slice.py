@@ -11,7 +11,13 @@ from core.event_bus import EventBus
 from core.settings import Settings
 from features.operator_control.events import GeminiKeyChangedEvent, ModeChangedEvent
 from features.translate_speech.device_profile import detect_vram_gb, resolve_profile
-from features.translate_speech.gemini_live import Connect, GeminiLiveTranslator, gemini_connect
+from features.translate_speech.cleanup import gemini_cleanup
+from features.translate_speech.gemini_live import (
+    Cleanup,
+    Connect,
+    GeminiLiveTranslator,
+    gemini_connect,
+)
 from features.translate_speech.worker import TranslateWorker
 
 logger = logging.getLogger(__name__)
@@ -101,6 +107,7 @@ def register(
     transcribe=None,
     load_whisper: bool = False,
     gemini_connect_factory: Callable[[str], Connect] | None = None,
+    gemini_cleanup_factory: Callable[[str, str], Cleanup] | None = None,
 ) -> TranslateSlice:
     profile = resolve_profile(
         vram_gb=detect_vram_gb(),
@@ -111,6 +118,7 @@ def register(
     if settings.caption_engine == "gemini_live" and not settings.gemini_api_key.strip():
         logger.warning("CAPTION_ENGINE=gemini_live but GEMINI_API_KEY is empty; using Whisper")
     connect_factory = gemini_connect_factory or gemini_connect
+    cleanup_factory = gemini_cleanup_factory or gemini_cleanup
     if settings.gemini_live():
         live = GeminiLiveTranslator(
             bus,
@@ -119,6 +127,8 @@ def register(
             mode=settings.translate_mode,
             whole_sentences=settings.whole_sentences,
             quiet_s=settings.whole_sentences_quiet_s,
+            clean_up_wording=settings.clean_up_wording,
+            cleanup=cleanup_factory(settings.gemini_api_key, settings.cleanup_model),
         )
         if app is not None:
             app.state.whisper_profile = profile

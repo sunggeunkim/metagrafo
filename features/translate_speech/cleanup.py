@@ -2,10 +2,6 @@ from __future__ import annotations
 
 from features.translate_speech.gemini_live import Cleanup
 
-# The newest flash-lite text model that answers inside the 1.5 s cleanup budget (3.5 Flash Lite
-# took 1–8 s per line in a booth test on 2026-11-09; 3.1 Flash Lite about 0.5 s).
-CLEANUP_MODEL = "gemini-3.1-flash-lite"
-
 INSTRUCTION = (
     "You clean up live captions of a church sermon. They were machine-translated while the "
     "pastor was still speaking, so they can backtrack or read awkwardly. Rewrite the line under "
@@ -21,8 +17,8 @@ def prompt_for(line: str, shown: list[str]) -> str:
     return f"Shown before:\n{before}\nClean up:\n{line}" if shown else f"Clean up:\n{line}"
 
 
-def gemini_cleanup(api_key: str, model: str = CLEANUP_MODEL) -> Cleanup:
-    """A fast Gemini text model that rewrites one finished caption line."""
+def gemini_cleanup(api_key: str, model: str) -> Cleanup:
+    """A fast Gemini text model (`CLEANUP_MODEL`) that rewrites one finished caption line."""
     from google import genai
     from google.genai import types
 
