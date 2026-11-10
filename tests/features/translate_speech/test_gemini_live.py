@@ -822,3 +822,24 @@ async def test_a_line_cleaned_across_a_mode_change_keeps_the_mode_it_was_spoken_
     assert [(e.text, e.mode, e.source_language) for e in seen] == [
         ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", "ko_to_en", "ko")
     ]
+
+
+async def test_an_empty_cleanup_reply_shows_the_line_as_heard(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        return "  "
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript("And so we come before the Lord in prayer.")
+        await _settle()
+    assert [e.text for e in seen] == ["And so we come before the Lord in prayer."]
+    assert "cleanup skipped: empty reply" in caplog.text

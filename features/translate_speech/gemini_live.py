@@ -305,9 +305,12 @@ class GeminiLiveTranslator:
         """The text model's wording of a line, or the line as heard when the model can't answer."""
         assert self._cleanup is not None
         try:
-            return await asyncio.wait_for(
+            cleaned = await asyncio.wait_for(
                 self._cleanup(text, list(self._shown)), timeout=self._cleanup_timeout_s
             )
+            if cleaned.strip():
+                return cleaned.strip()
+            logger.warning("cleanup skipped: empty reply")
         except asyncio.TimeoutError:
             logger.warning("cleanup skipped: no reply within %s s", self._cleanup_timeout_s)
         except Exception as exc:
