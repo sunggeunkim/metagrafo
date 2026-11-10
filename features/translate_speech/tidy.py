@@ -5,12 +5,17 @@ import re
 _SENTENCE_END = ".?!"
 _BREAK_OFF = "—–-…"
 _FILLER = re.compile(r"u+h+|u+m+|e+r+|h+m+", re.IGNORECASE)
+# Good grammar doubles these ("he had had enough", "that that night", "what it is is").
+_GRAMMATICAL_DOUBLES = frozenset({"had", "that", "is"})
 
 
 def _repeats(before: str, word: str) -> bool:
     """A stutter: the same word again, with nothing between but a break-off dash."""
     stem = before.rstrip(_BREAK_OFF)
-    return stem[-1:].isalnum() and stem.lower() == word.strip(",;:.?!").lower()
+    same = stem[-1:].isalnum() and stem.lower() == word.strip(",;:.?!").lower()
+    if same and stem == before and stem.lower() in _GRAMMATICAL_DOUBLES:
+        return False
+    return same
 
 
 def tidy(text: str) -> str:

@@ -378,6 +378,19 @@ async def test_whole_sentences_removes_immediate_stutters() -> None:
     assert [(e.text, e.provisional) for e in seen] == [("We read the letter to the church.", False)]
 
 
+async def test_whole_sentences_keeps_words_that_are_doubled_in_good_grammar() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("He had had enough, and he knew that that night")
+    await translator.apply_transcript("was the night God would call him.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("He had had enough, and he knew that that night was the night God would call him.", False)
+    ]
+
+
 async def test_whole_sentences_keeps_phrases_that_carry_meaning() -> None:
     bus = EventBus()
     seen = _collect(bus)
