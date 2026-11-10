@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +45,7 @@ MAX_FAILURES = 3
 # How long the socket is still read after the last audio, for lines Gemini says late.
 DRAIN_S = 5.0
 CONTEXT_LINES = 3
+_SENTENCE_BREAK = re.compile(r"(?<=[.?!])\s+")
 
 
 INSTRUCTION = (
@@ -288,10 +290,12 @@ class _CompareRun:
 
     def _hear(self, text: str) -> None:
         now = self._now()
-        self._korean.extend(text, at=now)
         self._last_heard_s = now
-        if self._korean.closes_sentence():
-            self._close_korean()
+        # One fragment can hold several sentences; each goes to the model on its own.
+        for piece in _SENTENCE_BREAK.split(text):
+            self._korean.extend(piece, at=now)
+            if self._korean.closes_sentence():
+                self._close_korean()
 
     def _close_korean(self) -> None:
         heard_at = self._korean.opened_at

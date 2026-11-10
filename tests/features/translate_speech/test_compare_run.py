@@ -416,3 +416,26 @@ async def test_sockets_that_keep_closing_before_any_audio_end_the_run(tmp_path: 
             _run_on([_ClosesAtOnceSocket() for _ in range(3)], wav, tmp_path / "out.md"), timeout=10
         )
     assert (tmp_path / "out.md").exists()
+
+
+async def test_c_splits_a_fragment_that_holds_more_than_one_korean_sentence(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 4.0)
+    out = tmp_path / "sermon.compare.md"
+    socket = _ScriptedSocket([(1.0, _heard("첫째입니다. 둘째입니까? 셋째")), (1.5, _heard("입니다."))])
+    asked: list[str] = []
+
+    async def translate(korean: str, _previous: list[str]) -> str:
+        asked.append(korean)
+        return "Line."
+
+    await compare_wav(
+        wav_path=wav,
+        out_path=out,
+        connect=lambda _mode: socket,
+        cleanup=_cleaned,
+        translate=translate,
+        pace=_no_wait,
+        cleanup_timeout_s=0.05,
+    )
+    assert asked == ["첫째입니다.", "둘째입니까?", "셋째 입니다."]
