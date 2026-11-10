@@ -159,7 +159,7 @@ In-process asyncio pub/sub. Dispatch by exact type. `publish` isolates handler e
 Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
-- `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`). `paced` (default false) asks the overlay to keep the line up long enough to read; Gemini live sets it on committed lines while Whole sentences is on, Whisper never does
+- `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`). `paced` (default false) asks the overlay to keep the line up long enough to read; Gemini live sets it on lines committed while Whole sentences is on (a line still being cleaned keeps it if the switch changes), Whisper never does
 - `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `WholeSentencesEvent`, `CleanUpWordingEvent`, `OverlayStyleEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent`, `AudioDeviceChangedEvent` — `operator_control`
 
 ## Process model
