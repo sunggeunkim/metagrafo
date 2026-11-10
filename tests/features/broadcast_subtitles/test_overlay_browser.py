@@ -165,3 +165,11 @@ def test_each_caption_box_shows_one_row(browser, server, width, text) -> None:
     assert boxes
     assert [box["rows"] for box in boxes] == [1] * len(boxes)
     assert sum(box["rows"] for box in boxes) <= 2
+
+
+@pytest.mark.parametrize("width", [1280, 1920])
+def test_korean_caption_breaks_only_at_spaces(browser, server, width) -> None:
+    boxes = render_caption(browser, server, width, KOREAN, line_count=2)
+    shown = [word for box in boxes for word in box["text"].split()]
+    words = KOREAN.split()
+    assert shown == words[len(words) - len(shown) :]
