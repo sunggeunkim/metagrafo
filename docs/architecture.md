@@ -100,7 +100,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-Overlay lines: default **2** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries. New `text` shifts older lines up. Stop captions **clears the lines**. Fade after a quiet interval.
+Overlay lines: default **2** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries; Korean breaks only at spaces. Each box shows exactly one row, so the line count is the row count. New `text` shifts older lines up. Stop captions **clears the lines**. Fade after a quiet interval.
 
 ```json
 {
@@ -114,6 +114,8 @@ Overlay lines: default **2** (newest at the bottom, older lines above). `/contro
   "duration_s": 2.4
 }
 ```
+
+Browser tests render `/overlay` in headless Chromium at 1280 and 1920 px. Run `uv run playwright install chromium` once; without it they skip.
 
 ### `youtube_captions`
 
