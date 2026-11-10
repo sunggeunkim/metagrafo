@@ -251,8 +251,9 @@ class _CompareRun:
             self._sent += len(chunk)
             try:
                 await session.send_realtime_input(audio=_pcm_blob(chunk))
-            except Exception:
-                # Unsent audio goes again on the next socket and isn't progress.
+            except BaseException:
+                # A send that failed or was cut off by the socket going away goes again on the
+                # next socket and isn't progress. Repeating 100 ms beats losing it.
                 self._sent -= len(chunk)
                 raise
             if self._korean.text and self._now() - self._last_heard_s >= self._quiet_s:

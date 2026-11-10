@@ -199,7 +199,8 @@ async def test_the_run_reconnects_when_the_socket_goes_away_and_carries_on_from_
     going_away = SimpleNamespace(go_away=SimpleNamespace(time_left="0s"), server_content=None)
     sockets = [
         _ScriptedSocket([(1.0, _said("The first line of the sermon today.")), (2.0, going_away)]),
-        # This socket's times count from its own first chunk, 2.0 s into the recording.
+        # This socket's times count from its own first chunk. go_away came while the chunk
+        # ending at 2.0 s was still being sent, so that chunk goes again: it starts at 1.9 s.
         _ScriptedSocket([(1.0, _said("The second line of the sermon today."))]),
     ]
     opened: list[_ScriptedSocket] = []
@@ -219,7 +220,7 @@ async def test_the_run_reconnects_when_the_socket_goes_away_and_carries_on_from_
     )
     assert _rows(out) == [
         "| 0:01.0 | THE FIRST LINE OF THE SERMON TODAY. (+0.0 s) | | |",
-        "| 0:03.0 | THE SECOND LINE OF THE SERMON TODAY. (+0.0 s) | | |",
+        "| 0:02.9 | THE SECOND LINE OF THE SERMON TODAY. (+0.0 s) | | |",
     ]
     assert len(opened) == 2
 
@@ -362,3 +363,33 @@ async def test_a_line_gemini_says_after_the_last_audio_is_still_written(tmp_path
         drain_s=1.0,
     )
     assert [row.split(" | ")[1] for row in _rows(out)] == ["THE LAST LINE OF THE SERMON FOR TODAY. (+0.0 s)"]
+
+
+class _GoesAwayMidSendSocket(_ScriptedSocket):
+    """Takes `ok` chunks, then goes away while the next one is still being sent."""
+
+    def __init__(self, ok: int) -> None:
+        super().__init__([])
+        self._ok = ok
+        self._stuck = asyncio.Event()
+
+    async def send_realtime_input(self, *, audio: object) -> None:
+        if self._ok == 0:
+            self._stuck.set()
+            await asyncio.Event().wait()
+        self._ok -= 1
+        await super().send_realtime_input(audio=audio)
+
+    async def receive(self):
+        await self._stuck.wait()
+        yield SimpleNamespace(go_away=SimpleNamespace(time_left="0s"), server_content=None)
+
+
+async def test_a_chunk_cut_off_by_the_socket_going_away_is_sent_again(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 2.0)
+    healthy = _ScriptedSocket([])
+    await _run_on([healthy], wav, tmp_path / "healthy.md")
+    leaving, next_socket = _GoesAwayMidSendSocket(ok=5), _ScriptedSocket([])
+    await _run_on([leaving, next_socket], wav, tmp_path / "retried.md")
+    assert leaving.sent_bytes + next_socket.sent_bytes == healthy.sent_bytes
