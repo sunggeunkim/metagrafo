@@ -605,3 +605,28 @@ async def test_clean_up_wording_gives_the_model_the_last_three_shown_lines() -> 
             "SO HE TELLS THEM WHO HE IS AND WHAT HE BELIEVES.",
         ],
     )
+
+
+async def test_a_slow_cleanup_shows_the_line_as_heard_and_logs_why(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await asyncio.sleep(5)
+        return "Too late."
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+        cleanup_timeout_s=0.05,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript("And so we come before the Lord in prayer.")
+        await asyncio.sleep(0.2)
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("And so we come before the Lord in prayer.", False)
+    ]
+    assert "cleanup skipped: no reply within 0.05 s" in caplog.text

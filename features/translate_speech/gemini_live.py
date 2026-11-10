@@ -33,6 +33,8 @@ SHORT_SENTENCE_CHARS = 25
 # slack because the overlay can wrap a full two rows onto a third (issue #36).
 LONG_LINE_CHARS = 120
 CLEANUP_CONTEXT_LINES = 3
+# Captions never wait longer than this for the text model; the line shows as heard instead.
+CLEANUP_TIMEOUT_S = 1.5
 
 
 def echoes_target_language(mode: TranslateMode) -> bool:
@@ -95,7 +97,9 @@ class GeminiLiveTranslator:
         quiet_s: float = 1.2,
         clean_up_wording: bool = False,
         cleanup: Cleanup | None = None,
+        cleanup_timeout_s: float = CLEANUP_TIMEOUT_S,
     ) -> None:
+        self._cleanup_timeout_s = cleanup_timeout_s
         self._bus = bus
         self._clean_up_wording = clean_up_wording
         self._cleanup = cleanup
@@ -249,9 +253,20 @@ class GeminiLiveTranslator:
     async def _show(self, text: str, *, spoken_at: float | None) -> None:
         """A committed line, rewritten by the text model when the booth asks for clean wording."""
         if self._whole_sentences and self._clean_up_wording and self._cleanup is not None:
-            text = await self._cleanup(text, list(self._shown))
+            text = await self._cleaned(text)
         await self._publish(text, provisional=False, spoken_at=spoken_at)
         self._shown.append(text)
+
+    async def _cleaned(self, text: str) -> str:
+        """The text model's wording of a line, or the line as heard when the model can't answer."""
+        assert self._cleanup is not None
+        try:
+            return await asyncio.wait_for(
+                self._cleanup(text, list(self._shown)), timeout=self._cleanup_timeout_s
+            )
+        except asyncio.TimeoutError:
+            logger.warning("cleanup skipped: no reply within %s s", self._cleanup_timeout_s)
+        return text
 
     async def _publish(
         self, text: str, *, provisional: bool, spoken_at: float | None = None
