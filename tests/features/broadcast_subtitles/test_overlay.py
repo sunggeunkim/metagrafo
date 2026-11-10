@@ -281,3 +281,32 @@ async def test_a_long_paced_line_stays_up_long_enough_to_read_its_characters() -
     assert _shown(socket) == ["A line of exactly forty characters long."]
     await asyncio.sleep(0.3)
     assert _shown(socket) == ["A line of exactly forty characters long.", "Next."]
+
+
+async def test_paced_lines_that_arrive_early_wait_and_show_in_order() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.2, chars_per_s=1000.0)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("One."))
+    await bus.publish(_line("Two."))
+    await bus.publish(_line("Three."))
+    await asyncio.sleep(0.1)
+    assert _shown(socket) == ["One."]
+    await asyncio.sleep(0.2)
+    assert _shown(socket) == ["One.", "Two."]
+    await asyncio.sleep(0.2)
+    assert _shown(socket) == ["One.", "Two.", "Three."]
+
+
+async def test_an_unpaced_line_is_sent_at_once_while_paced_lines_wait() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.3, chars_per_s=1000.0)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("Paced one."))
+    await bus.publish(_line("Paced two."))
+    await bus.publish(_line("Whisper line.", paced=False))
+    assert _shown(socket) == ["Paced one.", "Whisper line."]
+    await asyncio.sleep(0.4)
+    assert _shown(socket) == ["Paced one.", "Whisper line.", "Paced two."]
