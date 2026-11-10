@@ -114,7 +114,16 @@ class SubtitleHub:
             await self._show(self._waiting.popleft())
         self._pacer = None
 
+    def _stop_pacing(self) -> None:
+        """Captions off: the waiting lines go, and so does the pacer's wait, so none is sent later."""
+        self._waiting.clear()
+        if self._pacer is not None:
+            self._pacer.cancel()
+            self._pacer = None
+
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
+        if not event.is_active:
+            self._stop_pacing()
         await self._broadcast({"type": "captions_state", "is_active": event.is_active})
 
     async def _on_overlay_style(self, event: OverlayStyleEvent) -> None:

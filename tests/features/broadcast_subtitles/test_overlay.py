@@ -5,6 +5,7 @@ from starlette.websockets import WebSocketState
 
 from core.event_bus import EventBus
 from features.broadcast_subtitles.hub import SubtitleHub
+from features.operator_control.events import CaptionsStateEvent
 from features.translate_speech.events import SubtitleEvent
 from main import create_app
 
@@ -324,3 +325,28 @@ async def test_a_backlog_too_far_behind_drops_the_oldest_waiting_line() -> None:
     await bus.publish(_line("D."))
     await asyncio.sleep(0.45)
     assert _shown(socket) == ["A.", "C.", "D."]
+
+
+async def test_captions_off_clears_the_waiting_paced_lines() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.1, chars_per_s=1000.0)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("Shown."))
+    await bus.publish(_line("Waiting."))
+    await bus.publish(CaptionsStateEvent(is_active=False))
+    await asyncio.sleep(0.2)
+    assert socket.sent[1:] == [
+        {
+            "type": "subtitle",
+            "text": "Shown.",
+            "chunk_id": "Shown.",
+            "source_language": "ko",
+            "target_language": "en",
+            "mode": "ko_to_en",
+            "ts": 1.0,
+            "duration_s": 0.0,
+            "provisional": False,
+        },
+        {"type": "captions_state", "is_active": False},
+    ]
