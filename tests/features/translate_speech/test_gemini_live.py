@@ -380,3 +380,30 @@ async def test_whole_sentences_keeps_phrases_that_carry_meaning() -> None:
     )
     await translator.apply_transcript("I mean, you know, God is faithful.")
     assert [(e.text, e.provisional) for e in seen] == [("I mean, you know, God is faithful.", False)]
+
+
+async def test_whole_sentences_commits_the_open_line_after_a_quiet_spell() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True, quiet_s=0.05
+    )
+    await translator.apply_transcript("And so we pray")
+    assert seen == []
+    await asyncio.sleep(0.1)
+    assert [(e.text, e.provisional) for e in seen] == [("And so we pray", False)]
+
+
+async def test_whole_sentences_waits_again_after_each_fragment() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True, quiet_s=0.08
+    )
+    await translator.apply_transcript("And so")
+    await asyncio.sleep(0.05)
+    await translator.apply_transcript("we pray")
+    await asyncio.sleep(0.05)
+    assert seen == []
+    await asyncio.sleep(0.1)
+    assert [(e.text, e.provisional) for e in seen] == [("And so we pray", False)]

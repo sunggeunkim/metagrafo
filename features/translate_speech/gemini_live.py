@@ -82,9 +82,12 @@ class GeminiLiveTranslator:
         mode: str = "ko_to_en",
         clock: Callable[[], float] = time.time,
         whole_sentences: bool = False,
+        quiet_s: float = 1.2,
     ) -> None:
         self._bus = bus
         self._whole_sentences = whole_sentences
+        self._quiet_s = quiet_s
+        self._quiet: asyncio.Task[None] | None = None
         self._clock = clock
         self._connect = connect
         self._api_key = api_key
@@ -165,8 +168,21 @@ class GeminiLiveTranslator:
             if text:
                 await self._publish(text, provisional=False, spoken_at=spoken_at)
             return
-        if shown and not self._whole_sentences:
+        if self._whole_sentences:
+            self._commit_when_quiet()
+        elif shown:
             await self._publish(shown, provisional=True, spoken_at=spoken_at)
+
+    def _commit_when_quiet(self) -> None:
+        """Each fragment restarts the wait; a held line shows once the speaker pauses."""
+        if self._quiet is not None:
+            self._quiet.cancel()
+        self._quiet = asyncio.create_task(self._commit_after_quiet(), name="gemini-live-quiet")
+
+    async def _commit_after_quiet(self) -> None:
+        await asyncio.sleep(self._quiet_s)
+        self._quiet = None
+        await self._close_open_line()
 
     def _finish(self, text: str | None) -> str | None:
         """The words a committed line shows: whole sentences drops fillers."""
