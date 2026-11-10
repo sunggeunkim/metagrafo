@@ -214,7 +214,8 @@ class GeminiLiveTranslator:
         if self._whole_sentences:
             if self._line.text:
                 self._commit_when_quiet()
-        elif shown:
+        elif shown and self._in_order is None:
+            # A line still being cleaned shows first; the next fragment shows this one grown.
             await self._publish(shown, provisional=True, spoken_at=spoken_at)
 
     def _commit_when_quiet(self) -> None:

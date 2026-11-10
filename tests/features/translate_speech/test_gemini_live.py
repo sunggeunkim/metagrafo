@@ -843,3 +843,33 @@ async def test_an_empty_cleanup_reply_shows_the_line_as_heard(caplog) -> None:
         await _settle()
     assert [e.text for e in seen] == ["And so we come before the Lord in prayer."]
     assert "cleanup skipped: empty reply" in caplog.text
+
+
+async def test_a_growing_line_waits_for_the_line_still_being_cleaned_before_it() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read from the letter to the Romans.")
+    await bus.publish(WholeSentencesEvent(whole_sentences=False))
+    await translator.apply_transcript("And so")
+    await _settle()
+    assert seen == []
+    first_may_finish.set()
+    await _settle()
+    await translator.apply_transcript("we pray")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", False),
+        ("And so we pray", True),
+    ]
