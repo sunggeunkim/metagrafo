@@ -10,6 +10,8 @@
     label { display: block; margin: 1rem 0 0.3rem; }
     input { font-size: 1.2rem; padding: 0.4rem 0.6rem; width: 8rem; }
     input.key { width: 28rem; }
+    label.check { font-size: 1.2rem; margin-left: 0.5rem; }
+    label.check input { width: auto; transform: scale(1.5); margin-right: 0.6rem; }
     select { font-size: 1.2rem; padding: 0.4rem 0.6rem; min-width: 28rem; }
     .on { background: #2e7d32; color: #fff; }
     .off { background: #c62828; color: #fff; }
@@ -89,6 +91,9 @@
     <button id="context-off" class="off">Previous text OFF</button>
     <button id="context-on" class="on">Previous text ON</button>
   </div>
+  <h2>Whole sentences</h2>
+  <p class="hint">Gemini only. <strong>On</strong> (default) shows each line once it is finished instead of word by word, joins a short sentence like "Yes." to the next one, and leaves out "uh", "um" and repeated words. <strong>Off</strong> grows the bottom line as the words arrive. Starts with the next line, and this computer keeps the choice for the next time.</p>
+  <label class="check"><input id="whole-sentences" type="checkbox" /> Whole sentences</label>
   <h2>Overlay</h2>
   <p class="hint">Keep the OBS Browser Source at <strong>1920×1080</strong>. Right-click the source → <strong>Transform → Reset Transform</strong> so the type is not stretched. Do not drag the red handles or change source Height to crop captions — that squashes letters. Size the caption band here instead.</p>
   <p class="hint">Position, font, box size, and insets apply live. Font is viewport width percent (<strong>vw</strong>), range <strong>1.0–8.0</strong>. Box width <strong>10–100</strong> and height <strong>5–100</strong> are percent of the 1920×1080 overlay (default <strong>100 × 30</strong>). Insets <strong>0–20</strong>. After overlay HTML changes, right-click the source → Refresh once.</p>
@@ -186,6 +191,7 @@
         " · VAD " + s.vad_min_silence_ms + " ms" +
         " · pauses " + s.vad_pauses +
         " · previous text " + (s.condition_on_previous_text ? "on" : "off") +
+        " · whole sentences " + (s.whole_sentences ? "on" : "off") +
         " · " + s.line_count + " lines" +
         " · " + s.position +
         " · " + s.font_size_vw + " vw" +
@@ -206,6 +212,7 @@
       document.getElementById("vad-pauses").value = s.vad_pauses;
       document.getElementById("context-off").classList.toggle("active", !s.condition_on_previous_text);
       document.getElementById("context-on").classList.toggle("active", s.condition_on_previous_text);
+      document.getElementById("whole-sentences").checked = s.whole_sentences;
       document.getElementById("font-vw").value = s.font_size_vw;
       document.getElementById("box-w").value = s.box_width_pct;
       document.getElementById("box-h").value = s.box_height_pct;
@@ -327,6 +334,10 @@
     }
     document.getElementById("context-off").onclick = () => setPreviousText(false);
     document.getElementById("context-on").onclick = () => setPreviousText(true);
+    document.getElementById("whole-sentences").onchange = async (e) => {
+      await fetch("/whole-sentences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ whole_sentences: e.target.checked }) });
+      refresh();
+    };
     async function applyOverlay() {
       const position = document.querySelector(".pos.active")?.dataset.pos || "top_left";
       const font_size_vw = Number(document.getElementById("font-vw").value);

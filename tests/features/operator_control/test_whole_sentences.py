@@ -76,6 +76,13 @@ def test_whole_sentences_starts_on(env_file) -> None:
         assert client.get("/mode").json()["whole_sentences"] is True
 
 
+def test_booth_page_has_a_whole_sentences_checkbox(env_file) -> None:
+    with TestClient(_app(env_file)) as client:
+        html = client.get("/control").text
+    assert '<input id="whole-sentences" type="checkbox"' in html
+    assert "/whole-sentences" in html
+
+
 def test_switching_off_tells_gemini_and_keeps_it_for_next_time(env_file) -> None:
     bus = EventBus()
     seen: list[bool] = []
