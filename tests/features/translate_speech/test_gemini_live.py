@@ -899,3 +899,29 @@ async def test_whole_sentences_off_does_not_mark_lines_for_pacing() -> None:
         ("Today's topical", True, False),
         ("Today's topical sermon is about prayer.", False, False),
     ]
+
+
+async def test_a_line_cleaned_across_whole_sentences_going_off_is_still_paced() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        await first_may_finish.wait()
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Today we read from the letter to the Romans.")
+    await bus.publish(WholeSentencesEvent(whole_sentences=False))
+    await translator.apply_transcript("And so")
+    first_may_finish.set()
+    await _settle()
+    assert [(e.text, e.paced) for e in seen][:1] == [
+        ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", True)
+    ]

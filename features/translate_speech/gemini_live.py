@@ -109,7 +109,7 @@ class GeminiLiveTranslator:
         # The lines most recently shown, for the text model to read the new one against.
         self._shown: deque[str] = deque(maxlen=CLEANUP_CONTEXT_LINES)
         # Committed lines not shown yet, oldest first, and the task that shows them in that order.
-        self._waiting: deque[tuple[asyncio.Future[str], float | None, TranslateMode]] = deque()
+        self._waiting: deque[tuple[asyncio.Future[str], float | None, TranslateMode, bool]] = deque()
         self._in_order: asyncio.Task[None] | None = None
         # The open line keeps the setting it started with; the booth's choice waits for the next.
         self._whole_sentences = whole_sentences
@@ -266,7 +266,9 @@ class GeminiLiveTranslator:
 
     async def _show(self, text: str, *, spoken_at: float | None) -> None:
         """A committed line, rewritten by the text model when the booth asks for clean wording."""
-        cleaning = self._whole_sentences and self._clean_up_wording
+        # Decided now: a line still being cleaned keeps it if Whole sentences changes meanwhile.
+        paced = self._whole_sentences
+        cleaning = paced and self._clean_up_wording
         if cleaning and self._cleanup is None:
             logger.warning("cleanup skipped: no Gemini key")
             cleaning = False
@@ -274,33 +276,33 @@ class GeminiLiveTranslator:
             # The socket keeps reading while the model works; lines still show in spoken order.
             line: asyncio.Future[str] = asyncio.create_task(self._cleaned(text), name="gemini-live-cleanup")
         elif self._in_order is None:
-            await self._publish(text, provisional=False, spoken_at=spoken_at)
+            await self._publish(text, provisional=False, spoken_at=spoken_at, paced=paced)
             self._shown.append(text)
             return
         else:
             line = asyncio.get_running_loop().create_future()
             line.set_result(text)
-        self._waiting.append((line, spoken_at, self._mode))
+        self._waiting.append((line, spoken_at, self._mode, paced))
         if self._in_order is None:
             self._in_order = asyncio.create_task(self._show_in_order(), name="gemini-live-in-order")
 
     def _drop_waiting_lines(self) -> None:
         """Captions off: lines still being cleaned never show, and their model calls stop."""
-        for line, _spoken_at, _mode in self._waiting:
+        for line, *_ in self._waiting:
             line.cancel()
         self._waiting.clear()
 
     async def _show_in_order(self) -> None:
         while self._waiting:
             entry = self._waiting[0]
-            line, spoken_at, mode = entry
+            line, spoken_at, mode, paced = entry
             await asyncio.wait({line})
             if not self._waiting or self._waiting[0] is not entry:
                 # Captions went off while it was cleaned; lines after it are newer.
                 continue
             self._waiting.popleft()
             text = line.result()
-            await self._publish(text, provisional=False, spoken_at=spoken_at, mode=mode)
+            await self._publish(text, provisional=False, spoken_at=spoken_at, mode=mode, paced=paced)
             self._shown.append(text)
         self._in_order = None
 
@@ -327,6 +329,7 @@ class GeminiLiveTranslator:
         provisional: bool,
         spoken_at: float | None = None,
         mode: TranslateMode | None = None,
+        paced: bool = False,
     ) -> None:
         if not self._active and provisional:
             return
@@ -344,7 +347,7 @@ class GeminiLiveTranslator:
                 duration_s=0.0,
                 provisional=provisional,
                 spoken_at=spoken_at,
-                paced=self._whole_sentences and not provisional,
+                paced=paced,
             )
         )
 
