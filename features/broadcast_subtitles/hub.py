@@ -117,6 +117,8 @@ class SubtitleHub:
     def _stop_pacing(self) -> None:
         """Captions off: the waiting lines go, and so does the pacer's wait, so none is sent later."""
         self._waiting.clear()
+        # The overlay is cleared, so the next line need not wait for the old one to be read.
+        self._shown_until = 0.0
         if self._pacer is not None:
             self._pacer.cancel()
             self._pacer = None

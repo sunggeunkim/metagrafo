@@ -350,3 +350,15 @@ async def test_captions_off_clears_the_waiting_paced_lines() -> None:
         },
         {"type": "captions_state", "is_active": False},
     ]
+
+
+async def test_after_captions_off_the_next_paced_line_shows_at_once() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus, min_on_screen_s=0.3, chars_per_s=1000.0)
+    socket = _Socket()
+    await hub.connect(socket)
+    await bus.publish(_line("Before the song."))
+    await bus.publish(CaptionsStateEvent(is_active=False))
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    await bus.publish(_line("After the song."))
+    assert _shown(socket) == ["Before the song.", "After the song."]
