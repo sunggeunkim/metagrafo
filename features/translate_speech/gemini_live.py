@@ -5,6 +5,7 @@ import contextlib
 import logging
 import time
 import uuid
+from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
 from types import TracebackType
 
@@ -31,6 +32,7 @@ SHORT_SENTENCE_CHARS = 25
 # Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
 # slack because the overlay can wrap a full two rows onto a third (issue #36).
 LONG_LINE_CHARS = 120
+CLEANUP_CONTEXT_LINES = 3
 
 
 def echoes_target_language(mode: TranslateMode) -> bool:
@@ -97,6 +99,8 @@ class GeminiLiveTranslator:
         self._bus = bus
         self._clean_up_wording = clean_up_wording
         self._cleanup = cleanup
+        # The lines most recently shown, for the text model to read the new one against.
+        self._shown: deque[str] = deque(maxlen=CLEANUP_CONTEXT_LINES)
         # The open line keeps the setting it started with; the booth's choice waits for the next.
         self._whole_sentences = whole_sentences
         self._next_whole_sentences = whole_sentences
@@ -245,8 +249,9 @@ class GeminiLiveTranslator:
     async def _show(self, text: str, *, spoken_at: float | None) -> None:
         """A committed line, rewritten by the text model when the booth asks for clean wording."""
         if self._whole_sentences and self._clean_up_wording and self._cleanup is not None:
-            text = await self._cleanup(text, [])
+            text = await self._cleanup(text, list(self._shown))
         await self._publish(text, provisional=False, spoken_at=spoken_at)
+        self._shown.append(text)
 
     async def _publish(
         self, text: str, *, provisional: bool, spoken_at: float | None = None

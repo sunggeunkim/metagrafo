@@ -569,3 +569,39 @@ async def test_clean_up_wording_shows_the_cleaned_line() -> None:
     assert [(e.text, e.provisional) for e in seen] == [
         ("Paul says nothing can separate us from the love of God.", False)
     ]
+
+
+async def test_clean_up_wording_gives_the_model_the_last_three_shown_lines() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[tuple[str, list[str]]] = []
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        asked.append((line, context))
+        return line.upper()
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    for sentence in (
+        "Today we read from the letter to the Romans.",
+        "Paul writes to the church in the city of Rome.",
+        "He has never visited them in person before.",
+        "So he tells them who he is and what he believes.",
+        "He begins with the good news about Jesus.",
+    ):
+        await translator.apply_transcript(sentence)
+        await _settle()
+    assert asked[0] == ("Today we read from the letter to the Romans.", [])
+    assert asked[-1] == (
+        "He begins with the good news about Jesus.",
+        [
+            "PAUL WRITES TO THE CHURCH IN THE CITY OF ROME.",
+            "HE HAS NEVER VISITED THEM IN PERSON BEFORE.",
+            "SO HE TELLS THEM WHO HE IS AND WHAT HE BELIEVES.",
+        ],
+    )
