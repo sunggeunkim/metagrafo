@@ -10,14 +10,25 @@ from types import TracebackType
 
 from core.event_bus import EventBus
 from features.capture_audio.events import ProgramAudioEvent
-from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent, TranslateMode, languages_for
+from features.operator_control.events import (
+    CaptionsStateEvent,
+    ModeChangedEvent,
+    TranslateMode,
+    WholeSentencesEvent,
+    languages_for,
+)
 from features.translate_speech.events import SubtitleEvent
 from features.translate_speech.live_line import LiveLine
+from features.translate_speech.tidy import tidy
 
 logger = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-live-translate-preview"
 Connect = Callable[[TranslateMode], "LiveConnection"]
+SHORT_SENTENCE_CHARS = 25
+# Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
+# slack because the overlay can wrap a full two rows onto a third (issue #36).
+LONG_LINE_CHARS = 120
 
 
 def echoes_target_language(mode: TranslateMode) -> bool:
@@ -76,8 +87,15 @@ class GeminiLiveTranslator:
         api_key: str = "",
         mode: str = "ko_to_en",
         clock: Callable[[], float] = time.time,
+        whole_sentences: bool = False,
+        quiet_s: float = 1.2,
     ) -> None:
         self._bus = bus
+        # The open line keeps the setting it started with; the booth's choice waits for the next.
+        self._whole_sentences = whole_sentences
+        self._next_whole_sentences = whole_sentences
+        self._quiet_s = quiet_s
+        self._quiet: asyncio.Task[None] | None = None
         self._clock = clock
         self._connect = connect
         self._api_key = api_key
@@ -91,6 +109,10 @@ class GeminiLiveTranslator:
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(ModeChangedEvent, self._on_mode)
         bus.subscribe(ProgramAudioEvent, self._on_audio)
+        bus.subscribe(WholeSentencesEvent, self._on_whole_sentences)
+
+    async def _on_whole_sentences(self, event: WholeSentencesEvent) -> None:
+        self._next_whole_sentences = event.whole_sentences
 
     def use_key(self, api_key: str, connect: Connect) -> None:
         self._api_key = api_key
@@ -117,6 +139,7 @@ class GeminiLiveTranslator:
         self._resumed.clear()
         self._stop.set()
         self._drain_audio()
+        self._stop_quiet_wait()
         self._line.commit()
 
     async def _on_audio(self, event: ProgramAudioEvent) -> None:
@@ -138,24 +161,80 @@ class GeminiLiveTranslator:
                 break
 
     async def _close_open_line(self) -> None:
+        self._stop_quiet_wait()
         spoken_at = self._line.opened_at
-        finished = self._line.commit()
+        finished = self._finish(self._line.commit())
         if finished and self._active:
             await self._publish(finished, provisional=False, spoken_at=spoken_at)
 
     async def apply_transcript(self, fragment: str, *, turn_complete: bool = False) -> None:
         if not self._active:
             return
+        if not self._line.text:
+            self._whole_sentences = self._next_whole_sentences
         # The first English fragment is the closest this socket gets to when the line was spoken.
-        shown = self._line.extend(fragment, at=self._clock()) if fragment.strip() else ""
+        at = self._clock() if fragment.strip() else None
+        shown = self._line.extend(fragment, at=at) if fragment.strip() else ""
+        if self._whole_sentences:
+            await self._cut_long_line()
         spoken_at = self._line.opened_at
-        if turn_complete or self._line.closes_sentence():
-            finished = self._line.commit()
-            if finished:
-                await self._publish(finished, provisional=False, spoken_at=spoken_at)
+        text = self._finish(self._line.text) or ""
+        if (turn_complete or _ends_sentence(text)) and not self._holds_short_sentence(text):
+            self._stop_quiet_wait()
+            self._line.commit()
+            if text:
+                await self._publish(text, provisional=False, spoken_at=spoken_at)
             return
-        if shown:
+        if self._whole_sentences:
+            if self._line.text:
+                self._commit_when_quiet()
+        elif shown:
             await self._publish(shown, provisional=True, spoken_at=spoken_at)
+
+    def _commit_when_quiet(self) -> None:
+        """Each fragment restarts the wait; a held line shows once the speaker pauses."""
+        self._stop_quiet_wait()
+        self._quiet = asyncio.create_task(self._commit_after_quiet(), name="gemini-live-quiet")
+
+    def _stop_quiet_wait(self) -> None:
+        """A committed or cleared line takes its quiet wait with it, so it can't cut the next line."""
+        if self._quiet is not None:
+            self._quiet.cancel()
+            self._quiet = None
+
+    async def _commit_after_quiet(self) -> None:
+        await asyncio.sleep(self._quiet_s)
+        self._quiet = None
+        await self._close_open_line()
+
+    def _finish(self, text: str | None) -> str | None:
+        """The words a committed line shows: whole sentences drops fillers."""
+        if text is None or not self._whole_sentences:
+            return text
+        return tidy(text) or None
+
+    async def _cut_long_line(self) -> None:
+        """Publish the front of a line that would overflow the overlay; the rest opens the next line."""
+        while len(text := tidy(self._line.text)) > LONG_LINE_CHARS:
+            cut = _cut_point(text, LONG_LINE_CHARS)
+            if cut is None:
+                return
+            spoken_at = self._line.opened_at
+            words = text.split()
+            times = _times_of_kept(self._line.text.split(), self._line.word_times, words)
+            front = len(text[:cut].split())
+            self._line.commit()
+            await self._publish(text[:cut].strip(), provisional=False, spoken_at=spoken_at)
+            if not self._active:
+                # Captions went off while the front was shown; the off switch already cleared the line.
+                return
+            # The rest may have started in an earlier fragment; it keeps the times its words arrived.
+            for word, word_at in zip(words[front:], times[front:]):
+                self._line.extend(word, at=word_at)
+
+    def _holds_short_sentence(self, text: str) -> bool:
+        """A sentence like "Yes." waits to join the next one instead of filling a line alone."""
+        return self._whole_sentences and len(text) < SHORT_SENTENCE_CHARS
 
     async def _publish(
         self, text: str, *, provisional: bool, spoken_at: float | None = None
@@ -239,6 +318,41 @@ class GeminiLiveTranslator:
                     await self.apply_transcript(fragment or "", turn_complete=turn_complete)
             if getattr(response, "go_away", None) is not None or not self._active:
                 return
+
+
+def _ends_sentence(text: str) -> bool:
+    return bool(text) and text[-1] in ".?!"
+
+
+def _bare(word: str) -> str:
+    return word.strip(",;:.?!—–-…\"'").lower()
+
+
+def _times_of_kept(raw: list[str], times: list[float | None], kept: list[str]) -> list[float | None]:
+    """When each tidied word arrived. Tidying only drops words, so kept words match raw ones in order."""
+    out: list[float | None] = []
+    i = 0
+    for word in kept:
+        while i < len(raw) and _bare(raw[i]) != _bare(word):
+            i += 1
+        if i < len(raw):
+            out.append(times[i])
+            i += 1
+        else:
+            out.append(times[-1] if times else None)
+    return out
+
+
+def _cut_point(text: str, limit: int) -> int | None:
+    """Where to end a line of at most `limit` characters: its last comma, else its last space.
+
+    A comma in the first half would leave a stub of a line, so the space wins there.
+    """
+    comma = text.rfind(",", 0, limit)
+    if comma >= limit // 2:
+        return comma + 1
+    space = text.rfind(" ", 0, limit + 1)
+    return space if space > 0 else None
 
 
 def _pcm_blob(pcm: bytes) -> object:

@@ -66,6 +66,8 @@ class TranslateSlice:
             connect=connect,
             api_key=key,
             mode=self._mode or settings.translate_mode,
+            whole_sentences=settings.whole_sentences,
+            quiet_s=settings.whole_sentences_quiet_s,
         )
         if self._task is not None:
             self._task.cancel()
@@ -115,6 +117,8 @@ def register(
             connect=connect_factory(settings.gemini_api_key),
             api_key=settings.gemini_api_key,
             mode=settings.translate_mode,
+            whole_sentences=settings.whole_sentences,
+            quiet_s=settings.whole_sentences_quiet_s,
         )
         if app is not None:
             app.state.whisper_profile = profile

@@ -42,6 +42,13 @@ class ConditionOnPreviousTextEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class WholeSentencesEvent:
+    """Gemini live shows only finished lines. Takes effect at the next line."""
+
+    whole_sentences: bool
+
+
+@dataclass(frozen=True, slots=True)
 class GeminiKeyChangedEvent:
     """The operator saved a Gemini key. The key itself stays on Settings."""
 
