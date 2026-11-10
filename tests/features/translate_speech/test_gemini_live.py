@@ -356,6 +356,23 @@ async def test_whole_sentences_does_not_cut_at_a_comma_that_leaves_a_stub() -> N
     ]
 
 
+async def test_the_rest_of_a_cut_line_keeps_the_time_its_words_were_spoken() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    times = iter([1.0, 2.0, 3.0, 4.0, 5.0])
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True, clock=lambda: next(times)
+    )
+    await translator.apply_transcript(
+        "Brothers and sisters, we give thanks for everyone who came from the north side of the city to worship with us, and we"
+    )
+    await translator.apply_transcript("pray for the sick.")
+    assert [(e.text, e.spoken_at) for e in seen] == [
+        ("Brothers and sisters, we give thanks for everyone who came from the north side of the city to worship with us,", 1.0),
+        ("and we pray for the sick.", 1.0),
+    ]
+
+
 async def test_captions_off_while_a_cut_line_is_shown_drops_the_rest_of_it() -> None:
     bus = EventBus()
     seen = _collect(bus)

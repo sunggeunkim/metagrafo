@@ -176,7 +176,7 @@ class GeminiLiveTranslator:
         at = self._clock() if fragment.strip() else None
         shown = self._line.extend(fragment, at=at) if fragment.strip() else ""
         if self._whole_sentences:
-            await self._cut_long_line(at)
+            await self._cut_long_line()
         spoken_at = self._line.opened_at
         text = self._finish(self._line.text) or ""
         if (turn_complete or _ends_sentence(text)) and not self._holds_short_sentence(text):
@@ -213,19 +213,24 @@ class GeminiLiveTranslator:
             return text
         return tidy(text) or None
 
-    async def _cut_long_line(self, at: float | None) -> None:
+    async def _cut_long_line(self) -> None:
         """Publish the front of a line that would overflow the overlay; the rest opens the next line."""
         while len(text := tidy(self._line.text)) > LONG_LINE_CHARS:
             cut = _cut_point(text, LONG_LINE_CHARS)
             if cut is None:
                 return
             spoken_at = self._line.opened_at
+            words = text.split()
+            times = _times_of_kept(self._line.text.split(), self._line.word_times, words)
+            front = len(text[:cut].split())
             self._line.commit()
             await self._publish(text[:cut].strip(), provisional=False, spoken_at=spoken_at)
             if not self._active:
                 # Captions went off while the front was shown; the off switch already cleared the line.
                 return
-            self._line.extend(text[cut:], at=at)
+            # The rest may have started in an earlier fragment; it keeps the times its words arrived.
+            for word, word_at in zip(words[front:], times[front:]):
+                self._line.extend(word, at=word_at)
 
     def _holds_short_sentence(self, text: str) -> bool:
         """A sentence like "Yes." waits to join the next one instead of filling a line alone."""
@@ -317,6 +322,25 @@ class GeminiLiveTranslator:
 
 def _ends_sentence(text: str) -> bool:
     return bool(text) and text[-1] in ".?!"
+
+
+def _bare(word: str) -> str:
+    return word.strip(",;:.?!—–-…\"'").lower()
+
+
+def _times_of_kept(raw: list[str], times: list[float | None], kept: list[str]) -> list[float | None]:
+    """When each tidied word arrived. Tidying only drops words, so kept words match raw ones in order."""
+    out: list[float | None] = []
+    i = 0
+    for word in kept:
+        while i < len(raw) and _bare(raw[i]) != _bare(word):
+            i += 1
+        if i < len(raw):
+            out.append(times[i])
+            i += 1
+        else:
+            out.append(times[-1] if times else None)
+    return out
 
 
 def _cut_point(text: str, limit: int) -> int | None:
