@@ -5,7 +5,13 @@ from types import SimpleNamespace
 
 from core.event_bus import EventBus
 from features.capture_audio.events import ProgramAudioEvent
-from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent, TranslateMode, languages_for
+from features.operator_control.events import (
+    CaptionsStateEvent,
+    ModeChangedEvent,
+    TranslateMode,
+    WholeSentencesEvent,
+    languages_for,
+)
 from features.translate_speech.events import SubtitleEvent
 from features.translate_speech.gemini_live import GeminiLiveTranslator, echoes_target_language, gemini_connect
 
@@ -407,3 +413,50 @@ async def test_whole_sentences_waits_again_after_each_fragment() -> None:
     assert seen == []
     await asyncio.sleep(0.1)
     assert [(e.text, e.provisional) for e in seen] == [("And so we pray", False)]
+
+
+async def test_switching_whole_sentences_on_finishes_the_growing_line_as_it_started() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(bus, connect=lambda _mode: HoldingSession())
+    await translator.apply_transcript("Today's topical")
+    await bus.publish(WholeSentencesEvent(whole_sentences=True))
+    await translator.apply_transcript("sermon.")
+    await translator.apply_transcript("Yes.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Today's topical", True),
+        ("Today's topical sermon.", False),
+    ]
+
+
+async def test_switching_whole_sentences_off_keeps_the_held_sentence() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("Yes.")
+    await bus.publish(WholeSentencesEvent(whole_sentences=False))
+    await translator.apply_transcript("Today we read Romans.")
+    await translator.apply_transcript("And")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Yes. Today we read Romans.", False),
+        ("And", True),
+    ]
+
+
+async def test_whole_sentences_off_shows_the_line_as_spoken() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=False, quiet_s=0.05
+    )
+    await translator.apply_transcript("Uh, yes,")
+    await translator.apply_transcript("the the Lord.")
+    await translator.apply_transcript("And so")
+    await asyncio.sleep(0.1)
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Uh, yes,", True),
+        ("Uh, yes, the the Lord.", False),
+        ("And so", True),
+    ]

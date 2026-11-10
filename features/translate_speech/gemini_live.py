@@ -10,7 +10,13 @@ from types import TracebackType
 
 from core.event_bus import EventBus
 from features.capture_audio.events import ProgramAudioEvent
-from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent, TranslateMode, languages_for
+from features.operator_control.events import (
+    CaptionsStateEvent,
+    ModeChangedEvent,
+    TranslateMode,
+    WholeSentencesEvent,
+    languages_for,
+)
 from features.translate_speech.events import SubtitleEvent
 from features.translate_speech.live_line import LiveLine
 from features.translate_speech.tidy import tidy
@@ -85,7 +91,9 @@ class GeminiLiveTranslator:
         quiet_s: float = 1.2,
     ) -> None:
         self._bus = bus
+        # The open line keeps the setting it started with; the booth's choice waits for the next.
         self._whole_sentences = whole_sentences
+        self._next_whole_sentences = whole_sentences
         self._quiet_s = quiet_s
         self._quiet: asyncio.Task[None] | None = None
         self._clock = clock
@@ -101,6 +109,10 @@ class GeminiLiveTranslator:
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(ModeChangedEvent, self._on_mode)
         bus.subscribe(ProgramAudioEvent, self._on_audio)
+        bus.subscribe(WholeSentencesEvent, self._on_whole_sentences)
+
+    async def _on_whole_sentences(self, event: WholeSentencesEvent) -> None:
+        self._next_whole_sentences = event.whole_sentences
 
     def use_key(self, api_key: str, connect: Connect) -> None:
         self._api_key = api_key
@@ -156,6 +168,8 @@ class GeminiLiveTranslator:
     async def apply_transcript(self, fragment: str, *, turn_complete: bool = False) -> None:
         if not self._active:
             return
+        if not self._line.text:
+            self._whole_sentences = self._next_whole_sentences
         # The first English fragment is the closest this socket gets to when the line was spoken.
         at = self._clock() if fragment.strip() else None
         shown = self._line.extend(fragment, at=at) if fragment.strip() else ""
