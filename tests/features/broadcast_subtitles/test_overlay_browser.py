@@ -63,7 +63,10 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning")
+    # A bounded graceful shutdown still runs the app's lifespan shutdown, so slices stop.
+    config = uvicorn.Config(
+        app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=3
+    )
     uv_server = uvicorn.Server(config)
     thread = threading.Thread(target=uv_server.run, daemon=True)
     thread.start()
@@ -74,7 +77,8 @@ def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         time.sleep(0.05)
     yield f"http://127.0.0.1:{port}"
     uv_server.should_exit = True
-    thread.join(timeout=10)
+    thread.join(timeout=15)
+    assert not thread.is_alive(), "overlay server did not stop"
 
 
 @pytest.fixture(scope="module")
@@ -92,7 +96,9 @@ def render_caption(
     browser: object, server: str, width: int, text: str, **style: object
 ) -> list[dict]:
     """Open /overlay at width x 16:9, set the style, inject one caption, return its boxes."""
-    page = browser.new_page(viewport={"width": width, "height": width * 9 // 16})
+    # A context per caption, so closing it also closes its /ws and keep-alive sockets.
+    context = browser.new_context(viewport={"width": width, "height": width * 9 // 16})
+    page = context.new_page()
     try:
         clients = httpx.get(f"{server}/health").json()["clients"]
         page.goto(f"{server}/overlay")
@@ -103,15 +109,11 @@ def render_caption(
             time.sleep(0.05)
         httpx.put(f"{server}/overlay-style", json={**DEFAULT_STYLE, **style}).raise_for_status()
         httpx.post(f"{server}/inject", json={"text": text}).raise_for_status()
-        last_word = text.split()[-1]
-        page.wait_for_function(
-            "(word) => [...document.querySelectorAll('#lines .line')]"
-            ".some((el) => el.textContent.endsWith(word))",
-            arg=last_word,
-        )
+        # The overlay shows the stage when a subtitle arrives, after rendering its rows.
+        page.wait_for_selector("#stage:not(.hidden) #lines .line", state="attached")
         return page.evaluate(_BOXES_JS)
     finally:
-        page.close()
+        context.close()
 
 
 @pytest.mark.parametrize("width", [1280, 1920])
@@ -144,3 +146,22 @@ def test_font_size_and_box_width_settings_apply(browser, server) -> None:
     for box in boxes:
         assert box["fontSize"] == pytest.approx(1920 * 0.04, abs=0.5)
         assert box["right"] - box["left"] <= 1920 * 0.5 + 1
+
+
+KOREAN = (
+    "하나님은 그렇지 않다는 것을 알고 계셨고, 그래서 하나님은 기본적으로, 아시다시피, "
+    "우리 Z세대와 알파 세대에게, 그리고 그들의 삶에 고통이 있을 것이라고 말씀하셨습니다"
+)
+ENGLISH = (
+    "And so when we read the opening chapters of this book we see that real suffering "
+    "came suddenly and without any warning at all into the life of Job and his family"
+)
+
+
+@pytest.mark.parametrize("width", [1280, 1920])
+@pytest.mark.parametrize("text", [KOREAN, ENGLISH], ids=["korean", "english"])
+def test_each_caption_box_shows_one_row(browser, server, width, text) -> None:
+    boxes = render_caption(browser, server, width, text, line_count=2)
+    assert boxes
+    assert [box["rows"] for box in boxes] == [1] * len(boxes)
+    assert sum(box["rows"] for box in boxes) <= 2
