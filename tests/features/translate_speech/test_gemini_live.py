@@ -458,6 +458,23 @@ async def test_switching_whole_sentences_off_keeps_the_held_sentence() -> None:
     ]
 
 
+async def test_a_finished_sentence_stops_its_quiet_wait_so_the_next_line_is_not_cut_short() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True, quiet_s=0.05
+    )
+    await translator.apply_transcript("Today we read")
+    await translator.apply_transcript("from the letter to the Romans.")
+    await bus.publish(WholeSentencesEvent(whole_sentences=False))
+    await translator.apply_transcript("And so")
+    await asyncio.sleep(0.1)
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Today we read from the letter to the Romans.", False),
+        ("And so", True),
+    ]
+
+
 async def test_whole_sentences_off_shows_the_line_as_spoken() -> None:
     bus = EventBus()
     seen = _collect(bus)

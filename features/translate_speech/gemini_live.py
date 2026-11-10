@@ -139,6 +139,7 @@ class GeminiLiveTranslator:
         self._resumed.clear()
         self._stop.set()
         self._drain_audio()
+        self._stop_quiet_wait()
         self._line.commit()
 
     async def _on_audio(self, event: ProgramAudioEvent) -> None:
@@ -160,6 +161,7 @@ class GeminiLiveTranslator:
                 break
 
     async def _close_open_line(self) -> None:
+        self._stop_quiet_wait()
         spoken_at = self._line.opened_at
         finished = self._finish(self._line.commit())
         if finished and self._active:
@@ -178,6 +180,7 @@ class GeminiLiveTranslator:
         spoken_at = self._line.opened_at
         text = self._finish(self._line.text) or ""
         if (turn_complete or _ends_sentence(text)) and not self._holds_short_sentence(text):
+            self._stop_quiet_wait()
             self._line.commit()
             if text:
                 await self._publish(text, provisional=False, spoken_at=spoken_at)
@@ -189,9 +192,14 @@ class GeminiLiveTranslator:
 
     def _commit_when_quiet(self) -> None:
         """Each fragment restarts the wait; a held line shows once the speaker pauses."""
+        self._stop_quiet_wait()
+        self._quiet = asyncio.create_task(self._commit_after_quiet(), name="gemini-live-quiet")
+
+    def _stop_quiet_wait(self) -> None:
+        """A committed or cleared line takes its quiet wait with it, so it can't cut the next line."""
         if self._quiet is not None:
             self._quiet.cancel()
-        self._quiet = asyncio.create_task(self._commit_after_quiet(), name="gemini-live-quiet")
+            self._quiet = None
 
     async def _commit_after_quiet(self) -> None:
         await asyncio.sleep(self._quiet_s)
