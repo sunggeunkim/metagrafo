@@ -439,3 +439,32 @@ async def test_c_splits_a_fragment_that_holds_more_than_one_korean_sentence(tmp_
         cleanup_timeout_s=0.05,
     )
     assert asked == ["첫째입니다.", "둘째입니까?", "셋째 입니다."]
+
+
+async def test_a_line_finished_after_the_audio_ran_out_is_timed_when_it_finished(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 1.0)
+    out = tmp_path / "sermon.compare.md"
+    socket = _ScriptedSocket([(0.5, _heard("첫째."))])
+
+    async def slow_translate(_korean: str, _previous: list[str]) -> str:
+        # The audio and its tail are all sent within this wait.
+        await asyncio.sleep(0.6)
+        return "First."
+
+    await compare_wav(
+        wav_path=wav,
+        out_path=out,
+        connect=lambda _mode: socket,
+        cleanup=_cleaned,
+        translate=slow_translate,
+        pace=_no_wait,
+        cleanup_timeout_s=0.05,
+        tail_s=0.0,
+        drain_s=0.0,
+    )
+    [row] = _rows(out)
+    minutes, seconds = row.split(" | ")[0].removeprefix("| ").split(":")
+    at_s = int(minutes) * 60 + float(seconds)
+    # The audio ends near 1.0 s; the line finished about 0.6 s of work after the sentence was heard at 0.5 s.
+    assert 1.4 <= at_s <= 2.5

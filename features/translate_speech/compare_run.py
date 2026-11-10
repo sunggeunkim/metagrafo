@@ -198,10 +198,18 @@ class _CompareRun:
         self._last_heard_s = 0.0
         self._sentences: asyncio.Queue[tuple[str, float | None]] = asyncio.Queue()
         self._english: list[str] = []
+        self._ran_out_at: float | None = None
 
     def _now(self) -> float:
-        """Seconds into the recording: the audio sent so far, which real-time pacing keeps on the wall clock."""
-        return self._start_s + self._sent / BYTES_PER_S
+        """Seconds into the recording: the audio sent so far, which real-time pacing keeps on the wall clock.
+
+        Once the audio has run out, the wall clock carries on from its end, so a line the
+        models finish later is timed when it finished.
+        """
+        audio_s = self._start_s + self._sent / BYTES_PER_S
+        if self._ran_out_at is None:
+            return audio_s
+        return audio_s + asyncio.get_running_loop().time() - self._ran_out_at
 
     async def go(self) -> None:
         translator = asyncio.create_task(self._translate_in_order(), name="compare-c")
@@ -271,6 +279,7 @@ class _CompareRun:
             if self._korean.text and self._now() - self._last_heard_s >= self._quiet_s:
                 self._close_korean()
             await self._pace(self._sent / BYTES_PER_S)
+        self._ran_out_at = asyncio.get_running_loop().time()
 
     async def _receive(self, session: LiveConnection) -> None:
         async for response in session.receive():
