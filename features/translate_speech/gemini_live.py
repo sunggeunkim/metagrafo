@@ -266,6 +266,8 @@ class GeminiLiveTranslator:
             )
         except asyncio.TimeoutError:
             logger.warning("cleanup skipped: no reply within %s s", self._cleanup_timeout_s)
+        except Exception as exc:
+            logger.warning("cleanup skipped: %s", _redact(exc, self._api_key))
         return text
 
     async def _publish(

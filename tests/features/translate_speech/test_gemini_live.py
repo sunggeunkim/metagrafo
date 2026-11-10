@@ -630,3 +630,28 @@ async def test_a_slow_cleanup_shows_the_line_as_heard_and_logs_why(caplog) -> No
         ("And so we come before the Lord in prayer.", False)
     ]
     assert "cleanup skipped: no reply within 0.05 s" in caplog.text
+
+
+async def test_a_failed_cleanup_shows_the_line_as_heard_and_logs_why_without_the_key(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        raise RuntimeError("429 quota exhausted for key secret-key-7")
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        api_key="secret-key-7",
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript("And so we come before the Lord in prayer.")
+        await _settle()
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("And so we come before the Lord in prayer.", False)
+    ]
+    assert "cleanup skipped: 429 quota exhausted for key [key]" in caplog.text
+    assert "secret-key-7" not in caplog.text
