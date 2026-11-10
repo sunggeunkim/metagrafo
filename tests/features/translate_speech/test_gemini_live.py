@@ -348,3 +348,35 @@ async def test_whole_sentences_does_not_cut_at_a_comma_that_leaves_a_stub() -> N
         ("Brothers, we give thanks for the sisters who came from the north side of the city this morning to worship with us and to", False),
         ("share the meal after the service.", False),
     ]
+
+
+async def test_whole_sentences_removes_fillers() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("Uh, today we begin")
+    await translator.apply_transcript("with um prayer, hmm.")
+    assert [(e.text, e.provisional) for e in seen] == [("Today we begin with prayer.", False)]
+
+
+async def test_whole_sentences_removes_immediate_stutters() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("We— we read the")
+    await translator.apply_transcript("the letter to the church.")
+    assert [(e.text, e.provisional) for e in seen] == [("We read the letter to the church.", False)]
+
+
+async def test_whole_sentences_keeps_phrases_that_carry_meaning() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript("I mean, you know, God is faithful.")
+    assert [(e.text, e.provisional) for e in seen] == [("I mean, you know, God is faithful.", False)]

@@ -13,6 +13,7 @@ from features.capture_audio.events import ProgramAudioEvent
 from features.operator_control.events import CaptionsStateEvent, ModeChangedEvent, TranslateMode, languages_for
 from features.translate_speech.events import SubtitleEvent
 from features.translate_speech.live_line import LiveLine
+from features.translate_speech.tidy import tidy
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class GeminiLiveTranslator:
 
     async def _close_open_line(self) -> None:
         spoken_at = self._line.opened_at
-        finished = self._line.commit()
+        finished = self._finish(self._line.commit())
         if finished and self._active:
             await self._publish(finished, provisional=False, spoken_at=spoken_at)
 
@@ -158,21 +159,27 @@ class GeminiLiveTranslator:
         if self._whole_sentences:
             await self._cut_long_line(at)
         spoken_at = self._line.opened_at
-        if (turn_complete or self._line.closes_sentence()) and not self._holds_short_sentence(self._line.text):
-            finished = self._line.commit()
-            if finished:
-                await self._publish(finished, provisional=False, spoken_at=spoken_at)
+        text = self._finish(self._line.text) or ""
+        if (turn_complete or _ends_sentence(text)) and not self._holds_short_sentence(text):
+            self._line.commit()
+            if text:
+                await self._publish(text, provisional=False, spoken_at=spoken_at)
             return
         if shown and not self._whole_sentences:
             await self._publish(shown, provisional=True, spoken_at=spoken_at)
 
+    def _finish(self, text: str | None) -> str | None:
+        """The words a committed line shows: whole sentences drops fillers."""
+        if text is None or not self._whole_sentences:
+            return text
+        return tidy(text) or None
+
     async def _cut_long_line(self, at: float | None) -> None:
         """Publish the front of a line that would overflow the overlay; the rest opens the next line."""
-        while len(self._line.text) > LONG_LINE_CHARS:
-            cut = _cut_point(self._line.text, LONG_LINE_CHARS)
+        while len(text := tidy(self._line.text)) > LONG_LINE_CHARS:
+            cut = _cut_point(text, LONG_LINE_CHARS)
             if cut is None:
                 return
-            text = self._line.text
             spoken_at = self._line.opened_at
             self._line.commit()
             await self._publish(text[:cut].strip(), provisional=False, spoken_at=spoken_at)
@@ -264,6 +271,10 @@ class GeminiLiveTranslator:
                     await self.apply_transcript(fragment or "", turn_complete=turn_complete)
             if getattr(response, "go_away", None) is not None or not self._active:
                 return
+
+
+def _ends_sentence(text: str) -> bool:
+    return bool(text) and text[-1] in ".?!"
 
 
 def _cut_point(text: str, limit: int) -> int | None:
