@@ -11,7 +11,7 @@ OBS on the broadcast PC is the encoder (YouTube and the house projector share th
 | Encoder | OBS encodes the destination. UC9020 RTMP alone has **no captions**. |
 | Audio | PGM mix. No speech-only bus. |
 | Worship | Captions **default ON**. Volunteer OFF for songs. Mute **stops inference**, not only the OBS source. |
-| Presentation | Two-line. Whisper is utterance-final (**not karaoke**). Gemini live, when opted in, grows the bottom line while the pastor is still talking, then moves that line up. ~2–3 s after they stop is OK for Whisper. |
+| Presentation | Two-line. Whisper is utterance-final (**not karaoke**). Gemini live, when opted in, shows finished lines too (**Whole sentences**, default on); with that off it grows the bottom line while the pastor is still talking, then moves that line up. ~2–3 s after they stop is OK for Whisper. |
 | Modes | `ko_to_en` (sermon), `en_to_en` (English guest transcribe), and `en_to_ko` (English guest, Korean captions; **Gemini live only**). NLLB deferred. |
 | Code-switch | Stay on `ko_to_en`. No verse-by-verse mode flips. |
 | Mute in-flight | Capture drops frames. Translate empties the queue. In-flight Whisper may finish; **discard if captions are off**. |
@@ -92,7 +92,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - Device profile: see `docs/hardware-profiles.md`. Env always wins.
 - Queue max 4, **drop oldest**. Empty output is not published.
 - Captions off: **empty the queue**. When Whisper returns, if inactive, **do not publish**.
-- `CAPTION_ENGINE=gemini_live` plus `GEMINI_API_KEY` hears program audio as it arrives (`ProgramAudioEvent`, about 100 ms) instead of waiting for a VAD chunk. `gemini-3.5-live-translate-preview` translates Korean speech to English on one socket, the same four settings as the working mic test: no context-window compression and no session resumption. The bottom line grows (`SubtitleEvent.provisional`), and `spoken_at` is when its first English fragment arrived; a finished sentence, a model turn, or the end of a socket commits it. Captions off clears the open line and the overlay. English guest mode reconnects with echo so English speech is captioned. The microphone match prefers the WASAPI device, because the DirectSound copy of the same name does not wait for the clock. Missing key keeps Whisper. The older `Captioner` engine named `gemini` is not this path.
+- `CAPTION_ENGINE=gemini_live` plus `GEMINI_API_KEY` hears program audio as it arrives (`ProgramAudioEvent`, about 100 ms) instead of waiting for a VAD chunk. `gemini-3.5-live-translate-preview` translates Korean speech to English on one socket, the same four settings as the working mic test: no context-window compression and no session resumption. The bottom line grows (`SubtitleEvent.provisional`), and `spoken_at` is when its first English fragment arrived; a finished sentence, a model turn, or the end of a socket commits it. **Whole sentences** (`WHOLE_SENTENCES`, default **on**) publishes committed lines only, never `provisional`: a finished sentence under 25 characters waits and joins the next one, a line past 120 characters (two default overlay rows hold about 140; slack until #36) is cut after its last comma in the second half, else at its last space, and ~1.2 s with no new fragment (`WHOLE_SENTENCES_QUIET_S`) commits the open line. Committed lines drop pure fillers (uh, um, er, hmm) and immediate stutters ("the the", "we— we"); "you know" and "I mean" stay. Off is the growing line above. A switch takes effect at the next line; the open line finishes the way it started. Whisper ignores it. Captions off clears the open line and the overlay. English guest mode reconnects with echo so English speech is captioned. The microphone match prefers the WASAPI device, because the DirectSound copy of the same name does not wait for the clock. Missing key keeps Whisper. The older `Captioner` engine named `gemini` is not this path.
 
 ### `broadcast_subtitles`
 
@@ -131,8 +131,8 @@ Optional. `YOUTUBE_CAPTION_URL` is the **Captions Ingestion URL** from YouTube S
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Start/Stop captions (one button that flips), Show/Hide overlay and Show/Hide logs (both open when the page loads, side by side under the top buttons: a scaled 1920×1080 `/overlay` frame on the left that connects only while shown, and a log panel on the right that polls `/logs` every 2 s while open), Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts), **audio input** (pick a listed recording device)
-- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /overlay-style` / `PUT /gemini-key` / `PUT /youtube-caption-url` / `GET /audio-devices` / `PUT /audio-device`
+- `GET /control` — Start/Stop captions (one button that flips), Show/Hide overlay and Show/Hide logs (both open when the page loads, side by side under the top buttons: a scaled 1920×1080 `/overlay` frame on the left that connects only while shown, and a log panel on the right that polls `/logs` every 2 s while open), Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), **Whole sentences** checkbox (Gemini live, default on), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts), **audio input** (pick a listed recording device)
+- `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /whole-sentences` / `PUT /overlay-style` / `PUT /gemini-key` / `PUT /youtube-caption-url` / `GET /audio-devices` / `PUT /audio-device`
 - `GET /audio-devices` — `{devices, selected, capturing, error}`: input names this PC lists now (each once; names with a line break are left out because `.env` cannot hold them), `AUDIO_DEVICE_NAME`, and capture's status. `main.py` injects the lister and the status, so this slice does not import capture code.
 - `PUT /audio-device` — `{name}`; must be one of the listed names (422 otherwise), and 409 while `AUDIO_DEVICE_INDEX` is set. Writes `AUDIO_DEVICE_NAME` to `.env`, keeping other lines, and publishes `AudioDeviceChangedEvent`. `/mode` shows `audio_device`, `audio_capturing`, and `audio_error`; the booth page polls those every 5 s.
 - `GET /logs?after=<offset>` — `{available, text, offset}`: whole lines of `metagrafo.log` from byte `after` on (without it, the last ~250 KB), and the `offset` to pass next. A line still being written waits for the next call. Only a windowless start (`pythonw`, `Start Metagrafo.cmd`) writes that file, so `main.py` passes the path only then; a console start answers `available: false`.
@@ -142,6 +142,7 @@ Owns the booth UI. Publishes only.
 - `VadSilenceMsEvent` — live; capture updates the running chunker (100–3000 ms)
 - `VadPausesEvent` — live; 1 cuts on each pause. 2 waits for a second pause, then one line per phrase
 - `ConditionOnPreviousTextEvent` — live; feed the caption just written into the next phrase
+- `WholeSentencesEvent` — live; Gemini live shows only finished lines from the next line on. `PUT /whole-sentences` (`{whole_sentences}`) writes `WHOLE_SENTENCES` to `.env`, keeping other lines, so the choice survives a restart; `/mode` and `/health` show `whole_sentences`
 - `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6). `line_count` is visible text rows, default 2. A wrapped sentence keeps the newest rows and the oldest row leaves.
 
 Open `/control` in a normal browser, **not** as an OBS source.
@@ -154,7 +155,7 @@ Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
 - `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`)
-- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `OverlayStyleEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent`, `AudioDeviceChangedEvent` — `operator_control`
+- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `WholeSentencesEvent`, `OverlayStyleEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent`, `AudioDeviceChangedEvent` — `operator_control`
 
 ## Process model
 
@@ -173,7 +174,7 @@ Startup: operator_control + translate + broadcast + youtube_captions, then captu
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port, `YOUTUBE_CAPTION_URL` (optional). Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port, `YOUTUBE_CAPTION_URL` (optional), `WHOLE_SENTENCES` (default `true`), `WHOLE_SENTENCES_QUIET_S` (default 1.2). Captions active is **not** persisted; always starts on.
 
 ## Operator path
 
