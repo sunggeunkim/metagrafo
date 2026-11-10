@@ -207,14 +207,24 @@ class _CompareRun:
             failures = 0
             while self._sent < len(self._pcm):
                 sent_before = self._sent
+                error: Exception | None = None
                 try:
                     async with self._connect(TranslateMode.KO_TO_EN) as session:
                         await self._pump(session)
                 except Exception as exc:
-                    failures = 1 if self._sent > sent_before else failures + 1
+                    error = exc
+                progressed = self._sent > sent_before
+                if error is None and progressed:
+                    failures = 0
+                else:
+                    # A socket that errs or closes before taking any audio is a failure.
+                    failures = 1 if progressed else failures + 1
                     if failures >= MAX_FAILURES:
-                        raise
-                    logger.warning("socket failed, reconnecting: %s", _redact(exc, self._api_key))
+                        if error is not None:
+                            raise error
+                        raise RuntimeError(f"Gemini live closed {failures} times without taking any audio")
+                    reason = _redact(error, self._api_key) if error else "closed before taking any audio"
+                    logger.warning("socket failed, reconnecting: %s", reason)
                     await asyncio.sleep(self._retry_wait_s)
                 await self._b.apply_transcript("", turn_complete=True)
             self._close_korean()

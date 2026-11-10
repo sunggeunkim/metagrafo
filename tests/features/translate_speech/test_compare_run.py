@@ -393,3 +393,26 @@ async def test_a_chunk_cut_off_by_the_socket_going_away_is_sent_again(tmp_path: 
     leaving, next_socket = _GoesAwayMidSendSocket(ok=5), _ScriptedSocket([])
     await _run_on([leaving, next_socket], wav, tmp_path / "retried.md")
     assert leaving.sent_bytes + next_socket.sent_bytes == healthy.sent_bytes
+
+
+class _ClosesAtOnceSocket(_ScriptedSocket):
+    """Goes away before taking any audio."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+
+    async def send_realtime_input(self, *, audio: object) -> None:
+        await asyncio.Event().wait()
+
+    async def receive(self):
+        yield SimpleNamespace(go_away=SimpleNamespace(time_left="0s"), server_content=None)
+
+
+async def test_sockets_that_keep_closing_before_any_audio_end_the_run(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 2.0)
+    with pytest.raises(RuntimeError, match="closed 3 times without taking any audio"):
+        await asyncio.wait_for(
+            _run_on([_ClosesAtOnceSocket() for _ in range(3)], wav, tmp_path / "out.md"), timeout=10
+        )
+    assert (tmp_path / "out.md").exists()
