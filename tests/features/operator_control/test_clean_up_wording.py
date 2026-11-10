@@ -27,6 +27,16 @@ def test_clean_up_wording_starts_on(env_file) -> None:
         assert client.get("/mode").json()["clean_up_wording"] is True
 
 
+def test_booth_page_has_a_clean_up_wording_checkbox_that_needs_whole_sentences(env_file) -> None:
+    with TestClient(_app(env_file)) as client:
+        html = client.get("/control").text
+    assert '<input id="clean-up-wording" type="checkbox"' in html
+    assert "/clean-up-wording" in html
+    assert 'getElementById("clean-up-wording").checked = s.clean_up_wording' in html
+    # Cleanup rewrites finished lines, so it waits for Whole sentences.
+    assert 'getElementById("clean-up-wording").disabled = !s.whole_sentences' in html
+
+
 def test_switching_off_tells_gemini_and_keeps_it_for_next_time(env_file) -> None:
     bus = EventBus()
     seen: list[bool] = []

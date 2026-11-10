@@ -94,6 +94,9 @@
   <h2>Whole sentences</h2>
   <p class="hint">Gemini only. <strong>On</strong> (default) shows each line once it is finished instead of word by word, joins a short sentence like "Yes." to the next one, and leaves out "uh", "um" and repeated words. <strong>Off</strong> grows the bottom line as the words arrive. Starts with the next line, and this computer keeps the choice for the next time.</p>
   <label class="check"><input id="whole-sentences" type="checkbox" /> Whole sentences</label>
+  <h2>Clean up wording</h2>
+  <p class="hint">Gemini only, and only with Whole sentences on. <strong>On</strong> (default) sends each finished line to a fast Gemini text model with the last few lines shown, to take out false starts and lightly fix grammar without changing the meaning, names, or scripture references. If it takes longer than about 1.5 s, the line shows as heard. The cleaned line is what the overlay and YouTube captions get. Starts with the next line, and this computer keeps the choice for the next time.</p>
+  <label class="check"><input id="clean-up-wording" type="checkbox" /> Clean up wording</label>
   <h2>Overlay</h2>
   <p class="hint">Keep the OBS Browser Source at <strong>1920×1080</strong>. Right-click the source → <strong>Transform → Reset Transform</strong> so the type is not stretched. Do not drag the red handles or change source Height to crop captions — that squashes letters. Size the caption band here instead.</p>
   <p class="hint">Position, font, box size, and insets apply live. Font is viewport width percent (<strong>vw</strong>), range <strong>1.0–8.0</strong>. Box width <strong>10–100</strong> and height <strong>5–100</strong> are percent of the 1920×1080 overlay (default <strong>100 × 30</strong>). Insets <strong>0–20</strong>. After overlay HTML changes, right-click the source → Refresh once.</p>
@@ -192,6 +195,7 @@
         " · pauses " + s.vad_pauses +
         " · previous text " + (s.condition_on_previous_text ? "on" : "off") +
         " · whole sentences " + (s.whole_sentences ? "on" : "off") +
+        " · clean up wording " + (s.clean_up_wording ? "on" : "off") +
         " · " + s.line_count + " lines" +
         " · " + s.position +
         " · " + s.font_size_vw + " vw" +
@@ -213,6 +217,8 @@
       document.getElementById("context-off").classList.toggle("active", !s.condition_on_previous_text);
       document.getElementById("context-on").classList.toggle("active", s.condition_on_previous_text);
       document.getElementById("whole-sentences").checked = s.whole_sentences;
+      document.getElementById("clean-up-wording").checked = s.clean_up_wording;
+      document.getElementById("clean-up-wording").disabled = !s.whole_sentences;
       document.getElementById("font-vw").value = s.font_size_vw;
       document.getElementById("box-w").value = s.box_width_pct;
       document.getElementById("box-h").value = s.box_height_pct;
@@ -336,6 +342,10 @@
     document.getElementById("context-on").onclick = () => setPreviousText(true);
     document.getElementById("whole-sentences").onchange = async (e) => {
       await fetch("/whole-sentences", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ whole_sentences: e.target.checked }) });
+      refresh();
+    };
+    document.getElementById("clean-up-wording").onchange = async (e) => {
+      await fetch("/clean-up-wording", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clean_up_wording: e.target.checked }) });
       refresh();
     };
     async function applyOverlay() {
