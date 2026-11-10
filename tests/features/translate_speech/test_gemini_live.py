@@ -541,3 +541,31 @@ async def test_whole_sentences_off_shows_the_line_as_spoken() -> None:
         ("Uh, yes, the the Lord.", False),
         ("And so", True),
     ]
+
+
+async def _settle() -> None:
+    for _ in range(20):
+        await asyncio.sleep(0)
+
+
+async def test_clean_up_wording_shows_the_cleaned_line() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, context: list[str]) -> str:
+        return "Paul says nothing can separate us from the love of God."
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(
+        "And so Paul, what he says is, nothing can separate us from the love of God."
+    )
+    await _settle()
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("Paul says nothing can separate us from the love of God.", False)
+    ]

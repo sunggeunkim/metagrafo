@@ -5,7 +5,7 @@ import contextlib
 import logging
 import time
 import uuid
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from types import TracebackType
 
 from core.event_bus import EventBus
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-live-translate-preview"
 Connect = Callable[[TranslateMode], "LiveConnection"]
+# A finished line and the lines shown before it in; the line a text model rewrote out.
+Cleanup = Callable[[str, list[str]], Awaitable[str]]
 SHORT_SENTENCE_CHARS = 25
 # Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
 # slack because the overlay can wrap a full two rows onto a third (issue #36).
@@ -89,8 +91,12 @@ class GeminiLiveTranslator:
         clock: Callable[[], float] = time.time,
         whole_sentences: bool = False,
         quiet_s: float = 1.2,
+        clean_up_wording: bool = False,
+        cleanup: Cleanup | None = None,
     ) -> None:
         self._bus = bus
+        self._clean_up_wording = clean_up_wording
+        self._cleanup = cleanup
         # The open line keeps the setting it started with; the booth's choice waits for the next.
         self._whole_sentences = whole_sentences
         self._next_whole_sentences = whole_sentences
@@ -165,7 +171,7 @@ class GeminiLiveTranslator:
         spoken_at = self._line.opened_at
         finished = self._finish(self._line.commit())
         if finished and self._active:
-            await self._publish(finished, provisional=False, spoken_at=spoken_at)
+            await self._show(finished, spoken_at=spoken_at)
 
     async def apply_transcript(self, fragment: str, *, turn_complete: bool = False) -> None:
         if not self._active:
@@ -183,7 +189,7 @@ class GeminiLiveTranslator:
             self._stop_quiet_wait()
             self._line.commit()
             if text:
-                await self._publish(text, provisional=False, spoken_at=spoken_at)
+                await self._show(text, spoken_at=spoken_at)
             return
         if self._whole_sentences:
             if self._line.text:
@@ -224,7 +230,7 @@ class GeminiLiveTranslator:
             times = _times_of_kept(self._line.text.split(), self._line.word_times, words)
             front = len(text[:cut].split())
             self._line.commit()
-            await self._publish(text[:cut].strip(), provisional=False, spoken_at=spoken_at)
+            await self._show(text[:cut].strip(), spoken_at=spoken_at)
             if not self._active:
                 # Captions went off while the front was shown; the off switch already cleared the line.
                 return
@@ -235,6 +241,12 @@ class GeminiLiveTranslator:
     def _holds_short_sentence(self, text: str) -> bool:
         """A sentence like "Yes." waits to join the next one instead of filling a line alone."""
         return self._whole_sentences and len(text) < SHORT_SENTENCE_CHARS
+
+    async def _show(self, text: str, *, spoken_at: float | None) -> None:
+        """A committed line, rewritten by the text model when the booth asks for clean wording."""
+        if self._whole_sentences and self._clean_up_wording and self._cleanup is not None:
+            text = await self._cleanup(text, [])
+        await self._publish(text, provisional=False, spoken_at=spoken_at)
 
     async def _publish(
         self, text: str, *, provisional: bool, spoken_at: float | None = None
