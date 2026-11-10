@@ -121,3 +121,36 @@ async def test_one_sermon_line_is_written_both_ways_with_its_time_and_delay(tmp_
         "| 0:01.5 | | Let us begin today with prayer. (+0.5 s) | 오늘은 기도로 시작하겠습니다. |",
         "| 0:02.5 | TODAY WE BEGIN WITH PRAYER. (+0.5 s) | | |",
     ]
+
+
+async def test_c_closes_a_korean_sentence_at_a_pause_and_gives_the_model_its_last_three_lines(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 12.0)
+    out = tmp_path / "sermon.compare.md"
+    socket = _ScriptedSocket(
+        [
+            (1.0, _heard("첫째.")),
+            (2.0, _heard("둘째.")),
+            (3.0, _heard("셋째.")),
+            # No end mark: the 1.2 s pause after it closes the sentence.
+            (4.0, _heard("넷째 그리고")),
+            (4.5, _heard("다섯째")),
+        ]
+    )
+    asked: list[tuple[str, list[str]]] = []
+
+    async def translate(korean: str, previous: list[str]) -> str:
+        asked.append((korean, previous))
+        return f"Line {len(asked)}."
+
+    await compare_wav(
+        wav_path=wav,
+        out_path=out,
+        connect=lambda _mode: socket,
+        cleanup=_cleaned,
+        translate=translate,
+        pace=_no_wait,
+        cleanup_timeout_s=0.05,
+    )
+    assert asked[-1] == ("넷째 그리고 다섯째", ["Line 1.", "Line 2.", "Line 3."])
+    assert _rows(out)[-1] == "| 0:05.7 | | Line 4. (+1.7 s) | 넷째 그리고 다섯째 |"
