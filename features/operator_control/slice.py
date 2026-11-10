@@ -21,6 +21,7 @@ from features.operator_control.events import (
     ConditionOnPreviousTextEvent,
     VadPausesEvent,
     VadSilenceMsEvent,
+    WholeSentencesEvent,
     YouTubeCaptionUrlChangedEvent,
     languages_for,
     needs_gemini,
@@ -37,6 +38,7 @@ class OperatorState:
         vad_min_silence_ms: int = 500,
         vad_pauses: int = 1,
         condition_on_previous_text: bool = True,
+        whole_sentences: bool = True,
         overlay_position: OverlayPosition = OverlayPosition.TOP_LEFT,
         font_size_vw: float = 2.5,
         inset_vertical_pct: float = 1.0,
@@ -50,6 +52,7 @@ class OperatorState:
         self.vad_min_silence_ms = vad_min_silence_ms
         self.vad_pauses = vad_pauses
         self.condition_on_previous_text = condition_on_previous_text
+        self.whole_sentences = whole_sentences
         self.overlay_position = overlay_position
         self.font_size_vw = font_size_vw
         self.inset_vertical_pct = inset_vertical_pct
@@ -68,6 +71,7 @@ class OperatorState:
             "vad_min_silence_ms": self.vad_min_silence_ms,
             "vad_pauses": self.vad_pauses,
             "condition_on_previous_text": self.condition_on_previous_text,
+            "whole_sentences": self.whole_sentences,
             "position": self.overlay_position.value,
             "font_size_vw": self.font_size_vw,
             "inset_vertical_pct": self.inset_vertical_pct,
@@ -100,6 +104,10 @@ class VadPausesBody(BaseModel):
 
 class ConditionOnPreviousTextBody(BaseModel):
     condition_on_previous_text: bool
+
+
+class WholeSentencesBody(BaseModel):
+    whole_sentences: bool
 
 
 class OverlayStyleBody(BaseModel):
@@ -204,6 +212,7 @@ def register(
         vad_min_silence_ms=settings.vad_min_silence_ms,
         vad_pauses=pauses,
         condition_on_previous_text=settings.condition_on_previous_text,
+        whole_sentences=settings.whole_sentences,
     )
     app.state.operator = state
 
@@ -348,6 +357,15 @@ def register(
             )
         )
         return state.snapshot()
+
+    @app.put("/whole-sentences")
+    async def put_whole_sentences(body: WholeSentencesBody) -> dict[str, object]:
+        # Kept in .env so the booth's choice survives a restart.
+        write_env_values(key_file, {"WHOLE_SENTENCES": "true" if body.whole_sentences else "false"})
+        settings.whole_sentences = body.whole_sentences
+        state.whole_sentences = body.whole_sentences
+        await bus.publish(WholeSentencesEvent(whole_sentences=body.whole_sentences))
+        return public_state()
 
     @app.put("/overlay-style")
     async def put_overlay_style(body: OverlayStyleBody) -> dict[str, object]:
