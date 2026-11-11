@@ -204,6 +204,7 @@ def register(
     list_input_devices: Callable[[], list[str]] | None = None,
     capture_status: Callable[[], dict[str, str | None]] | None = None,
     log_file: Path | None = None,
+    request_quit: Callable[[], None] | None = None,
 ) -> OperatorState:
     try:
         initial_mode = TranslateMode(settings.translate_mode)
@@ -267,6 +268,17 @@ def register(
             return {"available": False, "text": "", "offset": 0}
         text, offset = await asyncio.to_thread(read_log, log_file, after)
         return {"available": True, "text": text, "offset": offset}
+
+    @app.post("/quit")
+    async def post_quit() -> dict[str, object]:
+        # The server stops after this reply is sent, closing capture and Gemini first.
+        if request_quit is None:
+            raise HTTPException(
+                status_code=409,
+                detail="This Metagrafo was started from a console. Press Ctrl+C there to quit.",
+            )
+        request_quit()
+        return {"quitting": True}
 
     @app.get("/mode")
     async def get_mode() -> dict[str, object]:

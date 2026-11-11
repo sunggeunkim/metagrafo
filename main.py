@@ -11,6 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 
@@ -27,6 +28,9 @@ from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.youtube import download_media, make_job_dir, youtube_video_id
 from features.translate_speech.file_run import run_wav
 
+if TYPE_CHECKING:
+    import uvicorn
+
 
 def create_app(
     bus: EventBus | None = None,
@@ -39,6 +43,7 @@ def create_app(
     gemini_cleanup_factory: Callable[[str, str], object] | None = None,
     list_input_devices: Callable[[], list[str]] | None = None,
     log_file: Path | None = None,
+    request_quit: Callable[[], None] | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     bus = bus or EventBus()
@@ -73,6 +78,7 @@ def create_app(
         list_input_devices=list_input_devices,
         capture_status=capture.status if capture is not None else None,
         log_file=log_file,
+        request_quit=request_quit,
     )
     app.state.translator = translate_speech.register(
         app,
@@ -116,9 +122,42 @@ def _redirect_missing_stdio(log_path: Path) -> Path | None:
     return log_path
 
 
-def create_production_app(log_file: Path | None = None) -> FastAPI:
+def create_production_app(
+    log_file: Path | None = None, request_quit: Callable[[], None] | None = None
+) -> FastAPI:
     _configure_logging()
-    return create_app(start_capture=True, load_whisper=True, log_file=log_file)
+    return create_app(
+        start_capture=True, load_whisper=True, log_file=log_file, request_quit=request_quit
+    )
+
+
+def build_server(
+    create: Callable[[Callable[[], None]], FastAPI],
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8000,
+) -> uvicorn.Server:
+    """The uvicorn server for booth control, whose app can ask it to quit.
+
+    Quitting is a graceful shutdown, so the app's lifespan still closes capture
+    and Gemini. Open sockets such as the overlay's get a few seconds to close.
+    """
+    import uvicorn
+
+    server: uvicorn.Server
+
+    def request_quit() -> None:
+        server.should_exit = True
+
+    config = uvicorn.Config(
+        lambda: create(request_quit),
+        factory=True,
+        host=host,
+        port=port,
+        timeout_graceful_shutdown=5,
+    )
+    server = uvicorn.Server(config)
+    return server
 
 
 def print_input_devices() -> None:
@@ -420,14 +459,11 @@ def main(argv: list[str] | None = None) -> None:
     # Start Metagrafo.cmd already sends this process's output to its log.
     launcher_log = os.environ.get("METAGRAFO_LOG")
     log_file = Path(launcher_log) if launcher_log else _redirect_missing_stdio(Path("metagrafo.log"))
-    import uvicorn
-
-    uvicorn.run(
-        partial(create_production_app, log_file=log_file),
-        factory=True,
-        host="127.0.0.1",
-        port=8000,
-    )
+    server = build_server(partial(create_production_app, log_file))
+    server.run()
+    if not server.started:
+        # As uvicorn.run does: a port already taken or a failed startup is not a clean exit.
+        sys.exit(3)
 
 
 if __name__ == "__main__":
