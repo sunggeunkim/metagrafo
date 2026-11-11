@@ -135,3 +135,26 @@ def test_save_transcript_checkbox_saves_to_a_file_it_names(browser, control_savi
         page.wait_for_selector("#transcript-status:has-text('Not saving')")
     finally:
         page.close()
+
+
+def test_sermon_context_box_saves_and_comes_back_on_reload(browser, control_saving) -> None:
+    url, _folder = control_saving
+    page = browser.new_page()
+    try:
+        page.goto(f"{url}/control")
+        page.wait_for_selector("#cleanup-context-status:has-text('No sermon context')")
+        page.fill("#cleanup-context", "Sermon: the problem of evil.\nScripture: Job 1-2.")
+        page.click("#cleanup-context-save")
+        page.wait_for_selector("#cleanup-context-status:has-text('Saved')")
+
+        page.reload()
+        page.wait_for_function(
+            "document.getElementById('cleanup-context').value.includes('Job 1-2')"
+        )
+        assert page.input_value("#cleanup-context") == "Sermon: the problem of evil.\nScripture: Job 1-2."
+
+        page.click("#cleanup-context-clear")
+        page.wait_for_selector("#cleanup-context-status:has-text('No sermon context')")
+        assert page.input_value("#cleanup-context") == ""
+    finally:
+        page.close()

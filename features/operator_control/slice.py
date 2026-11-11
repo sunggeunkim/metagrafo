@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -14,6 +15,7 @@ from features.operator_control.events import (
     AudioDeviceChangedEvent,
     CaptionsStateEvent,
     CleanUpWordingEvent,
+    CleanupContextEvent,
     GeminiKeyChangedEvent,
     ModeChangedEvent,
     SaveTranscriptEvent,
@@ -30,6 +32,10 @@ from features.operator_control.events import (
 )
 
 _CONTROL_PAGE = Path(__file__).with_name("control.html")
+# The sermon context goes with every cleaned line, so it stays short enough not to slow cleanup.
+MAX_CLEANUP_CONTEXT_CHARS = 2000
+
+logger = logging.getLogger(__name__)
 
 
 class OperatorState:
@@ -122,6 +128,10 @@ class CleanUpWordingBody(BaseModel):
     clean_up_wording: bool
 
 
+class CleanupContextBody(BaseModel):
+    text: str = Field(max_length=MAX_CLEANUP_CONTEXT_CHARS)
+
+
 class SaveTranscriptBody(BaseModel):
     save_transcript: bool
 
@@ -159,6 +169,30 @@ def write_env_values(env_file: Path, values: dict[str, str]) -> None:
     lines.extend(f"{name}={value}" for name, value in values.items() if name not in written)
     env_file.parent.mkdir(parents=True, exist_ok=True)
     env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def read_cleanup_context(context_file: Path) -> str:
+    """The saved sermon context, or "" when there is none.
+
+    The file is the only source: booth control writes nothing else. A hand-edited file is
+    held to the same limit as a save, and one that cannot be read never stops Metagrafo.
+    """
+    try:
+        text = context_file.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return ""
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.warning("sermon context not loaded: cannot read %s (%s)", context_file.name, exc)
+        return ""
+    if len(text) > MAX_CLEANUP_CONTEXT_CHARS:
+        logger.warning(
+            "sermon context in %s is %d characters; using the first %d",
+            context_file.name,
+            len(text),
+            MAX_CLEANUP_CONTEXT_CHARS,
+        )
+        text = text[:MAX_CLEANUP_CONTEXT_CHARS].strip()
+    return text
 
 
 def write_gemini_key(env_file: Path, api_key: str) -> None:
@@ -224,6 +258,10 @@ def register(
     settings.translate_mode = initial_mode.value
     pauses = settings.vad_pauses if settings.vad_pauses in (1, 2) else 1
     key_file = env_file or Path.cwd() / ".env"
+    # Several lines do not fit one line of .env, so the context has its own file beside it.
+    context_file = key_file.with_name("cleanup-context.txt")
+    # Replaces any CLEANUP_CONTEXT from the environment or .env, which booth control never writes.
+    settings.cleanup_context = read_cleanup_context(context_file)
     state = OperatorState(
         initial_mode,
         vad_min_silence_ms=settings.vad_min_silence_ms,
@@ -240,6 +278,7 @@ def register(
         body["gemini_key_set"] = bool(settings.gemini_api_key.strip())
         body["gemini_live"] = settings.gemini_live()
         body["youtube_url_set"] = bool(settings.youtube_caption_url.strip())
+        body["cleanup_context"] = settings.cleanup_context
         body["audio_device"] = settings.audio_device_name
         status = capture_status() if capture_status is not None else {}
         body["audio_capturing"] = status.get("capturing")
@@ -404,6 +443,15 @@ def register(
         settings.clean_up_wording = body.clean_up_wording
         state.clean_up_wording = body.clean_up_wording
         await bus.publish(CleanUpWordingEvent(clean_up_wording=body.clean_up_wording))
+        return public_state()
+
+    @app.put("/cleanup-context")
+    async def put_cleanup_context(body: CleanupContextBody) -> dict[str, object]:
+        text = body.text.strip()
+        context_file.parent.mkdir(parents=True, exist_ok=True)
+        context_file.write_text(text, encoding="utf-8")
+        settings.cleanup_context = text
+        await bus.publish(CleanupContextEvent(text=text))
         return public_state()
 
     @app.put("/save-transcript")

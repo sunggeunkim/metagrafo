@@ -14,6 +14,7 @@ from core.settings import Settings
 from features.operator_control.events import (
     CaptionsStateEvent,
     CleanUpWordingEvent,
+    CleanupContextEvent,
     ModeChangedEvent,
     SaveTranscriptEvent,
     WholeSentencesEvent,
@@ -130,6 +131,7 @@ def register(
             "mode": operator.mode.value,
             "whole_sentences": operator.whole_sentences,
             "clean_up_wording": operator.clean_up_wording,
+            "cleanup_context": settings.cleanup_context,
         }
 
     async def on_caption(event: SubtitleEvent) -> None:
@@ -156,6 +158,9 @@ def register(
     async def on_clean_up_wording(event: CleanUpWordingEvent) -> None:
         recorder.setting("clean_up_wording", event.clean_up_wording)
 
+    async def on_cleanup_context(event: CleanupContextEvent) -> None:
+        recorder.setting("cleanup_context", event.text)
+
     @app.get("/transcript")
     async def get_transcript() -> dict[str, object]:
         path = recorder.path
@@ -165,6 +170,7 @@ def register(
     bus.subscribe(ModeChangedEvent, on_mode)
     bus.subscribe(WholeSentencesEvent, on_whole_sentences)
     bus.subscribe(CleanUpWordingEvent, on_clean_up_wording)
+    bus.subscribe(CleanupContextEvent, on_cleanup_context)
     bus.subscribe(SubtitleEvent, on_caption)
     bus.subscribe(SpeechHeardEvent, on_heard)
     bus.subscribe(SaveTranscriptEvent, on_save)

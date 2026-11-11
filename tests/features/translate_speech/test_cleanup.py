@@ -60,3 +60,30 @@ async def test_cleanup_asks_the_text_model_with_the_shown_lines_as_context(monke
         "Keep scripture references and names as spoken",
     ):
         assert asks in instruction
+
+
+async def test_cleanup_reads_the_booth_context_into_its_instructions_on_each_line(monkeypatch) -> None:
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    context = ["Sermon: the problem of evil and suffering. Scripture: Job 1-2."]
+    clean = gemini_cleanup("test-key", model="gemini-test-lite", context=lambda: context[0])
+
+    await clean("A line.", [])
+    first = asked["config"].system_instruction
+    context[0] = "Speaker: Pastor Frank."
+    await clean("Another line.", [])
+    second = asked["config"].system_instruction
+
+    assert "Sermon: the problem of evil and suffering. Scripture: Job 1-2." in first
+    assert "Speaker: Pastor Frank." in second
+    assert "Job 1-2" not in second
+    # Background only: it must never turn up in a caption.
+    assert "never add it to the line" in first
+    assert "Keep scripture references and names as spoken" in first
+
+
+async def test_cleanup_without_context_keeps_the_plain_instructions(monkeypatch) -> None:
+    from features.translate_speech.cleanup import INSTRUCTION
+
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    await gemini_cleanup("test-key", model="gemini-test-lite", context=lambda: "  ")("A line.", [])
+    assert asked["config"].system_instruction == INSTRUCTION

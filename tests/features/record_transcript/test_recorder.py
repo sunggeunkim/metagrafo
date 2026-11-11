@@ -214,6 +214,7 @@ def test_the_file_notes_the_settings_at_the_start_and_each_booth_change(env_file
         client.put("/mode", json={"mode": "en_to_en"})
         client.put("/whole-sentences", json={"whole_sentences": False})
         client.put("/clean-up-wording", json={"clean_up_wording": True})
+        client.put("/cleanup-context", json={"text": "Sermon on Job 1-2."})
 
     [records] = _records(tmp_path)
     assert _without_clock_time(records[0]) == {
@@ -224,12 +225,14 @@ def test_the_file_notes_the_settings_at_the_start_and_each_booth_change(env_file
         "mode": "ko_to_en",
         "whole_sentences": True,
         "clean_up_wording": False,
+        "cleanup_context": "",
     }
     assert [_without_clock_time(r) for r in records[1:]] == [
         {"t_s": 5.0, "kind": "setting", "captions_active": False},
         {"t_s": 5.0, "kind": "setting", "mode": "en_to_en"},
         {"t_s": 5.0, "kind": "setting", "whole_sentences": False},
         {"t_s": 5.0, "kind": "setting", "clean_up_wording": True},
+        {"t_s": 5.0, "kind": "setting", "cleanup_context": "Sermon on Job 1-2."},
     ]
 
 

@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 *.pyc
 .env
+cleanup-context.txt
 metagrafo_job/
 .agents/
 .scratch/
