@@ -163,6 +163,7 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
         "box_width_pct": 100.0,
         "box_height_pct": 20.0,
         "line_count": 3,
+        "one_sentence": True,
     }
 
 

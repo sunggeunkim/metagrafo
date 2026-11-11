@@ -83,6 +83,9 @@
     const POSITIONS = ["pos-top_left", "pos-top_center", "pos-bottom_center"];
     let fontSizeVw = 2.5;
     let lineCount = 3;
+    // On: only the newest sentence, all of its rows, until the next replaces it.
+    // Off: rolling rows, the newest lineCount rows across lines.
+    let oneSentence = true;
     let draftText = null;
     let committed = [];
     let renderRetry = false;
@@ -150,18 +153,23 @@
       }
       const blocks = draftText !== null ? committed.concat(draftText) : committed;
       const rows = [];
-      for (const block of blocks) {
+      for (const block of oneSentence ? blocks.slice(-1) : blocks) {
         rows.push(...measureRows(block));
       }
       while (committed.length > 30) {
         committed.shift();
       }
       linesEl.replaceChildren();
-      for (const row of rows.slice(-lineCount)) {
+      for (const row of oneSentence ? rows : rows.slice(-lineCount)) {
         const p = document.createElement("p");
         p.className = "line";
         p.textContent = row;
         linesEl.appendChild(p);
+      }
+      // A sentence taller than the box would be clipped at the bottom, losing its end;
+      // its first rows go instead, so the end of what was said stays readable.
+      while (oneSentence && linesEl.children.length > 1 && stage.scrollHeight > stage.clientHeight + 1) {
+        linesEl.firstElementChild.remove();
       }
     }
 
@@ -186,6 +194,9 @@
       if (typeof msg.font_size_vw === "number") {
         fontSizeVw = msg.font_size_vw;
         stage.style.fontSize = fontSizeVw + "vw";
+      }
+      if (typeof msg.one_sentence === "boolean") {
+        oneSentence = msg.one_sentence;
       }
       if (typeof msg.line_count === "number" && msg.line_count >= 1) {
         lineCount = Math.round(msg.line_count);
