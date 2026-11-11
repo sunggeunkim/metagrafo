@@ -327,3 +327,37 @@ def test_one_sentence_at_a_time_shows_the_newest_sentence_whole_then_replaces_it
     assert [box["rows"] for box in first] == [1, 1, 1]
     assert " ".join(box["text"] for box in first).split() == LONG_KOREAN.split()
     assert [box["text"] for box in second] == ["Then the next sentence."]
+
+
+def test_one_sentence_taller_than_the_box_keeps_its_end_and_drops_its_start(browser, server) -> None:
+    httpx.put(f"{server}/one-sentence", json={"one_sentence": True}).raise_for_status()
+    # A box about two rows tall, for a sentence that needs three.
+    style = {**DEFAULT_STYLE, "line_count": 3, "box_height_pct": 15.0}
+    httpx.put(f"{server}/overlay-style", json=style).raise_for_status()
+    context = browser.new_context(viewport={"width": 1920, "height": 1080})
+    page = context.new_page()
+    try:
+        clients = httpx.get(f"{server}/health").json()["clients"]
+        page.goto(f"{server}/overlay")
+        deadline = time.monotonic() + 10
+        while httpx.get(f"{server}/health").json()["clients"] <= clients:
+            if time.monotonic() > deadline:
+                raise RuntimeError("overlay did not open /ws")
+            time.sleep(0.05)
+        httpx.post(f"{server}/inject", json={"text": LONG_KOREAN}).raise_for_status()
+        page.wait_for_selector("#stage:not(.hidden) #lines .line", state="attached")
+        boxes = page.evaluate(_BOXES_JS)
+        stage = page.evaluate(
+            "(() => { const r = document.getElementById('stage').getBoundingClientRect();"
+            " return {top: r.top, bottom: r.bottom}; })()"
+        )
+    finally:
+        context.close()
+    words = LONG_KOREAN.split()
+    shown = " ".join(box["text"] for box in boxes).split()
+    assert 0 < len(boxes) < 3
+    # The end of the sentence is what is shown; its start is what leaves.
+    assert shown == words[len(words) - len(shown) :]
+    for box in boxes:
+        assert box["top"] >= stage["top"] - 1
+        assert box["bottom"] <= stage["bottom"] + 1

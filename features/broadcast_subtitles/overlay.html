@@ -166,6 +166,11 @@
         p.textContent = row;
         linesEl.appendChild(p);
       }
+      // A sentence taller than the box would be clipped at the bottom, losing its end;
+      // its first rows go instead, so the end of what was said stays readable.
+      while (oneSentence && linesEl.children.length > 1 && stage.scrollHeight > stage.clientHeight + 1) {
+        linesEl.firstElementChild.remove();
+      }
     }
 
     function showDraft(text) {
