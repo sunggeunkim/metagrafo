@@ -144,8 +144,8 @@
   <input id="inset-v" type="number" min="0" max="20" step="0.5" />
   <label for="inset-h">Horizontal inset (%)</label>
   <input id="inset-h" type="number" min="0" max="20" step="0.5" />
-  <p class="hint"><strong>One sentence at a time</strong> (default on) shows only the newest finished sentence, all of it at once, and keeps it up until the next sentence replaces it, so nothing scrolls. Untick it for rolling rows: <strong>Lines on screen</strong> (1–6, default 3) is then how many text rows stay visible, and the oldest row leaves when the next row starts. This computer keeps the choice for the next time.</p>
-  <label class="check"><input id="one-sentence" type="checkbox" /> One sentence at a time</label>
+  <p class="hint"><strong>Two lines at a time</strong> (default on) shows whole finished sentences, up to two lines on screen, so nothing scrolls. A sentence that fits joins the one on screen; one that doesn't clears the screen and starts afresh. A sentence longer than two lines still shows whole, alone. Untick it for rolling rows: <strong>Lines on screen</strong> (1–6, default 3) is then how many text rows stay visible, and the oldest row leaves when the next row starts. This computer keeps the choice for the next time.</p>
+  <label class="check"><input id="one-sentence" type="checkbox" /> Two lines at a time</label>
   <label for="line-count">Lines on screen</label>
   <input id="line-count" type="number" min="1" max="6" step="1" />
   <button id="style-apply" class="mode">Apply overlay</button>
@@ -294,7 +294,7 @@
         " · whole sentences " + (s.whole_sentences ? "on" : "off") +
         " · clean up wording " + (s.clean_up_wording ? "on" : "off") +
         " · save transcript " + (s.save_transcript ? "on" : "off") +
-        " · " + (s.one_sentence ? "one sentence at a time" : s.line_count + " lines") +
+        " · " + (s.one_sentence ? "two lines at a time" : s.line_count + " lines") +
         " · " + s.position +
         " · " + s.font_size_vw + " vw" +
         " · box " + s.box_width_pct + "×" + s.box_height_pct + " %" +
@@ -326,7 +326,7 @@
       document.getElementById("inset-h").value = s.inset_horizontal_pct;
       document.getElementById("line-count").value = s.line_count;
       document.getElementById("one-sentence").checked = s.one_sentence;
-      // Rows only roll, so their count only matters with one sentence at a time off.
+      // Rows only roll, so their count only matters with two lines at a time off.
       document.getElementById("line-count").disabled = s.one_sentence;
     }
     document.getElementById("captions-toggle").onclick = async () => {
