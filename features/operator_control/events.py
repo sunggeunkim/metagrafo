@@ -49,6 +49,13 @@ class WholeSentencesEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class OneSentenceEvent:
+    """The overlay shows only the newest sentence, whole; off keeps rolling rows."""
+
+    one_sentence: bool
+
+
+@dataclass(frozen=True, slots=True)
 class CleanUpWordingEvent:
     """A text model rewrites each finished Gemini live line. Takes effect at the next line."""
 

@@ -19,6 +19,7 @@ from features.operator_control.events import (
     GeminiKeyChangedEvent,
     KoreanStyleEvent,
     ModeChangedEvent,
+    OneSentenceEvent,
     SaveTranscriptEvent,
     OverlayPosition,
     OverlayStyleEvent,
@@ -52,6 +53,7 @@ class OperatorState:
         whole_sentences: bool = True,
         clean_up_wording: bool = True,
         save_transcript: bool = False,
+        one_sentence: bool = True,
         overlay_position: OverlayPosition = OverlayPosition.TOP_LEFT,
         font_size_vw: float = 2.5,
         inset_vertical_pct: float = 1.0,
@@ -68,6 +70,7 @@ class OperatorState:
         self.whole_sentences = whole_sentences
         self.clean_up_wording = clean_up_wording
         self.save_transcript = save_transcript
+        self.one_sentence = one_sentence
         self.overlay_position = overlay_position
         self.font_size_vw = font_size_vw
         self.inset_vertical_pct = inset_vertical_pct
@@ -89,6 +92,7 @@ class OperatorState:
             "whole_sentences": self.whole_sentences,
             "clean_up_wording": self.clean_up_wording,
             "save_transcript": self.save_transcript,
+            "one_sentence": self.one_sentence,
             "position": self.overlay_position.value,
             "font_size_vw": self.font_size_vw,
             "inset_vertical_pct": self.inset_vertical_pct,
@@ -125,6 +129,10 @@ class ConditionOnPreviousTextBody(BaseModel):
 
 class WholeSentencesBody(BaseModel):
     whole_sentences: bool
+
+
+class OneSentenceBody(BaseModel):
+    one_sentence: bool
 
 
 class CleanUpWordingBody(BaseModel):
@@ -287,6 +295,7 @@ def register(
         whole_sentences=settings.whole_sentences,
         clean_up_wording=settings.clean_up_wording,
         save_transcript=settings.save_transcript,
+        one_sentence=settings.one_sentence,
     )
     app.state.operator = state
 
@@ -453,6 +462,15 @@ def register(
         settings.whole_sentences = body.whole_sentences
         state.whole_sentences = body.whole_sentences
         await bus.publish(WholeSentencesEvent(whole_sentences=body.whole_sentences))
+        return public_state()
+
+    @app.put("/one-sentence")
+    async def put_one_sentence(body: OneSentenceBody) -> dict[str, object]:
+        # Kept in .env so the booth's choice survives a restart.
+        write_env_values(key_file, {"ONE_SENTENCE": "true" if body.one_sentence else "false"})
+        settings.one_sentence = body.one_sentence
+        state.one_sentence = body.one_sentence
+        await bus.publish(OneSentenceEvent(one_sentence=body.one_sentence))
         return public_state()
 
     @app.put("/clean-up-wording")

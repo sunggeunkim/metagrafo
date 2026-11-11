@@ -11,6 +11,7 @@ from core.event_bus import EventBus
 from features.operator_control.events import (
     CaptionsStateEvent,
     ModeChangedEvent,
+    OneSentenceEvent,
     OverlayStyleEvent,
 )
 from features.translate_speech.events import SubtitleEvent
@@ -26,6 +27,7 @@ class SubtitleHub:
         min_on_screen_s: float = 2.5,
         chars_per_s: float = 13.0,
         max_behind_s: float = 5.0,
+        one_sentence: bool = True,
     ) -> None:
         self._clients: set[WebSocket] = set()
         self._min_on_screen_s = min_on_screen_s
@@ -35,6 +37,8 @@ class SubtitleHub:
         self._waiting: deque[dict[str, object]] = deque()
         self._shown_until = 0.0
         self._pacer: asyncio.Task[None] | None = None
+        # Sent with the style, so an overlay learns it on connect and on every change.
+        self._one_sentence = one_sentence
         # Captions always start on; see Settings.
         self._captions_active = True
         self._overlay_style = {
@@ -51,6 +55,7 @@ class SubtitleHub:
         bus.subscribe(CaptionsStateEvent, self._on_captions)
         bus.subscribe(ModeChangedEvent, self._on_mode)
         bus.subscribe(OverlayStyleEvent, self._on_overlay_style)
+        bus.subscribe(OneSentenceEvent, self._on_one_sentence)
 
     @property
     def client_count(self) -> int:
@@ -59,7 +64,7 @@ class SubtitleHub:
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
         self._clients.add(websocket)
-        await websocket.send_json(self._overlay_style)
+        await websocket.send_json(self._style_message())
         # Lines stay up until replaced, so an overlay that reconnects after captions
         # stopped must be told, or it keeps showing its old lines.
         await websocket.send_json({"type": "captions_state", "is_active": self._captions_active})
@@ -147,7 +152,14 @@ class SubtitleHub:
             "box_height_pct": event.box_height_pct,
             "line_count": event.line_count,
         }
-        await self._broadcast(self._overlay_style)
+        await self._broadcast(self._style_message())
+
+    async def _on_one_sentence(self, event: OneSentenceEvent) -> None:
+        self._one_sentence = event.one_sentence
+        await self._broadcast(self._style_message())
+
+    def _style_message(self) -> dict[str, object]:
+        return {**self._overlay_style, "one_sentence": self._one_sentence}
 
     async def _on_mode(self, event: ModeChangedEvent) -> None:
         await self._broadcast(

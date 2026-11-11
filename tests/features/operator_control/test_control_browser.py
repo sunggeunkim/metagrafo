@@ -11,6 +11,7 @@ import threading
 import time
 from collections.abc import Iterator
 
+import httpx
 import pytest
 import uvicorn
 
@@ -189,5 +190,24 @@ def test_korean_style_box_starts_at_the_default_saves_turns_off_and_resets(brows
         page.click("#korean-style-reset")
         page.wait_for_selector("#korean-style-status:has-text('Default')")
         assert page.input_value("#korean-style") == KOREAN_STYLE_DEFAULT
+    finally:
+        page.close()
+
+
+def test_one_sentence_checkbox_starts_on_and_lines_on_screen_waits_for_it_off(browser, control_saving) -> None:
+    url, _folder = control_saving
+    page = browser.new_page()
+    try:
+        page.goto(f"{url}/control")
+        page.wait_for_function("document.getElementById('one-sentence').checked")
+        assert page.is_disabled("#line-count")
+
+        page.uncheck("#one-sentence")
+        page.wait_for_function("!document.getElementById('line-count').disabled")
+        assert httpx.get(f"{url}/mode").json()["one_sentence"] is False
+
+        page.reload()
+        page.wait_for_function("!document.getElementById('line-count').disabled")
+        assert not page.is_checked("#one-sentence")
     finally:
         page.close()

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # replacing any KOREAN_STYLE value from the environment. Empty means no Korean style rule.
     korean_style: str = KOREAN_STYLE_DEFAULT
     save_transcript: bool = False
+    # The overlay shows only the newest sentence, whole, until the next replaces it.
+    one_sentence: bool = True
     vad_max_utterance_s: float = 12
     vad_min_speech_ms: int = 250
     whisper_model: str | None = "large-v3"

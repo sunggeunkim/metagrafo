@@ -94,9 +94,12 @@ def browser() -> Iterator[object]:
 
 
 def render_caption(
-    browser: object, server: str, width: int, text: str, **style: object
+    browser: object, server: str, width: int, text: str, *, one_sentence: bool = False, **style: object
 ) -> list[dict]:
-    """Open /overlay at width x 16:9, set the style, inject one caption, return its boxes."""
+    """Open /overlay at width x 16:9, set the style, inject one caption, return its boxes.
+
+    Rolling rows by default, since these tests are about how one line is cut into rows.
+    """
     # A context per caption, so closing it also closes its /ws and keep-alive sockets.
     context = browser.new_context(viewport={"width": width, "height": width * 9 // 16})
     page = context.new_page()
@@ -108,6 +111,7 @@ def render_caption(
             if time.monotonic() > deadline:
                 raise RuntimeError("overlay did not open /ws")
             time.sleep(0.05)
+        httpx.put(f"{server}/one-sentence", json={"one_sentence": one_sentence}).raise_for_status()
         httpx.put(f"{server}/overlay-style", json={**DEFAULT_STYLE, **style}).raise_for_status()
         httpx.post(f"{server}/inject", json={"text": text}).raise_for_status()
         # The overlay shows the stage when a subtitle arrives, after rendering its rows.
@@ -293,3 +297,33 @@ def test_a_row_starts_at_its_first_word_when_the_wrap_also_reports_a_rect_on_the
         "것입니다.",
     ]
     assert [box["rows"] for box in boxes] == [1, 1]
+
+
+def test_one_sentence_at_a_time_shows_the_newest_sentence_whole_then_replaces_it(browser, server) -> None:
+    httpx.put(f"{server}/one-sentence", json={"one_sentence": True}).raise_for_status()
+    # Fewer rows than the sentence needs: in this mode the setting must not cut it.
+    httpx.put(f"{server}/overlay-style", json={**DEFAULT_STYLE, "line_count": 2}).raise_for_status()
+    context = browser.new_context(viewport={"width": 1920, "height": 1080})
+    page = context.new_page()
+    try:
+        clients = httpx.get(f"{server}/health").json()["clients"]
+        page.goto(f"{server}/overlay")
+        deadline = time.monotonic() + 10
+        while httpx.get(f"{server}/health").json()["clients"] <= clients:
+            if time.monotonic() > deadline:
+                raise RuntimeError("overlay did not open /ws")
+            time.sleep(0.05)
+        httpx.post(f"{server}/inject", json={"text": LONG_KOREAN}).raise_for_status()
+        page.wait_for_selector("#stage:not(.hidden) #lines .line", state="attached")
+        first = page.evaluate(_BOXES_JS)
+        httpx.post(f"{server}/inject", json={"text": "Then the next sentence."}).raise_for_status()
+        page.wait_for_function(
+            "document.getElementById('lines').textContent.includes('Then the next sentence.')"
+        )
+        second = page.evaluate(_BOXES_JS)
+    finally:
+        context.close()
+    assert len(first) == 3
+    assert [box["rows"] for box in first] == [1, 1, 1]
+    assert " ".join(box["text"] for box in first).split() == LONG_KOREAN.split()
+    assert [box["text"] for box in second] == ["Then the next sentence."]

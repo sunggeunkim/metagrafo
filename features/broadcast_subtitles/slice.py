@@ -22,7 +22,7 @@ class InjectBody(BaseModel):
 
 
 def register(app: FastAPI, bus: EventBus, settings: Settings) -> SubtitleHub:
-    hub = SubtitleHub(bus)
+    hub = SubtitleHub(bus, one_sentence=settings.one_sentence)
     app.state.hub = hub
 
     @app.get("/overlay")
