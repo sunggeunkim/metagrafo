@@ -176,7 +176,7 @@ def test_korean_caption_breaks_only_at_spaces(browser, server, width) -> None:
     assert shown == words[len(words) - len(shown) :]
 
 
-def test_a_paced_line_stays_up_past_the_hide_timer_until_it_has_been_read(browser, server) -> None:
+def test_a_caption_stays_up_through_a_long_pause_until_captions_stop(browser, server) -> None:
     context = browser.new_context(viewport={"width": 1920, "height": 1080})
     page = context.new_page()
     sockets: list[object] = []
@@ -190,13 +190,16 @@ def test_a_paced_line_stays_up_past_the_hide_timer_until_it_has_been_read(browse
             if time.monotonic() > deadline:
                 raise RuntimeError("overlay did not open /ws")
             page.wait_for_timeout(50)
-        line = {"type": "subtitle", "text": "A long line.", "provisional": False, "min_on_screen_s": 9.2}
+        line = {"type": "subtitle", "text": "A long sentence is coming.", "provisional": False}
         sockets[0].send(json.dumps(line))
         page.wait_for_selector("#stage:not(.hidden) #lines .line", state="attached")
-        page.clock.run_for(8_500)
+        # The speaker is mid-sentence for a minute; the last line must not vanish meanwhile.
+        page.clock.run_for(60_000)
         assert page.locator("#stage.hidden").count() == 0
-        page.clock.run_for(1_000)
-        assert page.locator("#stage.hidden").count() == 1
+        assert page.locator("#lines .line").all_text_contents() == ["A long sentence is coming."]
+        sockets[0].send(json.dumps({"type": "captions_state", "is_active": False}))
+        page.wait_for_selector("#stage.hidden", state="attached")
+        assert page.locator("#lines .line").count() == 0
     finally:
         context.close()
 
