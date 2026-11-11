@@ -122,7 +122,7 @@ def render_caption(
 
 
 @pytest.mark.parametrize("width", [1280, 1920])
-@pytest.mark.parametrize("position", ["top_left", "top_center", "bottom_center"])
+@pytest.mark.parametrize("position", ["top_left", "top_center", "bottom_left", "bottom_center"])
 def test_short_caption_renders_in_each_position(browser, server, width, position) -> None:
     height = width * 9 // 16
     boxes = render_caption(browser, server, width, "Hello, everyone.", position=position)
@@ -137,6 +137,9 @@ def test_short_caption_renders_in_each_position(browser, server, width, position
     elif position == "top_center":
         assert middle == pytest.approx(width / 2, abs=2)
         assert box["top"] < height * 0.05
+    elif position == "bottom_left":
+        assert box["left"] == pytest.approx(width * 0.01, abs=2)
+        assert box["bottom"] > height * 0.95
     else:
         assert middle == pytest.approx(width / 2, abs=2)
         assert box["bottom"] > height * 0.95

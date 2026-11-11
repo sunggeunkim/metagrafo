@@ -23,6 +23,7 @@ class ModeChangedEvent:
 class OverlayPosition(StrEnum):
     TOP_LEFT = "top_left"
     TOP_CENTER = "top_center"
+    BOTTOM_LEFT = "bottom_left"
     BOTTOM_CENTER = "bottom_center"
 
 
