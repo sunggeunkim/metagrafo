@@ -10,7 +10,11 @@ INSTRUCTION = (
     '"Clean up:": remove disfluencies and false starts, lightly fix grammar, and keep the meaning. '
     "Add nothing. Keep scripture references and names as spoken. Keep the line's language. "
     'The lines under "Shown before:" are already on screen; use them only to understand the '
-    "line and never repeat them. Reply with the cleaned line only."
+    "line and never repeat them. Reply with the cleaned line only.\n\n"
+    "When the line is Korean, write it as a sermon is spoken from the pulpit: formal "
+    "합니다체 endings (~합니다, ~입니까, ~하십시오), never 해요체 or 반말, and honorifics for "
+    "God and Jesus (하나님께서 ~하셨습니다, 예수님께서). Changing the endings this way is "
+    "part of cleaning up; still keep the meaning and add nothing."
 )
 
 
@@ -24,8 +28,9 @@ def instruction_with(context: str) -> str:
     if not context.strip():
         return INSTRUCTION
     return (
-        f"{INSTRUCTION}\n\nAbout this service, from the booth. Use it only to get names, "
-        f"scripture references and terms right; never add it to the line:\n{context.strip()}"
+        f"{INSTRUCTION}\n\nNotes about this service, from the booth. Follow any instructions "
+        "there about wording or style. Use the rest only to get names, scripture references "
+        f"and terms right; never add it to the line:\n{context.strip()}"
     )
 
 
