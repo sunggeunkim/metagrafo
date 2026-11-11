@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from core.settings import KOREAN_STYLE_DEFAULT
+from core.settings import GLOSSARY_DEFAULT, KOREAN_STYLE_DEFAULT
 from features.translate_speech.gemini_live import Cleanup
 
 INSTRUCTION = (
@@ -11,22 +11,38 @@ INSTRUCTION = (
     '"Clean up:": remove disfluencies and false starts, lightly fix grammar, and keep the meaning. '
     "Add nothing. Keep scripture references and names as spoken. Keep the line's language. "
     'The lines under "Shown before:" are already on screen; use them only to understand the '
-    "line and never repeat them. Reply with the cleaned line only."
+    "line and never repeat them. Reply with the cleaned line only.\n\n"
+    'Under "Said:" is what the speaker actually said around this line, in the language they '
+    "spoke; it may include words from the lines just before or after. Use it to correct words "
+    "the translation got wrong, such as a wrong term or a meaning turned around, but never add "
+    "what belongs to another line."
 )
 
 
-def prompt_for(line: str, shown: list[str]) -> str:
-    before = "".join(f"{text}\n" for text in shown)
-    return f"Shown before:\n{before}\nClean up:\n{line}" if shown else f"Clean up:\n{line}"
+def prompt_for(line: str, shown: list[str], said: str = "") -> str:
+    parts = []
+    if shown:
+        parts.append("Shown before:\n" + "".join(f"{text}\n" for text in shown))
+    if said.strip():
+        parts.append(f"Said:\n{said.strip()}\n")
+    parts.append(f"Clean up:\n{line}")
+    return "\n".join(parts)
 
 
-def instruction_with(context: str, korean_style: str = KOREAN_STYLE_DEFAULT) -> str:
-    """The instruction, plus the booth's Korean style and its notes on this service, when set."""
+def instruction_with(
+    context: str, korean_style: str = KOREAN_STYLE_DEFAULT, glossary: str = GLOSSARY_DEFAULT
+) -> str:
+    """The instruction, plus the booth's Korean style, glossary and notes on this service, when set."""
     instruction = INSTRUCTION
     if korean_style.strip():
         instruction += (
             "\n\nWhen the line is Korean, follow this style. Changing the endings this way is part "
             f"of cleaning up; still keep the meaning and add nothing:\n{korean_style.strip()}"
+        )
+    if glossary.strip():
+        instruction += (
+            "\n\nGlossary from the booth. When one of these terms is meant, use the wording given "
+            f"here, whichever way the line was translated:\n{glossary.strip()}"
         )
     if context.strip():
         instruction += (
@@ -42,11 +58,12 @@ def gemini_cleanup(
     model: str,
     context: Callable[[], str] | None = None,
     korean_style: Callable[[], str] | None = None,
+    glossary: Callable[[], str] | None = None,
 ) -> Cleanup:
     """A fast Gemini text model (`CLEANUP_MODEL`) that rewrites one finished caption line.
 
-    `context` and `korean_style` are read for every line, so text saved on booth control
-    applies from the next one. Without `korean_style`, Korean lines get the default style.
+    `context`, `korean_style` and `glossary` are read for every line, so text saved on booth
+    control applies from the next one. Without `korean_style` or `glossary`, the defaults apply.
     """
     from google import genai
     from google.genai import types
@@ -54,17 +71,18 @@ def gemini_cleanup(
     # Pinned like the live socket: google-genai 3.x changed the default API version.
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))
 
-    async def clean(line: str, shown: list[str]) -> str:
+    async def clean(line: str, shown: list[str], said: str = "") -> str:
         config = types.GenerateContentConfig(
             system_instruction=instruction_with(
                 context() if context is not None else "",
                 korean_style() if korean_style is not None else KOREAN_STYLE_DEFAULT,
+                glossary() if glossary is not None else GLOSSARY_DEFAULT,
             ),
             temperature=0.0,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
         response = await client.aio.models.generate_content(
-            model=model, contents=prompt_for(line, shown), config=config
+            model=model, contents=prompt_for(line, shown, said), config=config
         )
         return response.text or ""
 

@@ -211,3 +211,32 @@ def test_one_sentence_checkbox_starts_on_and_lines_on_screen_waits_for_it_off(br
         assert not page.is_checked("#one-sentence")
     finally:
         page.close()
+
+
+def test_glossary_box_starts_at_the_church_default_saves_turns_off_and_resets(browser, control_saving) -> None:
+    from core.settings import GLOSSARY_DEFAULT
+
+    url, _folder = control_saving
+    mine = "Nirvana → 열반"
+    page = browser.new_page()
+    try:
+        page.goto(f"{url}/control")
+        page.wait_for_selector("#glossary-status:has-text('Default')")
+        assert page.input_value("#glossary") == GLOSSARY_DEFAULT
+
+        page.fill("#glossary", mine)
+        page.click("#glossary-save")
+        page.wait_for_selector("#glossary-status:has-text('Saved')")
+        page.reload()
+        page.wait_for_function("document.getElementById('glossary').value.includes('열반')")
+        assert page.input_value("#glossary") == mine
+
+        page.fill("#glossary", "")
+        page.click("#glossary-save")
+        page.wait_for_selector("#glossary-status:has-text('Off')")
+
+        page.click("#glossary-reset")
+        page.wait_for_selector("#glossary-status:has-text('Default')")
+        assert page.input_value("#glossary") == GLOSSARY_DEFAULT
+    finally:
+        page.close()

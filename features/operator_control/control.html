@@ -114,6 +114,14 @@
     <button id="korean-style-reset" class="off">Reset to default</button>
   </div>
   <p id="korean-style-status" class="hint"></p>
+  <h2>Glossary</h2>
+  <p class="hint">Gemini only, used by Clean up wording. Church words the text model keeps to in every service, one group per line, for example <em>God → 하나님 (never 신)</em>. It works both ways, for Korean and English captions. The default holds common church terms and 개역개정 Bible book names. Add a term when the same mistake keeps coming back across services; one sermon's names and topics belong in Additional context instead. <strong>Save glossary</strong> keeps your list (empty turns it off), and <strong>Reset to default</strong> brings back the church terms. Up to 3000 characters. Starts with the next cleaned line, and this computer keeps it for the next time.</p>
+  <textarea id="glossary" rows="8" maxlength="3000"></textarea>
+  <div>
+    <button id="glossary-save" class="mode">Save glossary</button>
+    <button id="glossary-reset" class="off">Reset to default</button>
+  </div>
+  <p id="glossary-status" class="hint"></p>
   <h2>Save transcript</h2>
   <p class="hint">For looking at the captions afterwards, not for viewers. <strong>On</strong> writes each finished caption to a file in the <strong>transcripts</strong> folder, with the time it was shown and how long after the speech began. With Gemini it also writes the Korean Gemini heard, each line as it read before Clean up wording, and every booth change. Each time you turn it on, a new file starts. Off by default; this computer keeps the choice for the next time.</p>
   <label class="check"><input id="save-transcript" type="checkbox" /> Save transcript</label>
@@ -177,26 +185,43 @@
         alert(typeof body.detail === "string" ? body.detail : "Context not saved. Keep it under 2000 characters.");
       }
     }
-    function showKoreanStyle(text, defaultText) {
-      document.getElementById("korean-style").value = text;
-      document.getElementById("korean-style-status").textContent =
-        text === defaultText
-          ? "Default: formal sermon language."
-          : text
-            ? "Saved. Clean up wording uses it from the next Korean line."
-            : "Off: Korean lines keep the wording they were translated with.";
+    // Boxes that start at a default: Save keeps the text (empty turns it off), Reset brings
+    // the default back. Each names its box, endpoint, state field and status wording.
+    const BOOTH_TEXTS = {
+      koreanStyle: {
+        box: "korean-style", url: "/korean-style", field: "korean_style",
+        isDefault: "Default: formal sermon language.",
+        saved: "Saved. Clean up wording uses it from the next Korean line.",
+        off: "Off: Korean lines keep the wording they were translated with.",
+        tooLong: "Style not saved. Keep it under 1000 characters.",
+      },
+      glossary: {
+        box: "glossary", url: "/glossary", field: "glossary",
+        isDefault: "Default: church terms for any service.",
+        saved: "Saved. Clean up wording uses it from the next line.",
+        off: "Off: no glossary.",
+        tooLong: "Glossary not saved. Keep it under 3000 characters.",
+      },
+    };
+    function showBoothText(kind, s) {
+      const t = BOOTH_TEXTS[kind];
+      const text = s[t.field];
+      document.getElementById(t.box).value = text;
+      document.getElementById(t.box + "-status").textContent =
+        text === s[t.field + "_default"] ? t.isDefault : text ? t.saved : t.off;
     }
-    async function sendKoreanStyle(method, text) {
-      const response = await fetch("/korean-style", {
+    async function sendBoothText(kind, method, text) {
+      const t = BOOTH_TEXTS[kind];
+      const response = await fetch(t.url, {
         method,
         headers: { "Content-Type": "application/json" },
         body: method === "PUT" ? JSON.stringify({ text }) : undefined,
       });
       const body = await response.json();
       if (response.ok) {
-        showKoreanStyle(body.korean_style, body.korean_style_default);
+        showBoothText(kind, body);
       } else {
-        alert(typeof body.detail === "string" ? body.detail : "Style not saved. Keep it under 1000 characters.");
+        alert(typeof body.detail === "string" ? body.detail : t.tooLong);
       }
     }
     async function refreshTranscript() {
@@ -429,9 +454,12 @@
     document.getElementById("cleanup-context-save").onclick = () =>
       saveCleanupContext(document.getElementById("cleanup-context").value);
     document.getElementById("cleanup-context-clear").onclick = () => saveCleanupContext("");
-    document.getElementById("korean-style-save").onclick = () =>
-      sendKoreanStyle("PUT", document.getElementById("korean-style").value);
-    document.getElementById("korean-style-reset").onclick = () => sendKoreanStyle("DELETE");
+    for (const kind of Object.keys(BOOTH_TEXTS)) {
+      const box = BOOTH_TEXTS[kind].box;
+      document.getElementById(box + "-save").onclick = () =>
+        sendBoothText(kind, "PUT", document.getElementById(box).value);
+      document.getElementById(box + "-reset").onclick = () => sendBoothText(kind, "DELETE");
+    }
     document.getElementById("one-sentence").onchange = async (e) => {
       await fetch("/one-sentence", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ one_sentence: e.target.checked }) });
       refresh();
@@ -516,7 +544,8 @@
     // Filled once on load, not on every refresh, so text being typed is never overwritten.
     fetch("/mode").then((r) => r.json()).then((s) => {
       showCleanupContext(s.cleanup_context);
-      showKoreanStyle(s.korean_style, s.korean_style_default);
+      showBoothText("koreanStyle", s);
+      showBoothText("glossary", s);
     });
     // Only the YouTube counts and capture status poll; a full refresh would overwrite numbers being typed.
     const pollTimers = [setInterval(refreshYouTube, 5000), setInterval(refreshAudioStatus, 5000)];

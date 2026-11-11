@@ -85,7 +85,9 @@ async def test_cleanup_without_context_keeps_the_plain_instructions(monkeypatch)
     from features.translate_speech.cleanup import INSTRUCTION
 
     _built, asked = _record_client(monkeypatch, "Cleaned.")
-    clean = gemini_cleanup("test-key", model="gemini-test-lite", context=lambda: "  ", korean_style=lambda: "")
+    clean = gemini_cleanup(
+        "test-key", model="gemini-test-lite", context=lambda: "  ", korean_style=lambda: "", glossary=lambda: ""
+    )
     await clean("A line.", [])
     assert asked["config"].system_instruction == INSTRUCTION
 
@@ -126,3 +128,52 @@ async def test_an_empty_korean_style_adds_no_korean_rule(monkeypatch) -> None:
     instruction = asked["config"].system_instruction
     assert "When the line is Korean" not in instruction
     assert "합니다체" not in instruction
+
+
+async def test_cleanup_reads_what_the_speaker_said_to_fix_a_mistranslated_word(monkeypatch) -> None:
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    clean = gemini_cleanup("test-key", model="gemini-test-lite")
+    await clean(
+        "그래서 지난 몇 주 동안 저희는 동성애 문제에 대해 다루고 있었어요.",
+        ["새로운 설교 시리즈를 시작했습니다."],
+        "And so over the past couple weeks we have been going over the issue of suffering.",
+    )
+    assert asked["contents"] == (
+        "Shown before:\n"
+        "새로운 설교 시리즈를 시작했습니다.\n"
+        "\n"
+        "Said:\n"
+        "And so over the past couple weeks we have been going over the issue of suffering.\n"
+        "\n"
+        "Clean up:\n"
+        "그래서 지난 몇 주 동안 저희는 동성애 문제에 대해 다루고 있었어요."
+    )
+    instruction = asked["config"].system_instruction
+    assert 'Under "Said:"' in instruction
+    assert "correct words the translation got wrong" in instruction
+
+
+async def test_the_default_glossary_goes_with_every_line(monkeypatch) -> None:
+    from core.settings import GLOSSARY_DEFAULT
+
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    await gemini_cleanup("test-key", model="gemini-test-lite")("A line.", [])
+    instruction = asked["config"].system_instruction
+    assert GLOSSARY_DEFAULT in instruction
+    for term in ("하나님", "말씀", "성도 여러분", "개역개정"):
+        assert term in GLOSSARY_DEFAULT
+    # Only vocabulary for any service: one sermon's terms go in its Additional context.
+    for term in ("suffering", "nothingness", "공(空)"):
+        assert term not in GLOSSARY_DEFAULT
+
+
+async def test_the_booth_glossary_replaces_the_default_and_empty_means_none(monkeypatch) -> None:
+    from core.settings import GLOSSARY_DEFAULT
+
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    mine = "Nirvana → 열반"
+    await gemini_cleanup("test-key", model="gemini-test-lite", glossary=lambda: mine)("A line.", [])
+    assert mine in asked["config"].system_instruction
+    assert GLOSSARY_DEFAULT not in asked["config"].system_instruction
+    await gemini_cleanup("test-key", model="gemini-test-lite", glossary=lambda: " ")("A line.", [])
+    assert "Glossary" not in asked["config"].system_instruction

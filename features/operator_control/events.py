@@ -77,6 +77,13 @@ class KoreanStyleEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class GlossaryEvent:
+    """Church terms cleanup keeps to; empty means no glossary. From the next cleaned line."""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class SaveTranscriptEvent:
     """Write each caption, with its timing, to a file for later analysis. On starts a new file."""
 

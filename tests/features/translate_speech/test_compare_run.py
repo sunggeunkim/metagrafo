@@ -89,7 +89,7 @@ def _rows(out: Path) -> list[str]:
     return [line for line in out.read_text(encoding="utf-8").splitlines() if line.startswith("| ")][2:]
 
 
-async def _cleaned(line: str, _shown: list[str]) -> str:
+async def _cleaned(line: str, _shown: list[str], _said: str) -> str:
     return line.upper()
 
 

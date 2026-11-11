@@ -552,7 +552,7 @@ async def test_clean_up_wording_shows_the_cleaned_line() -> None:
     bus = EventBus()
     seen = _collect(bus)
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         return "Paul says nothing can separate us from the love of God."
 
     translator = GeminiLiveTranslator(
@@ -576,7 +576,7 @@ async def test_clean_up_wording_gives_the_model_the_last_three_shown_lines() -> 
     seen = _collect(bus)
     asked: list[tuple[str, list[str]]] = []
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         asked.append((line, context))
         return line.upper()
 
@@ -611,7 +611,7 @@ async def test_a_slow_cleanup_shows_the_line_as_heard_and_logs_why(caplog) -> No
     bus = EventBus()
     seen = _collect(bus)
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         await asyncio.sleep(5)
         return "Too late."
 
@@ -636,7 +636,7 @@ async def test_a_failed_cleanup_shows_the_line_as_heard_and_logs_why_without_the
     bus = EventBus()
     seen = _collect(bus)
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         raise RuntimeError("429 quota exhausted for key secret-key-7")
 
     translator = GeminiLiveTranslator(
@@ -662,7 +662,7 @@ async def test_cleaned_lines_show_in_the_order_they_were_spoken() -> None:
     seen = _collect(bus)
     first_may_finish = asyncio.Event()
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         if line.startswith("Today"):
             await first_may_finish.wait()
         return line.upper()
@@ -697,7 +697,7 @@ async def test_captions_off_drops_a_line_still_being_cleaned_and_stops_its_call(
     first_may_finish = asyncio.Event()
     stopped: list[str] = []
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         if line.startswith("Today"):
             try:
                 await first_may_finish.wait()
@@ -731,7 +731,7 @@ async def test_switching_clean_up_wording_off_shows_the_next_line_as_heard_after
     seen = _collect(bus)
     first_may_finish = asyncio.Event()
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         await first_may_finish.wait()
         return line.upper()
 
@@ -761,7 +761,7 @@ async def test_clean_up_wording_leaves_lines_alone_while_whole_sentences_is_off(
     seen = _collect(bus)
     asked: list[str] = []
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         asked.append(line)
         return line.upper()
 
@@ -804,7 +804,7 @@ async def test_a_line_cleaned_across_a_mode_change_keeps_the_mode_it_was_spoken_
     seen = _collect(bus)
     first_may_finish = asyncio.Event()
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         await first_may_finish.wait()
         return line.upper()
 
@@ -828,7 +828,7 @@ async def test_an_empty_cleanup_reply_shows_the_line_as_heard(caplog) -> None:
     bus = EventBus()
     seen = _collect(bus)
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         return "  "
 
     translator = GeminiLiveTranslator(
@@ -850,7 +850,7 @@ async def test_a_growing_line_waits_for_the_line_still_being_cleaned_before_it()
     seen = _collect(bus)
     first_may_finish = asyncio.Event()
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         await first_may_finish.wait()
         return line.upper()
 
@@ -906,7 +906,7 @@ async def test_a_line_cleaned_across_whole_sentences_going_off_is_still_paced() 
     seen = _collect(bus)
     first_may_finish = asyncio.Event()
 
-    async def cleanup(line: str, context: list[str]) -> str:
+    async def cleanup(line: str, context: list[str], _said: str) -> str:
         await first_may_finish.wait()
         return line.upper()
 
@@ -925,3 +925,32 @@ async def test_a_line_cleaned_across_whole_sentences_going_off_is_still_paced() 
     assert [(e.text, e.paced) for e in seen][:1] == [
         ("TODAY WE READ FROM THE LETTER TO THE ROMANS.", True)
     ]
+
+
+async def test_cleanup_gets_what_the_speaker_said_around_the_line() -> None:
+    bus = EventBus()
+    _collect(bus)
+    asked: list[tuple[str, str]] = []
+
+    async def cleanup(line: str, _context: list[str], said: str) -> str:
+        asked.append((line, said))
+        return line
+
+    now = [0.0]
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+        clock=lambda: now[0],
+    )
+    await translator.apply_heard("Words from long before this line.")
+    now[0] = 20.0
+    await translator.apply_heard(" Even in Buddhism,")
+    now[0] = 21.0
+    await translator.apply_heard(" the goal is nothingness.")
+    now[0] = 22.0
+    await translator.apply_transcript("심지어 불교에서도 그들이 바라는 마지막 목표는 공이라고 말합니다.")
+    await _settle()
+    assert asked == [("심지어 불교에서도 그들이 바라는 마지막 목표는 공이라고 말합니다.", "Even in Buddhism, the goal is nothingness.")]

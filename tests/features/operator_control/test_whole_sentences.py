@@ -68,7 +68,7 @@ def _speaking(_api_key: str):
 def _as_heard(_api_key: str, _model: str):
     """Clean up wording is on by default; this stands in for the text model, offline."""
 
-    async def clean(line: str, _shown: list[str]) -> str:
+    async def clean(line: str, _shown: list[str], _said: str) -> str:
         return line
 
     return clean
