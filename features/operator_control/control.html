@@ -131,6 +131,9 @@
   <button id="youtube-save" class="mode">Save URL</button>
   <button id="youtube-clear" class="off">Stop sending</button>
   <p id="youtube-status" class="hint"></p>
+  <h2>Quit</h2>
+  <p class="hint">Stop captions only pauses them; Metagrafo keeps running and listening in the background. <strong>Quit Metagrafo</strong> closes it after the service: captions stop, the audio input is let go, and this page stops working. To start it again, double-click <strong>Start Metagrafo.cmd</strong>.</p>
+  <button id="quit" class="off">Quit Metagrafo</button>
   <p id="status"></p>
   <script>
     async function refreshYouTube() {
@@ -398,11 +401,31 @@
       if (url) saveYouTubeUrl(url);
     };
     document.getElementById("youtube-clear").onclick = () => saveYouTubeUrl("");
+    document.getElementById("quit").onclick = async () => {
+      if (!confirm("Quit Metagrafo? Captions stop until you double-click Start Metagrafo.cmd again.")) return;
+      let response;
+      try {
+        response = await fetch("/quit", { method: "POST" });
+      } catch {
+        alert("Could not reach Metagrafo.");
+        return;
+      }
+      if (!response.ok) {
+        const body = await response.json();
+        alert(typeof body.detail === "string" ? body.detail : "Metagrafo did not quit");
+        return;
+      }
+      // Nothing answers after this, so stop asking and close the overlay's connection.
+      pollTimers.forEach(clearInterval);
+      clearInterval(logTimer);
+      document.body.innerHTML =
+        "<h1>Metagrafo has stopped</h1>" +
+        "<p>To start it again, double-click <strong>Start Metagrafo.cmd</strong>.</p>";
+    };
     refresh();
     loadAudioDevices();
     // Only the YouTube counts and capture status poll; a full refresh would overwrite numbers being typed.
-    setInterval(refreshYouTube, 5000);
-    setInterval(refreshAudioStatus, 5000);
+    const pollTimers = [setInterval(refreshYouTube, 5000), setInterval(refreshAudioStatus, 5000)];
   </script>
 </body>
 </html>
