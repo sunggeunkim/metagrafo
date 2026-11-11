@@ -199,3 +199,33 @@ def test_a_paced_line_stays_up_past_the_hide_timer_until_it_has_been_read(browse
         assert page.locator("#stage.hidden").count() == 1
     finally:
         context.close()
+
+
+# A 100-character en_to_ko line from a real run (2026-11-10): three rows at the default font.
+LONG_KOREAN = (
+    "왜냐하면 이건 큰 주제거든요. 저는 이 모든 설명을 다 할 수는 없겠지만, 기독교 신앙이 "
+    "이 문제를 어떻게 다루는지에 대해, 저는 지치신 분들이나 이 문제로 고군분투하는 분들에게,"
+)
+
+
+def test_a_long_korean_line_shows_whole_at_the_default_line_count(browser, server) -> None:
+    # Omitting line_count takes the default, as a booth that never changed it does.
+    style = {k: v for k, v in DEFAULT_STYLE.items() if k != "line_count"}
+    httpx.put(f"{server}/overlay-style", json=style).raise_for_status()
+    context = browser.new_context(viewport={"width": 1920, "height": 1080})
+    page = context.new_page()
+    try:
+        clients = httpx.get(f"{server}/health").json()["clients"]
+        page.goto(f"{server}/overlay")
+        deadline = time.monotonic() + 10
+        while httpx.get(f"{server}/health").json()["clients"] <= clients:
+            if time.monotonic() > deadline:
+                raise RuntimeError("overlay did not open /ws")
+            time.sleep(0.05)
+        httpx.post(f"{server}/inject", json={"text": LONG_KOREAN}).raise_for_status()
+        page.wait_for_selector("#stage:not(.hidden) #lines .line", state="attached")
+        boxes = page.evaluate(_BOXES_JS)
+    finally:
+        context.close()
+    assert len(boxes) == 3
+    assert " ".join(box["text"] for box in boxes).split() == LONG_KOREAN.split()
