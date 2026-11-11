@@ -14,8 +14,7 @@ CONTEXT = "Sermon: the problem of evil and suffering.\nScripture: Job 1-2.\nSpea
 
 
 @pytest.fixture
-def env_file(tmp_path, monkeypatch):
-    monkeypatch.delenv("CLEANUP_CONTEXT", raising=False)
+def env_file(tmp_path):
     path = tmp_path / ".env"
     path.write_text("AUDIO_DEVICE_NAME=Booth Mic\n", encoding="utf-8")
     return path
@@ -117,3 +116,26 @@ def test_the_saved_context_reaches_the_cleanup_model(env_file, monkeypatch) -> N
             client.get("/health")
             time.sleep(0.01)
     assert instructions and CONTEXT in instructions[0]
+
+
+def test_the_file_is_the_only_source_so_an_env_value_is_ignored(env_file, monkeypatch) -> None:
+    monkeypatch.setenv("CLEANUP_CONTEXT", "From the shell, never saved on booth control.")
+    with env_file.open("a", encoding="utf-8") as env:
+        env.write("CLEANUP_CONTEXT=From .env, never saved on booth control.\n")
+    with TestClient(_app(env_file)) as client:
+        assert client.get("/mode").json()["cleanup_context"] == ""
+
+
+def test_a_hand_edited_file_over_the_limit_is_cut_to_it(env_file, caplog) -> None:
+    (env_file.parent / "cleanup-context.txt").write_text("x" * 5000, encoding="utf-8")
+    with TestClient(_app(env_file)) as client:
+        assert client.get("/mode").json()["cleanup_context"] == "x" * 2000
+    assert "cleanup-context.txt" in caplog.text
+    assert "2000" in caplog.text
+
+
+def test_an_unreadable_file_does_not_stop_metagrafo_starting(env_file, caplog) -> None:
+    (env_file.parent / "cleanup-context.txt").write_bytes(b"\xff\xfe\x00 not utf-8 \x81")
+    with TestClient(_app(env_file)) as client:
+        assert client.get("/mode").json()["cleanup_context"] == ""
+    assert "cleanup-context.txt" in caplog.text
