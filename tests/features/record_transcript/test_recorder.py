@@ -250,3 +250,20 @@ def test_switching_saving_off_and_on_again_starts_a_new_file(env_file, tmp_path)
         ["First."],
         ["Second."],
     ]
+
+
+def test_saving_again_within_the_same_second_still_starts_a_new_file(env_file, tmp_path) -> None:
+    bus = EventBus()
+    with TestClient(_app(env_file, tmp_path, bus, _Clock())) as client:
+        client.put("/save-transcript", json={"save_transcript": True})
+        client.portal.call(bus.publish, _caption("First.", created_at=START + 0.5, spoken_at=None))
+        client.put("/save-transcript", json={"save_transcript": False})
+        client.put("/save-transcript", json={"save_transcript": True})
+        client.portal.call(bus.publish, _caption("Second.", created_at=START + 0.7, spoken_at=None))
+
+    files = _records(tmp_path)
+    assert [[r["kind"] for r in f] for f in files] == [["start", "shown"], ["start", "shown"]]
+    assert [[r.get("text") for r in f if r["kind"] == "shown"] for f in files] == [
+        ["First."],
+        ["Second."],
+    ]

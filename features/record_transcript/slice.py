@@ -45,9 +45,16 @@ class TranscriptRecorder:
         self._started_at = self._clock()
         self._folder.mkdir(parents=True, exist_ok=True)
         name = datetime.fromtimestamp(self._started_at).strftime("%Y-%m-%d_%H%M%S")
-        # Line-buffered, so a file read mid-service already holds every line shown.
-        self._path = self._folder / f"{name}.jsonl"
-        self._file = self._path.open("a", encoding="utf-8", buffering=1)
+        # A start within the same second, or after a restart, gets its own file, never an old one.
+        suffix = 1
+        while True:
+            self._path = self._folder / (f"{name}.jsonl" if suffix == 1 else f"{name}_{suffix}.jsonl")
+            try:
+                # Line-buffered, so a file read mid-service already holds every line shown.
+                self._file = self._path.open("x", encoding="utf-8", buffering=1)
+                break
+            except FileExistsError:
+                suffix += 1
         self._write(self._started_at, {"kind": "start", **settings})
 
     def end(self) -> None:
