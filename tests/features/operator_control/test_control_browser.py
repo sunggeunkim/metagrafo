@@ -137,12 +137,16 @@ def test_save_transcript_checkbox_saves_to_a_file_it_names(browser, control_savi
         page.close()
 
 
-def test_sermon_context_box_saves_and_comes_back_on_reload(browser, control_saving) -> None:
+def test_additional_context_box_saves_and_comes_back_on_reload(browser, control_saving) -> None:
     url, _folder = control_saving
     page = browser.new_page()
     try:
         page.goto(f"{url}/control")
-        page.wait_for_selector("#cleanup-context-status:has-text('No sermon context')")
+        page.wait_for_selector("#cleanup-context-status:has-text('No additional context')")
+        assert page.locator("h2", has_text="Additional context").count() == 1
+        # Nothing saved means an empty box, with no example text shown in it either.
+        assert page.input_value("#cleanup-context") == ""
+        assert page.get_attribute("#cleanup-context", "placeholder") in (None, "")
         page.fill("#cleanup-context", "Sermon: the problem of evil.\nScripture: Job 1-2.")
         page.click("#cleanup-context-save")
         page.wait_for_selector("#cleanup-context-status:has-text('Saved')")
@@ -154,7 +158,7 @@ def test_sermon_context_box_saves_and_comes_back_on_reload(browser, control_savi
         assert page.input_value("#cleanup-context") == "Sermon: the problem of evil.\nScripture: Job 1-2."
 
         page.click("#cleanup-context-clear")
-        page.wait_for_selector("#cleanup-context-status:has-text('No sermon context')")
+        page.wait_for_selector("#cleanup-context-status:has-text('No additional context')")
         assert page.input_value("#cleanup-context") == ""
     finally:
         page.close()
