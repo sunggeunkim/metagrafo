@@ -25,7 +25,7 @@ class SubtitleHub:
         bus: EventBus,
         *,
         min_on_screen_s: float = 2.5,
-        chars_per_s: float = 13.0,
+        chars_per_s: float = 9.0,
         max_behind_s: float = 5.0,
         one_sentence: bool = True,
     ) -> None:
