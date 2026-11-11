@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Callable
+from functools import partial
 
 from fastapi import FastAPI
 
@@ -124,7 +125,10 @@ def register(
     if settings.caption_engine == "gemini_live" and not settings.gemini_api_key.strip():
         logger.warning("CAPTION_ENGINE=gemini_live but GEMINI_API_KEY is empty; using Whisper")
     connect_factory = gemini_connect_factory or gemini_connect
-    cleanup_factory = gemini_cleanup_factory or gemini_cleanup
+    # The real cleanup reads the booth's context for every line; a test's stand-in needs none.
+    cleanup_factory = gemini_cleanup_factory or partial(
+        gemini_cleanup, context=lambda: settings.cleanup_context
+    )
     if settings.gemini_live():
         live = GeminiLiveTranslator(
             bus,

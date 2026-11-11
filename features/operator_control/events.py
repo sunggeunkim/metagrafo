@@ -56,6 +56,13 @@ class CleanUpWordingEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class CleanupContextEvent:
+    """Background on this service for the cleanup model. Takes effect at the next cleaned line."""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class SaveTranscriptEvent:
     """Write each caption, with its timing, to a file for later analysis. On starts a new file."""
 

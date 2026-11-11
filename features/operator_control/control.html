@@ -10,6 +10,7 @@
     label { display: block; margin: 1rem 0 0.3rem; }
     input { font-size: 1.2rem; padding: 0.4rem 0.6rem; width: 8rem; }
     input.key { width: 28rem; }
+    textarea { font-size: 1.1rem; padding: 0.4rem 0.6rem; width: 40rem; max-width: 100%; box-sizing: border-box; }
     label.check { font-size: 1.2rem; margin-left: 0.5rem; }
     label.check input { width: auto; transform: scale(1.5); margin-right: 0.6rem; }
     select { font-size: 1.2rem; padding: 0.4rem 0.6rem; min-width: 28rem; }
@@ -97,6 +98,14 @@
   <h2>Clean up wording</h2>
   <p class="hint">Gemini only, and only with Whole sentences on. <strong>On</strong> (default) sends each finished line to a fast Gemini text model with the last few lines shown, to take out false starts and lightly fix grammar without changing the meaning, names, or scripture references. If it takes longer than about 4 s, the line shows as heard. The cleaned line is what the overlay and YouTube captions get. Starts with the next line, and this computer keeps the choice for the next time.</p>
   <label class="check"><input id="clean-up-wording" type="checkbox" /> Clean up wording</label>
+  <h2>Sermon context</h2>
+  <p class="hint">Gemini only, used by Clean up wording. A few lines about this service help the text model get names, scripture references and terms right, for example the title, the passage, the speaker, and names or words likely to come up. It is background only and never shows on screen. Up to 2000 characters. Starts with the next cleaned line, and this computer keeps it for the next time; Clear it after the service.</p>
+  <textarea id="cleanup-context" rows="4" maxlength="2000" placeholder="Sermon: The problem of evil&#10;Scripture: Job 1–2&#10;Speaker: Pastor Frank (youth pastor)&#10;Names and terms: Buddha, Nirvana, karma"></textarea>
+  <div>
+    <button id="cleanup-context-save" class="mode">Save context</button>
+    <button id="cleanup-context-clear" class="off">Clear</button>
+  </div>
+  <p id="cleanup-context-status" class="hint"></p>
   <h2>Save transcript</h2>
   <p class="hint">For looking at the captions afterwards, not for viewers. <strong>On</strong> writes each finished caption to a file in the <strong>transcripts</strong> folder, with the time it was shown and how long after the speech began. With Gemini it also writes the Korean Gemini heard, each line as it read before Clean up wording, and every booth change. Each time you turn it on, a new file starts. Off by default; this computer keeps the choice for the next time.</p>
   <label class="check"><input id="save-transcript" type="checkbox" /> Save transcript</label>
@@ -140,6 +149,25 @@
   <button id="quit" class="off">Quit Metagrafo</button>
   <p id="status"></p>
   <script>
+    function showCleanupContext(text) {
+      document.getElementById("cleanup-context").value = text;
+      document.getElementById("cleanup-context-status").textContent = text
+        ? "Saved. Clean up wording reads it from the next line."
+        : "No sermon context saved.";
+    }
+    async function saveCleanupContext(text) {
+      const response = await fetch("/cleanup-context", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const body = await response.json();
+      if (response.ok) {
+        showCleanupContext(body.cleanup_context);
+      } else {
+        alert(typeof body.detail === "string" ? body.detail : "Context not saved. Keep it under 2000 characters.");
+      }
+    }
     async function refreshTranscript() {
       const t = await (await fetch("/transcript")).json();
       document.getElementById("transcript-status").textContent = t.saving
@@ -364,6 +392,9 @@
       await fetch("/clean-up-wording", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clean_up_wording: e.target.checked }) });
       refresh();
     };
+    document.getElementById("cleanup-context-save").onclick = () =>
+      saveCleanupContext(document.getElementById("cleanup-context").value);
+    document.getElementById("cleanup-context-clear").onclick = () => saveCleanupContext("");
     document.getElementById("save-transcript").onchange = async (e) => {
       await fetch("/save-transcript", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ save_transcript: e.target.checked }) });
       refresh();
@@ -441,6 +472,8 @@
     };
     refresh();
     loadAudioDevices();
+    // Filled once on load, not on every refresh, so text being typed is never overwritten.
+    fetch("/mode").then((r) => r.json()).then((s) => showCleanupContext(s.cleanup_context));
     // Only the YouTube counts and capture status poll; a full refresh would overwrite numbers being typed.
     const pollTimers = [setInterval(refreshYouTube, 5000), setInterval(refreshAudioStatus, 5000)];
   </script>
