@@ -6,7 +6,7 @@ KOREAN_STYLE_DEFAULT = (
     "(~합니다, ~입니까, ~하십시오), never 해요체 or 반말, and honorifics for God and Jesus "
     "(하나님께서 ~하셨습니다, 예수님께서). Address the congregation as 여러분 (여러분이, 여러분은, 여러분의), never 당신 or 너. "
     "Use natural Korean word order, not the English speaker's: put time, place and duration "
-    "phrases before the verb, and fold trailing fragments such as '지난 달에.' or "
+    "phrases before the verb, and fold trailing fragments such as '지난달에.' or "
     "'3박 4일 동안.' into the sentence they belong to."
 )
 
