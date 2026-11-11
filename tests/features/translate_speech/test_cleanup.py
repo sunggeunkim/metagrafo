@@ -105,7 +105,7 @@ async def test_korean_lines_are_cleaned_into_formal_sermon_language_with_no_cont
     _built, asked = _record_client(monkeypatch, "Cleaned.")
     await gemini_cleanup("test-key", model="gemini-test-lite")("오늘 만나서 반가워요.", [])
     instruction = asked["config"].system_instruction
-    for asks in ("합니다체", "never 해요체 or 반말", "하나님께서"):
+    for asks in ("합니다체", "never 해요체 or 반말", "하나님께서", "여러분", "never 당신"):
         assert asks in instruction
 
 

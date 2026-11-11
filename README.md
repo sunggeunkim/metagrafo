@@ -168,7 +168,7 @@ With Gemini and **Clean up wording** on, the text model that tidies each line ca
 
 ### Korean style
 
-For Korean captions (English guest → Korean), **Korean style** on booth control tells the cleanup model how to word each line. The default is formal sermon language: 합니다체 endings, never 해요체 or 반말, and honorifics for God and Jesus (하나님께서, 예수님께서). Edit the box and click **Save style** to change it, for example for a youth service. Save it empty to turn the rule off, so lines keep the wording they were translated with. **Reset to default** brings back the formal style. It is kept in `korean-style.txt` beside `.env` for the next time. Lines that cleanup cannot finish within about 4 s show as the live translation wrote them, so a few may still read casually.
+For Korean captions (English guest → Korean), **Korean style** on booth control tells the cleanup model how to word each line. The default is formal sermon language: 합니다체 endings, never 해요체 or 반말, honorifics for God and Jesus (하나님께서, 예수님께서), and the congregation addressed as 여러분, never 당신. Edit the box and click **Save style** to change it, for example for a youth service. Save it empty to turn the rule off, so lines keep the wording they were translated with. **Reset to default** brings back the formal style. It is kept in `korean-style.txt` beside `.env` for the next time. Lines that cleanup cannot finish within about 4 s show as the live translation wrote them, so a few may still read casually.
 
 ## OBS scene
 

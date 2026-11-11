@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 KOREAN_STYLE_DEFAULT = (
     "Write it as a sermon is spoken from the pulpit: formal 합니다체 endings "
     "(~합니다, ~입니까, ~하십시오), never 해요체 or 반말, and honorifics for God and Jesus "
-    "(하나님께서 ~하셨습니다, 예수님께서)."
+    "(하나님께서 ~하셨습니다, 예수님께서). Address the congregation as 여러분 (여러분이, 여러분은, 여러분의), never 당신 or 너."
 )
 
 
