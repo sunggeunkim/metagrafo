@@ -115,7 +115,14 @@
       for (let i = 0; i < text.length; i++) {
         range.setStart(node, i);
         range.setEnd(node, i + 1);
-        const top = range.getBoundingClientRect().top;
+        // Where a row wraps, a character can also report an empty rect at the end of the row
+        // above (OBS's Chromium 150 did for the first word of a row), so only the character's
+        // own glyph says which row it is on. A space has none and stays with the row it ends.
+        const glyph = [...range.getClientRects()].find((rect) => rect.width > 0);
+        if (!glyph) {
+          continue;
+        }
+        const top = glyph.top;
         if (lineTop === null) {
           lineTop = top;
         } else if (top > lineTop + 1) {
