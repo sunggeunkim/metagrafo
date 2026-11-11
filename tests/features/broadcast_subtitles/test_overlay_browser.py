@@ -232,3 +232,64 @@ def test_a_long_korean_line_shows_whole_at_the_default_line_count(browser, serve
         context.close()
     assert len(boxes) == 3
     assert " ".join(box["text"] for box in boxes).split() == LONG_KOREAN.split()
+
+
+# Seen in OBS 33 (Chromium 150), 2026-11-11: this line showed as "… 아닐 것" (wrapping "것" onto a
+# second row inside its box) and then "입니다." on its own. Newer Chromium also reports a zero-width
+# rect at the end of the row above for the space where a row wraps; this script makes the first
+# character after that space report it too, the way the measuring in OBS behaved.
+WRAP_BOUNDARY_RECTS = """
+(() => {
+  const own = Range.prototype.getClientRects;
+  Range.prototype.getClientRects = function () {
+    const rects = [...own.call(this)];
+    const node = this.startContainer;
+    if (node.nodeType === Node.TEXT_NODE && this.startOffset > 0 && node.data[this.startOffset - 1] === " ") {
+      const space = document.createRange();
+      space.setStart(node, this.startOffset - 1);
+      space.setEnd(node, this.startOffset);
+      const before = own.call(space)[0];
+      if (before) rects.unshift(new DOMRect(before.right, before.top, 0, before.height));
+    }
+    return rects;
+  };
+  Range.prototype.getBoundingClientRect = function () {
+    const rects = this.getClientRects();
+    if (!rects.length) return new DOMRect();
+    const left = Math.min(...rects.map((r) => r.left));
+    const top = Math.min(...rects.map((r) => r.top));
+    const right = Math.max(...rects.map((r) => r.right));
+    const bottom = Math.max(...rects.map((r) => r.bottom));
+    return new DOMRect(left, top, right - left, bottom - top);
+  };
+})();
+"""
+
+OBS_SPLIT_LINE = "그래서 이번 설교의 많은 부분이 여러분의 머리를 위한 것이고, 마음을 위한 것은 아닐 것입니다."
+
+
+def test_a_row_starts_at_its_first_word_when_the_wrap_also_reports_a_rect_on_the_row_above(
+    browser, server
+) -> None:
+    httpx.put(f"{server}/overlay-style", json={**DEFAULT_STYLE, "line_count": 3}).raise_for_status()
+    context = browser.new_context(viewport={"width": 1920, "height": 1080})
+    context.add_init_script(WRAP_BOUNDARY_RECTS)
+    page = context.new_page()
+    try:
+        clients = httpx.get(f"{server}/health").json()["clients"]
+        page.goto(f"{server}/overlay")
+        deadline = time.monotonic() + 10
+        while httpx.get(f"{server}/health").json()["clients"] <= clients:
+            if time.monotonic() > deadline:
+                raise RuntimeError("overlay did not open /ws")
+            time.sleep(0.05)
+        httpx.post(f"{server}/inject", json={"text": OBS_SPLIT_LINE}).raise_for_status()
+        page.wait_for_selector("#stage:not(.hidden) #lines .line", state="attached")
+        boxes = page.evaluate(_BOXES_JS)
+    finally:
+        context.close()
+    assert [box["text"] for box in boxes] == [
+        "그래서 이번 설교의 많은 부분이 여러분의 머리를 위한 것이고, 마음을 위한 것은 아닐",
+        "것입니다.",
+    ]
+    assert [box["rows"] for box in boxes] == [1, 1]
