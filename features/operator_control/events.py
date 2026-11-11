@@ -63,6 +63,13 @@ class CleanupContextEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class KoreanStyleEvent:
+    """How cleanup writes Korean lines; empty means no style rule. From the next cleaned line."""
+
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
 class SaveTranscriptEvent:
     """Write each caption, with its timing, to a file for later analysis. On starts a new file."""
 

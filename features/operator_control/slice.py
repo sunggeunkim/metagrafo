@@ -10,13 +10,14 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.event_bus import EventBus
-from core.settings import Settings
+from core.settings import KOREAN_STYLE_DEFAULT, Settings
 from features.operator_control.events import (
     AudioDeviceChangedEvent,
     CaptionsStateEvent,
     CleanUpWordingEvent,
     CleanupContextEvent,
     GeminiKeyChangedEvent,
+    KoreanStyleEvent,
     ModeChangedEvent,
     SaveTranscriptEvent,
     OverlayPosition,
@@ -34,6 +35,8 @@ from features.operator_control.events import (
 _CONTROL_PAGE = Path(__file__).with_name("control.html")
 # The additional context goes with every cleaned line, so it stays short enough not to slow cleanup.
 MAX_CLEANUP_CONTEXT_CHARS = 2000
+# The Korean style also goes with every cleaned line; a style needs far less than the context.
+MAX_KOREAN_STYLE_CHARS = 1000
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +135,10 @@ class CleanupContextBody(BaseModel):
     text: str = Field(max_length=MAX_CLEANUP_CONTEXT_CHARS)
 
 
+class KoreanStyleBody(BaseModel):
+    text: str = Field(max_length=MAX_KOREAN_STYLE_CHARS)
+
+
 class SaveTranscriptBody(BaseModel):
     save_transcript: bool
 
@@ -171,28 +178,35 @@ def write_env_values(env_file: Path, values: dict[str, str]) -> None:
     env_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def read_cleanup_context(context_file: Path) -> str:
-    """The saved additional context, or "" when there is none.
+def _read_booth_text(path: Path, what: str, limit: int) -> str | None:
+    """Text booth control saved in `path`, or None when there is no file or it cannot be read.
 
     The file is the only source: booth control writes nothing else. A hand-edited file is
     held to the same limit as a save, and one that cannot be read never stops Metagrafo.
     """
     try:
-        text = context_file.read_text(encoding="utf-8").strip()
+        text = path.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
-        return ""
+        return None
     except (OSError, UnicodeDecodeError) as exc:
-        logger.warning("additional context not loaded: cannot read %s (%s)", context_file.name, exc)
-        return ""
-    if len(text) > MAX_CLEANUP_CONTEXT_CHARS:
-        logger.warning(
-            "additional context in %s is %d characters; using the first %d",
-            context_file.name,
-            len(text),
-            MAX_CLEANUP_CONTEXT_CHARS,
-        )
-        text = text[:MAX_CLEANUP_CONTEXT_CHARS].strip()
+        logger.warning("%s not loaded: cannot read %s (%s)", what, path.name, exc)
+        return None
+    if len(text) > limit:
+        logger.warning("%s in %s is %d characters; using the first %d", what, path.name, len(text), limit)
+        text = text[:limit].strip()
     return text
+
+
+def read_cleanup_context(context_file: Path) -> str:
+    """The saved additional context, or "" when there is none."""
+    text = _read_booth_text(context_file, "additional context", MAX_CLEANUP_CONTEXT_CHARS)
+    return text if text is not None else ""
+
+
+def read_korean_style(style_file: Path) -> str:
+    """The saved Korean style ("" turns the rule off), or the default when none was saved."""
+    text = _read_booth_text(style_file, "Korean style", MAX_KOREAN_STYLE_CHARS)
+    return text if text is not None else KOREAN_STYLE_DEFAULT
 
 
 def write_gemini_key(env_file: Path, api_key: str) -> None:
@@ -262,6 +276,9 @@ def register(
     context_file = key_file.with_name("cleanup-context.txt")
     # Replaces any CLEANUP_CONTEXT from the environment or .env, which booth control never writes.
     settings.cleanup_context = read_cleanup_context(context_file)
+    # No file means the default style; an empty file means the booth turned the rule off.
+    style_file = key_file.with_name("korean-style.txt")
+    settings.korean_style = read_korean_style(style_file)
     state = OperatorState(
         initial_mode,
         vad_min_silence_ms=settings.vad_min_silence_ms,
@@ -279,6 +296,8 @@ def register(
         body["gemini_live"] = settings.gemini_live()
         body["youtube_url_set"] = bool(settings.youtube_caption_url.strip())
         body["cleanup_context"] = settings.cleanup_context
+        body["korean_style"] = settings.korean_style
+        body["korean_style_default"] = KOREAN_STYLE_DEFAULT
         body["audio_device"] = settings.audio_device_name
         status = capture_status() if capture_status is not None else {}
         body["audio_capturing"] = status.get("capturing")
@@ -452,6 +471,23 @@ def register(
         context_file.write_text(text, encoding="utf-8")
         settings.cleanup_context = text
         await bus.publish(CleanupContextEvent(text=text))
+        return public_state()
+
+    @app.put("/korean-style")
+    async def put_korean_style(body: KoreanStyleBody) -> dict[str, object]:
+        # Saved even when empty: an empty file keeps the rule off after a restart.
+        text = body.text.strip()
+        style_file.parent.mkdir(parents=True, exist_ok=True)
+        style_file.write_text(text, encoding="utf-8")
+        settings.korean_style = text
+        await bus.publish(KoreanStyleEvent(text=text))
+        return public_state()
+
+    @app.delete("/korean-style")
+    async def reset_korean_style() -> dict[str, object]:
+        style_file.unlink(missing_ok=True)
+        settings.korean_style = KOREAN_STYLE_DEFAULT
+        await bus.publish(KoreanStyleEvent(text=KOREAN_STYLE_DEFAULT))
         return public_state()
 
     @app.put("/save-transcript")
