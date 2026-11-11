@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     cleanup_model: str = "gemini-3.5-flash-lite"
     # 3.5 Flash Lite took 1–8 s a line (median ~3 s) on 2026-11-09; past this the line shows as heard.
     cleanup_timeout_s: float = 4.0
+    save_transcript: bool = False
     vad_max_utterance_s: float = 12
     vad_min_speech_ms: int = 250
     whisper_model: str | None = "large-v3"

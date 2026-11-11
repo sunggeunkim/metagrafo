@@ -97,6 +97,10 @@
   <h2>Clean up wording</h2>
   <p class="hint">Gemini only, and only with Whole sentences on. <strong>On</strong> (default) sends each finished line to a fast Gemini text model with the last few lines shown, to take out false starts and lightly fix grammar without changing the meaning, names, or scripture references. If it takes longer than about 4 s, the line shows as heard. The cleaned line is what the overlay and YouTube captions get. Starts with the next line, and this computer keeps the choice for the next time.</p>
   <label class="check"><input id="clean-up-wording" type="checkbox" /> Clean up wording</label>
+  <h2>Save transcript</h2>
+  <p class="hint">For looking at the captions afterwards, not for viewers. <strong>On</strong> writes each finished caption to a file in the <strong>transcripts</strong> folder, with the time it was shown and how long after the speech began. With Gemini it also writes the Korean Gemini heard, each line as it read before Clean up wording, and every booth change. Each time you turn it on, a new file starts. Off by default; this computer keeps the choice for the next time.</p>
+  <label class="check"><input id="save-transcript" type="checkbox" /> Save transcript</label>
+  <p id="transcript-status" class="hint"></p>
   <h2>Overlay</h2>
   <p class="hint">Keep the OBS Browser Source at <strong>1920×1080</strong>. Right-click the source → <strong>Transform → Reset Transform</strong> so the type is not stretched. Do not drag the red handles or change source Height to crop captions — that squashes letters. Size the caption band here instead.</p>
   <p class="hint">Position, font, box size, and insets apply live. Font is viewport width percent (<strong>vw</strong>), range <strong>1.0–8.0</strong>. Box width <strong>10–100</strong> and height <strong>5–100</strong> are percent of the 1920×1080 overlay (default <strong>100 × 30</strong>). Insets <strong>0–20</strong>. After overlay HTML changes, right-click the source → Refresh once.</p>
@@ -136,6 +140,12 @@
   <button id="quit" class="off">Quit Metagrafo</button>
   <p id="status"></p>
   <script>
+    async function refreshTranscript() {
+      const t = await (await fetch("/transcript")).json();
+      document.getElementById("transcript-status").textContent = t.saving
+        ? "Saving to " + t.file
+        : "Not saving a transcript.";
+    }
     async function refreshYouTube() {
       const y = await (await fetch("/youtube-captions")).json();
       document.getElementById("youtube-status").textContent = y.enabled
@@ -199,6 +209,7 @@
         " · previous text " + (s.condition_on_previous_text ? "on" : "off") +
         " · whole sentences " + (s.whole_sentences ? "on" : "off") +
         " · clean up wording " + (s.clean_up_wording ? "on" : "off") +
+        " · save transcript " + (s.save_transcript ? "on" : "off") +
         " · " + s.line_count + " lines" +
         " · " + s.position +
         " · " + s.font_size_vw + " vw" +
@@ -222,6 +233,8 @@
       document.getElementById("whole-sentences").checked = s.whole_sentences;
       document.getElementById("clean-up-wording").checked = s.clean_up_wording;
       document.getElementById("clean-up-wording").disabled = !s.whole_sentences;
+      document.getElementById("save-transcript").checked = s.save_transcript;
+      refreshTranscript();
       document.getElementById("font-vw").value = s.font_size_vw;
       document.getElementById("box-w").value = s.box_width_pct;
       document.getElementById("box-h").value = s.box_height_pct;
@@ -349,6 +362,10 @@
     };
     document.getElementById("clean-up-wording").onchange = async (e) => {
       await fetch("/clean-up-wording", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ clean_up_wording: e.target.checked }) });
+      refresh();
+    };
+    document.getElementById("save-transcript").onchange = async (e) => {
+      await fetch("/save-transcript", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ save_transcript: e.target.checked }) });
       refresh();
     };
     async function applyOverlay() {

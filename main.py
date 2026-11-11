@@ -21,6 +21,7 @@ from features import (
     broadcast_subtitles,
     capture_audio,
     operator_control,
+    record_transcript,
     translate_speech,
     youtube_captions,
 )
@@ -44,6 +45,8 @@ def create_app(
     list_input_devices: Callable[[], list[str]] | None = None,
     log_file: Path | None = None,
     request_quit: Callable[[], None] | None = None,
+    transcripts_dir: Path | None = None,
+    transcript_clock: Callable[[], float] | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     bus = bus or EventBus()
@@ -53,6 +56,8 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         translator = app.state.translator
         youtube = app.state.youtube_captions
+        transcript = app.state.record_transcript
+        await transcript.start()
         await translator.start()
         await youtube.start()
         if capture is not None:
@@ -62,6 +67,7 @@ def create_app(
             await capture.stop()
         await translator.stop()
         await youtube.stop()
+        await transcript.stop()
 
     app = FastAPI(title="metagrafo", lifespan=lifespan)
     app.state.bus = bus
@@ -90,6 +96,13 @@ def create_app(
     )
     broadcast_subtitles.register(app, bus, settings)
     app.state.youtube_captions = youtube_captions.register(app, bus, settings)
+    app.state.record_transcript = record_transcript.register(
+        app,
+        bus,
+        settings,
+        folder=transcripts_dir or Path.cwd() / "transcripts",
+        clock=transcript_clock,
+    )
     return app
 
 

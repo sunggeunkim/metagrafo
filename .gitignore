@@ -1,6 +1,7 @@
 .venv/
 runtime/
 metagrafo.log
+transcripts/
 __pycache__/
 .pytest_cache/
 *.pyc

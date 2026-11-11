@@ -56,6 +56,13 @@ class CleanUpWordingEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class SaveTranscriptEvent:
+    """Write each caption, with its timing, to a file for later analysis. On starts a new file."""
+
+    save_transcript: bool
+
+
+@dataclass(frozen=True, slots=True)
 class GeminiKeyChangedEvent:
     """The operator saved a Gemini key. The key itself stays on Settings."""
 

@@ -33,7 +33,8 @@ Allowed shared code:
 
 ```
 PGM audio → capture_audio --AudioChunkEvent--> translate_speech --SubtitleEvent--> broadcast_subtitles → OBS
-                                                                              └-----> youtube_captions → YouTube CC (optional)
+                                                                              ├-----> youtube_captions → YouTube CC (optional)
+                                                                              └-----> record_transcript → transcripts/*.jsonl (optional)
 
 operator_control --CaptionsStateEvent / ModeChangedEvent-->  (the three slices above subscribe)
 ```
@@ -54,6 +55,7 @@ metagrafo/
     broadcast_subtitles/    # /overlay, /ws, /health
     operator_control/       # /control, /mode, CaptionsStateEvent
     youtube_captions/       # SubtitleEvent → YouTube caption ingestion URL, /youtube-captions
+    record_transcript/      # SubtitleEvent + SpeechHeardEvent → transcripts/*.jsonl, /transcript
   docs/
     architecture.md
     aten-obs.md
@@ -132,14 +134,27 @@ Optional. `YOUTUBE_CAPTION_URL` is the **Captions Ingestion URL** from YouTube S
 - `YouTubeCaptionUrlChangedEvent` — read the new URL from Settings. Empties the queue and starts `seq` and the counts over at 1/0 (a new URL is a new stream). An empty URL drops lines. A line still being sent when the URL changes is abandoned, never sent to the new URL.
 - `GET /youtube-captions` — `enabled`, `sent`, `failed`, `last_status` (only `enabled: false` without a URL).
 
+### `record_transcript`
+
+For reading the captions back afterwards (analysis), not for viewers. Off by default.
+
+- `SaveTranscriptEvent(save_transcript)` — on opens a new `transcripts/YYYY-MM-DD_HHMMSS.jsonl` (in the folder Metagrafo starts in); off closes it. `SAVE_TRANSCRIPT=true` in `.env` opens one at startup. Shutdown, including **Quit Metagrafo**, closes it. Lines are flushed as written, so a file can be read mid-service.
+- One JSON record per line. Every record has `t_s` (seconds since this file started), `at` (local clock, ms) and `kind`:
+  - `start` — `engine` (`gemini_live` \| `whisper`), `captions_active`, `mode`, `whole_sentences`, `clean_up_wording`.
+  - `heard` — `text`, `language`: a Korean (source) fragment as Gemini live transcribed it (`SpeechHeardEvent`). Whisper writes none.
+  - `shown` — `text` as the overlay and YouTube got it, `delay_s` (shown time − `spoken_at`; for Gemini live that is from the line's first English fragment, so a lower bound on the delay from speech; compare with the `heard` times), `mode`, and `before_cleanup` when Clean up wording rewrote it (equal to `text` when the model kept it or timed out). Provisional (growing) lines are skipped.
+  - `setting` — one booth change: `captions_active`, `mode`, `whole_sentences`, or `clean_up_wording`.
+- `GET /transcript` — `{saving, file}` with the file's full path.
+
 ### `operator_control`
 
 Owns the booth UI. Publishes only.
 
-- `GET /control` — Start/Stop captions (one button that flips), Show/Hide overlay and Show/Hide logs (both open when the page loads, side by side under the top buttons: a scaled 1920×1080 `/overlay` frame on the left that connects only while shown, and a log panel on the right that polls `/logs` every 2 s while open), Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), **Whole sentences** checkbox (Gemini live, default on), **Clean up wording** checkbox (default on; greyed out while Whole sentences is off), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts), **audio input** (pick a listed recording device), **Quit Metagrafo** (asks first, then replaces the page with how to start it again)
+- `GET /control` — Start/Stop captions (one button that flips), Show/Hide overlay and Show/Hide logs (both open when the page loads, side by side under the top buttons: a scaled 1920×1080 `/overlay` frame on the left that connects only while shown, and a log panel on the right that polls `/logs` every 2 s while open), Mode ko_to_en, Mode en_to_en (Guest), Mode en_to_ko (Guest → Korean; disabled until Gemini live), **VAD pause (ms)**, **pauses per caption (1 or 2)**, **previous text** (`condition_on_previous_text`, default on), **Whole sentences** checkbox (Gemini live, default on), **Clean up wording** checkbox (default on; greyed out while Whole sentences is off), **Save transcript** checkbox (default off; shows the file being written), overlay position, **font size (vw)**, **box width/height (%)**, **edge insets (%)**, **lines on screen (1–6)**, Gemini key, **YouTube caption URL** (Save URL / Stop sending, plus sent/failed counts), **audio input** (pick a listed recording device), **Quit Metagrafo** (asks first, then replaces the page with how to start it again)
 - `GET /mode` / `PUT /mode` / `PUT /vad-silence` / `PUT /vad-pauses` / `PUT /condition-on-previous-text` / `PUT /whole-sentences` / `PUT /clean-up-wording` / `PUT /overlay-style` / `PUT /gemini-key` / `PUT /youtube-caption-url` / `GET /audio-devices` / `PUT /audio-device`
 - `GET /audio-devices` — `{devices, selected, capturing, error}`: input names this PC lists now (each once; names with a line break are left out because `.env` cannot hold them), `AUDIO_DEVICE_NAME`, and capture's status. `main.py` injects the lister and the status, so this slice does not import capture code.
 - `PUT /audio-device` — `{name}`; must be one of the listed names (422 otherwise), and 409 while `AUDIO_DEVICE_INDEX` is set. Writes `AUDIO_DEVICE_NAME` to `.env`, keeping other lines, and publishes `AudioDeviceChangedEvent`. `/mode` shows `audio_device`, `audio_capturing`, and `audio_error`; the booth page polls those every 5 s.
+- `PUT /save-transcript` — `{save_transcript}`; writes `SAVE_TRANSCRIPT` to `.env`, keeping other lines, and publishes `SaveTranscriptEvent`. `/mode` and `/health` show `save_transcript`.
 - `POST /quit` — `{quitting: true}`, then the server shuts down gracefully (`main.build_server` sets uvicorn's `should_exit`), so the lifespan still stops capture, the translator and YouTube sending; open sockets get 5 s to close. `main.py` injects `request_quit`; an app without it (`uvicorn main:app`, tests) answers 409.
 - `GET /logs?after=<offset>` — `{available, text, offset}`: whole lines of `metagrafo.log` from byte `after` on (without it, the last ~250 KB), and the `offset` to pass next. A line still being written waits for the next call. Only a windowless start (`pythonw`, `Start Metagrafo.cmd`) writes that file, so `main.py` passes the path only then; a console start answers `available: false`.
 - `PUT /youtube-caption-url` — `{url}`; empty clears. Must be http(s) with a host and no whitespace (422 otherwise). Writes `YOUTUBE_CAPTION_URL` to `.env`, keeping other lines, and publishes `YouTubeCaptionUrlChangedEvent`. The URL is never echoed back; `/mode` shows only `youtube_url_set`.
@@ -161,8 +176,9 @@ In-process asyncio pub/sub. Dispatch by exact type. `publish` isolates handler e
 Producer-owned events:
 
 - `AudioChunkEvent` — `capture_audio`
-- `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles` and `youtube_captions`). `paced` (default false) asks the overlay to keep the line up long enough to read; Gemini live sets it on lines committed while Whole sentences is on (a line still being cleaned keeps it if the switch changes), Whisper never does
-- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `WholeSentencesEvent`, `CleanUpWordingEvent`, `OverlayStyleEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent`, `AudioDeviceChangedEvent` — `operator_control`
+- `SubtitleEvent` — `translate_speech` (read by `broadcast_subtitles`, `youtube_captions` and `record_transcript`). `paced` (default false) asks the overlay to keep the line up long enough to read; Gemini live sets it on lines committed while Whole sentences is on (a line still being cleaned keeps it if the switch changes), Whisper never does. `before_cleanup` is the line as heard when Clean up wording sent it to the text model, else None; only the transcript reads it
+- `SpeechHeardEvent(text, language, heard_at)` — `translate_speech` (Gemini live `input_transcription`; read by `record_transcript`)
+- `CaptionsStateEvent`, `ModeChangedEvent`, `VadSilenceMsEvent`, `VadPausesEvent`, `ConditionOnPreviousTextEvent`, `WholeSentencesEvent`, `CleanUpWordingEvent`, `OverlayStyleEvent`, `SaveTranscriptEvent`, `GeminiKeyChangedEvent`, `YouTubeCaptionUrlChangedEvent`, `AudioDeviceChangedEvent` — `operator_control`
 
 ## Process model
 
@@ -181,7 +197,7 @@ Startup: operator_control + translate + broadcast + youtube_captions, then captu
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port, `YOUTUBE_CAPTION_URL` (optional), `WHOLE_SENTENCES` (default `true`), `WHOLE_SENTENCES_QUIET_S` (default 1.2), `CLEAN_UP_WORDING` (default `true`), `CLEANUP_MODEL` (default `gemini-3.5-flash-lite`), `CLEANUP_TIMEOUT_S` (default 4). Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port, `YOUTUBE_CAPTION_URL` (optional), `WHOLE_SENTENCES` (default `true`), `WHOLE_SENTENCES_QUIET_S` (default 1.2), `CLEAN_UP_WORDING` (default `true`), `CLEANUP_MODEL` (default `gemini-3.5-flash-lite`), `CLEANUP_TIMEOUT_S` (default 4), `SAVE_TRANSCRIPT` (default `false`). Captions active is **not** persisted; always starts on.
 
 ## Operator path
 
