@@ -35,6 +35,8 @@ class SubtitleHub:
         self._waiting: deque[dict[str, object]] = deque()
         self._shown_until = 0.0
         self._pacer: asyncio.Task[None] | None = None
+        # Captions always start on; see Settings.
+        self._captions_active = True
         self._overlay_style = {
             "type": "overlay_style",
             "position": "top_left",
@@ -58,6 +60,9 @@ class SubtitleHub:
         await websocket.accept()
         self._clients.add(websocket)
         await websocket.send_json(self._overlay_style)
+        # Lines stay up until replaced, so an overlay that reconnects after captions
+        # stopped must be told, or it keeps showing its old lines.
+        await websocket.send_json({"type": "captions_state", "is_active": self._captions_active})
 
     def disconnect(self, websocket: WebSocket) -> None:
         self._clients.discard(websocket)
@@ -106,7 +111,7 @@ class SubtitleHub:
         on_screen = self._time_on_screen(payload)
         # Set before the send, so a line arriving mid-send waits its turn.
         self._shown_until = asyncio.get_running_loop().time() + on_screen
-        # The overlay keeps the line up at least this long, past its own hide timer.
+        # The overlay has no hide timer; the time is sent for anything that wants it.
         await self._broadcast({**payload, "min_on_screen_s": on_screen})
 
     async def _pace(self) -> None:
@@ -126,6 +131,7 @@ class SubtitleHub:
             self._pacer = None
 
     async def _on_captions(self, event: CaptionsStateEvent) -> None:
+        self._captions_active = event.is_active
         if not event.is_active:
             self._stop_pacing()
         await self._broadcast({"type": "captions_state", "is_active": event.is_active})

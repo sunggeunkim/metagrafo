@@ -13,6 +13,7 @@ from main import create_app
 def _skip_hello(ws):
     hello = ws.receive_json()
     assert hello["type"] == "overlay_style"
+    assert ws.receive_json() == {"type": "captions_state", "is_active": True}
     return hello
 
 
@@ -100,6 +101,19 @@ def test_captions_off_broadcasts_clear_on_websocket() -> None:
         with client.websocket_connect("/ws") as ws:
             _skip_hello(ws)
             client.put("/captions", json={"is_active": False})
+            payload = ws.receive_json()
+    assert payload == {"type": "captions_state", "is_active": False}
+
+
+def test_an_overlay_that_connects_after_captions_stopped_is_told_to_clear() -> None:
+    # An overlay that was disconnected when captions stopped missed that message,
+    # and lines no longer fade, so it must learn the state when it reconnects.
+    with TestClient(create_app()) as client:
+        client.put("/captions", json={"is_active": False})
+        with client.websocket_connect("/ws") as ws:
+            assert ws.receive_json()["type"] == "overlay_style"
+            # A later broadcast, so the test ends even when no state was sent on connect.
+            client.put("/mode", json={"mode": "en_to_en"})
             payload = ws.receive_json()
     assert payload == {"type": "captions_state", "is_active": False}
 
@@ -350,7 +364,7 @@ async def test_captions_off_clears_the_waiting_paced_lines() -> None:
     await bus.publish(_line("Waiting."))
     await bus.publish(CaptionsStateEvent(is_active=False))
     await asyncio.sleep(0.2)
-    assert socket.sent[1:] == [
+    assert socket.sent[2:] == [
         {
             "type": "subtitle",
             "text": "Shown.",

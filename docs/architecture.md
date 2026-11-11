@@ -99,7 +99,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 
 ### `broadcast_subtitles`
 
-- `WS /ws` — caption and mode JSON
+- `WS /ws` — caption and mode JSON. On connect it sends the overlay style, then the current `captions_state`, so an overlay that reconnects after Stop captions clears its old lines.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
