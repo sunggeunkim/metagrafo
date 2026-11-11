@@ -13,7 +13,12 @@ from features.operator_control.events import (
     languages_for,
 )
 from features.translate_speech.events import SubtitleEvent
-from features.translate_speech.gemini_live import GeminiLiveTranslator, echoes_target_language, gemini_connect
+from features.translate_speech.gemini_live import (
+    Cleaned,
+    GeminiLiveTranslator,
+    echoes_target_language,
+    gemini_connect,
+)
 
 
 class ScriptedSession:
@@ -954,3 +959,193 @@ async def test_cleanup_gets_what_the_speaker_said_around_the_line() -> None:
     await translator.apply_transcript("심지어 불교에서도 그들이 바라는 마지막 목표는 공이라고 말합니다.")
     await _settle()
     assert asked == [("심지어 불교에서도 그들이 바라는 마지막 목표는 공이라고 말합니다.", "Even in Buddhism, the goal is nothingness.")]
+
+
+RAINDROP = "Think of it this way. You are a raindrop"
+
+
+async def test_unfinished_words_wait_and_open_the_next_caption() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[str] = []
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        asked.append(line)
+        if line == RAINDROP:
+            return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    # Gemini ends its turn mid-sentence: the caption is cut before "falling from the sky."
+    await translator.apply_transcript(RAINDROP, turn_complete=True)
+    await _settle()
+    assert [e.text for e in seen] == ["Think of it this way."]
+    await translator.apply_transcript("falling from the sky.")
+    await _settle()
+    assert asked == [RAINDROP, "You are a raindrop falling from the sky."]
+    assert [e.text for e in seen] == ["Think of it this way.", "You are a raindrop falling from the sky."]
+
+
+async def test_unfinished_words_join_a_caption_already_waiting_to_be_cleaned() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[str] = []
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        asked.append(line)
+        if line == RAINDROP:
+            await first_may_finish.wait()
+            return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(RAINDROP, turn_complete=True)
+    # The next caption ends while the first is still being cleaned.
+    await translator.apply_transcript("falling from the sky into the ocean.")
+    await _settle()
+    first_may_finish.set()
+    await _settle()
+    assert asked == [RAINDROP, "You are a raindrop falling from the sky into the ocean."]
+    assert [e.text for e in seen] == [
+        "Think of it this way.",
+        "You are a raindrop falling from the sky into the ocean.",
+    ]
+
+
+async def test_words_wait_for_the_next_caption_only_once() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        # A model that never thinks the raindrop sentence is finished.
+        if line.endswith("You are a raindrop"):
+            finished = line[: -len("You are a raindrop")].strip()
+            return Cleaned(finished=finished, unfinished="You are a raindrop")
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+        quiet_s=0.05,
+        held_quiet_s=0.1,
+    )
+    await translator.apply_transcript(RAINDROP, turn_complete=True)
+    # The speaker stops: the held words show after their wait instead of waiting forever.
+    await asyncio.sleep(0.4)
+    assert [e.text for e in seen] == ["Think of it this way.", "You are a raindrop"]
+
+
+async def test_an_unfinished_part_that_is_not_the_end_of_the_line_shows_the_line_as_heard(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        return Cleaned(finished="Think of it this way.", unfinished="Imagine a raindrop")
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript(RAINDROP, turn_complete=True)
+        await _settle()
+    assert [e.text for e in seen] == [RAINDROP]
+    assert "cleanup skipped: unfinished part is not the end of the line" in caplog.text
+
+
+async def test_a_line_held_back_whole_shows_nothing_the_model_made_up_for_it() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    fragment = "Even in Buddhism, for example, its founder"
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        if line == fragment:
+            # The model finishes the sentence from the speaker's next words, and holds it all back.
+            return Cleaned(finished="Even in Buddhism, its founder taught that life is suffering.", unfinished=line)
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(fragment, turn_complete=True)
+    await _settle()
+    assert seen == []
+    await translator.apply_transcript("taught that life is suffering.")
+    await _settle()
+    assert [e.text for e in seen] == ["Even in Buddhism, for example, its founder taught that life is suffering."]
+
+
+async def test_held_words_wait_through_a_pause_for_the_rest_of_their_sentence() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        if line == RAINDROP:
+            return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+        quiet_s=0.05,
+        held_quiet_s=1.0,
+    )
+    await translator.apply_transcript(RAINDROP, turn_complete=True)
+    # The translation pauses longer than quiet_s before the rest of the sentence comes.
+    await asyncio.sleep(0.2)
+    assert [e.text for e in seen] == ["Think of it this way."]
+    await translator.apply_transcript("falling from the sky.")
+    await _settle()
+    assert [e.text for e in seen] == ["Think of it this way.", "You are a raindrop falling from the sky."]
+
+
+async def test_unfinished_words_copied_with_other_punctuation_still_wait_as_the_line_has_them() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[str] = []
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        asked.append(line)
+        if line == "Think of it this way. You are, a raindrop":
+            return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop.")
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript("Think of it this way. You are, a raindrop", turn_complete=True)
+    await _settle()
+    await translator.apply_transcript("falling from the sky.")
+    await _settle()
+    assert asked[-1] == "You are, a raindrop falling from the sky."
+    assert [e.text for e in seen] == ["Think of it this way.", "You are, a raindrop falling from the sky."]

@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from features.translate_speech.cleanup import gemini_cleanup
+from features.translate_speech.gemini_live import Cleaned
 
 
 def _record_client(monkeypatch, reply: str) -> tuple[dict[str, object], dict[str, object]]:
+    """A text model that answers every line with `reply`; plain text stands for a finished line."""
     from google import genai
 
+    if not reply.startswith("{"):
+        reply = json.dumps({"finished": reply, "unfinished": ""}, ensure_ascii=False)
     built: dict[str, object] = {}
     asked: dict[str, object] = {}
 
@@ -26,13 +31,16 @@ def _record_client(monkeypatch, reply: str) -> tuple[dict[str, object], dict[str
 
 
 async def test_cleanup_asks_the_text_model_with_the_shown_lines_as_context(monkeypatch) -> None:
-    built, asked = _record_client(monkeypatch, "Paul says nothing can separate us from the love of God.")
+    built, asked = _record_client(
+        monkeypatch,
+        '{"finished": "Paul says nothing can separate us from the love of God.", "unfinished": ""}',
+    )
     clean = gemini_cleanup("test-key", model="gemini-test-lite")
     cleaned = await clean(
         "And so Paul, what he says is, nothing can separate us from the love of God.",
         ["Today we read from Romans eight.", "Paul writes to the church in Rome."],
     )
-    assert cleaned == "Paul says nothing can separate us from the love of God."
+    assert cleaned == Cleaned(finished="Paul says nothing can separate us from the love of God.")
     assert built["api_key"] == "test-key"
     options = built["http_options"]
     api_version = options.get("api_version") if isinstance(options, dict) else getattr(options, "api_version", None)
@@ -177,3 +185,28 @@ async def test_the_booth_glossary_replaces_the_default_and_empty_means_none(monk
     assert GLOSSARY_DEFAULT not in asked["config"].system_instruction
     await gemini_cleanup("test-key", model="gemini-test-lite", glossary=lambda: " ")("A line.", [])
     assert "Glossary" not in asked["config"].system_instruction
+
+
+async def test_cleanup_replies_with_the_finished_sentences_and_the_unfinished_words_after_them(
+    monkeypatch,
+) -> None:
+    _built, asked = _record_client(
+        monkeypatch,
+        '{"finished": "그리고 이렇게 생각해 보십시오.", "unfinished": "마치 개별적인 존재로서의 당신이"}',
+    )
+    clean = gemini_cleanup("test-key", model="gemini-test-lite")
+    cleaned = await clean("그리고 이렇게 생각해보세요. 마치 개별적인 존재로서의 당신이", [])
+    assert cleaned == Cleaned(finished="그리고 이렇게 생각해 보십시오.", unfinished="마치 개별적인 존재로서의 당신이")
+    config = asked["config"]
+    # Gemini's structured output: every reply is this JSON object, so nothing is parsed by guesswork.
+    assert config.response_mime_type == "application/json"
+    schema = config.response_json_schema
+    assert set(schema["properties"]) == {"finished", "unfinished"}
+    assert set(schema["required"]) == {"finished", "unfinished"}
+    instruction = config.system_instruction
+    for asks in (
+        'In "unfinished", put the words at the end of the line that do not finish a sentence yet',
+        "copied exactly as they are in the line",
+        "never finish them with words from",
+    ):
+        assert asks in instruction

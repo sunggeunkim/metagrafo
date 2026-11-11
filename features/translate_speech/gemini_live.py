@@ -7,6 +7,7 @@ import time
 import uuid
 from collections import deque
 from collections.abc import AsyncIterator, Awaitable, Callable
+from dataclasses import dataclass
 from types import TracebackType
 
 from core.event_bus import EventBus
@@ -27,9 +28,18 @@ logger = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-live-translate-preview"
 Connect = Callable[[TranslateMode], "LiveConnection"]
+@dataclass(frozen=True, slots=True)
+class Cleaned:
+    """A text model's reply: the complete sentences to show, and the words after them that
+    don't finish a sentence yet, copied unchanged from the end of the line."""
+
+    finished: str
+    unfinished: str = ""
+
+
 # A finished line, the lines shown before it, and what the speaker said around it (in the
-# source language) in; the line a text model rewrote out.
-Cleanup = Callable[[str, list[str], str], Awaitable[str]]
+# source language) in; the line a text model rewrote out. A plain string is all finished.
+Cleanup = Callable[[str, list[str], str], Awaitable["str | Cleaned"]]
 SHORT_SENTENCE_CHARS = 25
 # Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
 # slack because the overlay can wrap a full two rows onto a third (issue #36).
@@ -37,6 +47,9 @@ LONG_LINE_CHARS = 120
 CLEANUP_CONTEXT_LINES = 3
 # Captions never wait longer than this for the text model; the line shows as heard instead.
 CLEANUP_TIMEOUT_S = 4.0
+# Words cleanup held back for the rest of their sentence wait this long for more words, not the
+# usual quiet: the translation often pauses longer than that mid-sentence (2026-11-11 replay).
+HELD_QUIET_S = 5.0
 # The speaker's words reach the socket a little before their translation, so a line's source
 # is what was heard from this long before its first translated fragment until it is committed.
 SOURCE_LEAD_S = 6.0
@@ -100,6 +113,7 @@ class GeminiLiveTranslator:
         clock: Callable[[], float] = time.time,
         whole_sentences: bool = False,
         quiet_s: float = 1.2,
+        held_quiet_s: float = HELD_QUIET_S,
         clean_up_wording: bool = False,
         cleanup: Cleanup | None = None,
         cleanup_timeout_s: float = CLEANUP_TIMEOUT_S,
@@ -115,16 +129,14 @@ class GeminiLiveTranslator:
         # Recent input_transcription fragments and when each was heard, for the text model.
         self._heard: deque[tuple[float, str]] = deque(maxlen=200)
         # Committed lines not shown yet, oldest first, and the task that shows them in that order.
-        # Each line, the time it was spoken, its mode, whether it is paced, and its wording
-        # before cleanup (None when it is not being cleaned).
-        self._waiting: deque[
-            tuple[asyncio.Future[str], float | None, TranslateMode, bool, str | None]
-        ] = deque()
+        # They are cleaned one at a time, so words a line holds back can start the next one.
+        self._waiting: deque[_Waiting] = deque()
         self._in_order: asyncio.Task[None] | None = None
         # The open line keeps the setting it started with; the booth's choice waits for the next.
         self._whole_sentences = whole_sentences
         self._next_whole_sentences = whole_sentences
         self._quiet_s = quiet_s
+        self._held_quiet_s = held_quiet_s
         self._quiet: asyncio.Task[None] | None = None
         self._clock = clock
         self._connect = connect
@@ -200,9 +212,10 @@ class GeminiLiveTranslator:
     async def _close_open_line(self) -> None:
         self._stop_quiet_wait()
         spoken_at = self._line.opened_at
-        finished = self._finish(self._line.commit())
+        finished = self._finish(self._line.text) or ""
+        times, carried = self._commit_line(finished)
         if finished and self._active:
-            await self._show(finished, spoken_at=spoken_at)
+            await self._show(finished, spoken_at=spoken_at, times=times, carried=carried)
 
     async def apply_heard(self, text: str) -> None:
         """A fragment of what the speaker said, in the source language (input_transcription)."""
@@ -227,9 +240,9 @@ class GeminiLiveTranslator:
         text = self._finish(self._line.text) or ""
         if (turn_complete or _ends_sentence(text)) and not self._holds_short_sentence(text):
             self._stop_quiet_wait()
-            self._line.commit()
+            times, carried = self._commit_line(text)
             if text:
-                await self._show(text, spoken_at=spoken_at)
+                await self._show(text, spoken_at=spoken_at, times=times, carried=carried)
             return
         if self._whole_sentences:
             if self._line.text:
@@ -250,9 +263,20 @@ class GeminiLiveTranslator:
             self._quiet = None
 
     async def _commit_after_quiet(self) -> None:
-        await asyncio.sleep(self._quiet_s)
+        # A line of only held words waits longer: it shows alone only if the speaker stopped.
+        held_only = self._line.carried >= len(self._line.text.split())
+        await asyncio.sleep(self._held_quiet_s if held_only else self._quiet_s)
         self._quiet = None
         await self._close_open_line()
+
+    def _commit_line(self, text: str) -> tuple[list[float | None], int]:
+        """Clear the open line, shown as `text` (its tidied words): when each of those words
+        arrived, and how many of the first ones already waited from the caption before."""
+        words = text.split()
+        times = _times_of_kept(self._line.text.split(), self._line.word_times, words)
+        carried = min(self._line.carried, len(words))
+        self._line.commit()
+        return times, carried
 
     def _finish(self, text: str | None) -> str | None:
         """The words a committed line shows: whole sentences drops fillers."""
@@ -268,10 +292,11 @@ class GeminiLiveTranslator:
                 return
             spoken_at = self._line.opened_at
             words = text.split()
-            times = _times_of_kept(self._line.text.split(), self._line.word_times, words)
             front = len(text[:cut].split())
-            self._line.commit()
-            await self._show(text[:cut].strip(), spoken_at=spoken_at)
+            times, carried = self._commit_line(text)
+            await self._show(
+                text[:cut].strip(), spoken_at=spoken_at, times=times[:front], carried=min(carried, front)
+            )
             if not self._active:
                 # Captions went off while the front was shown; the off switch already cleared the line.
                 return
@@ -283,7 +308,14 @@ class GeminiLiveTranslator:
         """A sentence like "Yes." waits to join the next one instead of filling a line alone."""
         return self._whole_sentences and len(text) < SHORT_SENTENCE_CHARS
 
-    async def _show(self, text: str, *, spoken_at: float | None) -> None:
+    async def _show(
+        self,
+        text: str,
+        *,
+        spoken_at: float | None,
+        times: list[float | None] | None = None,
+        carried: int = 0,
+    ) -> None:
         """A committed line, rewritten by the text model when the booth asks for clean wording."""
         # Decided now: a line still being cleaned keeps it if Whole sentences changes meanwhile.
         paced = self._whole_sentences
@@ -291,69 +323,127 @@ class GeminiLiveTranslator:
         if cleaning and self._cleanup is None:
             logger.warning("cleanup skipped: no Gemini key")
             cleaning = False
-        if cleaning:
-            # The socket keeps reading while the model works; lines still show in spoken order.
-            said = self._said_since((spoken_at if spoken_at is not None else self._clock()) - SOURCE_LEAD_S)
-            line: asyncio.Future[str] = asyncio.create_task(
-                self._cleaned(text, said), name="gemini-live-cleanup"
-            )
-        elif self._in_order is None:
+        if not cleaning and self._in_order is None:
             await self._publish(text, provisional=False, spoken_at=spoken_at, paced=paced)
             self._shown.append(text)
             return
-        else:
-            line = asyncio.get_running_loop().create_future()
-            line.set_result(text)
-        self._waiting.append((line, spoken_at, self._mode, paced, text if cleaning else None))
+        # The socket keeps reading while the model works; lines still show in spoken order.
+        self._waiting.append(
+            _Waiting(
+                text=text,
+                times=times if times is not None else [spoken_at] * len(text.split()),
+                spoken_at=spoken_at,
+                committed_at=self._clock(),
+                mode=self._mode,
+                paced=paced,
+                cleaning=cleaning,
+                carried=carried,
+            )
+        )
         if self._in_order is None:
             self._in_order = asyncio.create_task(self._show_in_order(), name="gemini-live-in-order")
 
     def _drop_waiting_lines(self) -> None:
         """Captions off: lines still being cleaned never show, and their model calls stop."""
-        for line, *_ in self._waiting:
-            line.cancel()
+        for waiting in self._waiting:
+            if waiting.call is not None:
+                waiting.call.cancel()
         self._waiting.clear()
 
     async def _show_in_order(self) -> None:
         while self._waiting:
             entry = self._waiting[0]
-            line, spoken_at, mode, paced, before_cleanup = entry
-            await asyncio.wait({line})
-            if not self._waiting or self._waiting[0] is not entry:
-                # Captions went off while it was cleaned; lines after it are newer.
-                continue
+            if entry.cleaning:
+                start = entry.spoken_at if entry.spoken_at is not None else entry.committed_at
+                said = self._said_between(start - SOURCE_LEAD_S, entry.committed_at)
+                entry.call = asyncio.create_task(self._cleaned(entry.text, said), name="gemini-live-cleanup")
+                await asyncio.wait({entry.call})
+                if not self._waiting or self._waiting[0] is not entry:
+                    # Captions went off while it was cleaned; lines after it are newer.
+                    continue
+                cleaned = entry.call.result()
+            else:
+                cleaned = Cleaned(entry.text)
             self._waiting.popleft()
-            text = line.result()
+            text = self._hold_unfinished(entry, cleaned)
+            if not text:
+                continue
             await self._publish(
                 text,
                 provisional=False,
-                spoken_at=spoken_at,
-                mode=mode,
-                paced=paced,
-                before_cleanup=before_cleanup,
+                spoken_at=entry.spoken_at,
+                mode=entry.mode,
+                paced=entry.paced,
+                before_cleanup=entry.text if entry.cleaning else None,
             )
             self._shown.append(text)
         self._in_order = None
 
-    def _said_since(self, since: float) -> str:
-        """The speaker's own words heard from `since` until now, as one line."""
-        return " ".join("".join(text for at, text in self._heard if at >= since).split())
+    def _hold_unfinished(self, entry: _Waiting, cleaned: Cleaned) -> str:
+        """What the line shows. Its unfinished words start the next line instead, when they can:
+        each word waits only once, and only for a line of the same mode that is cleaned too."""
+        if not cleaned.unfinished:
+            return cleaned.finished
+        held = cleaned.unfinished.split()
+        everything = f"{cleaned.finished} {cleaned.unfinished}".strip()
+        if len(held) > len(entry.text.split()) - entry.carried:
+            return everything
+        times = entry.times[-len(held):]
+        if self._waiting:
+            following = self._waiting[0]
+            if following.mode is not entry.mode or not following.cleaning:
+                return everything
+            following.text = f"{cleaned.unfinished} {following.text}"
+            following.times = times + following.times
+            following.spoken_at = times[0] if times[0] is not None else following.spoken_at
+            following.carried += len(held)
+            return cleaned.finished
+        if not self._active or self._mode is not entry.mode:
+            return everything
+        if not self._line.text:
+            # The held words open the next line, which takes the booth's settings now.
+            self._whole_sentences = self._next_whole_sentences
+            self._clean_up_wording = self._next_clean_up_wording
+            if not (self._whole_sentences and self._clean_up_wording):
+                return everything
+            self._line.prepend(cleaned.unfinished, times)
+            # Shown when the speaker pauses, if no more words come to finish the sentence.
+            self._commit_when_quiet()
+        else:
+            self._line.prepend(cleaned.unfinished, times)
+        return cleaned.finished
 
-    async def _cleaned(self, text: str, said: str) -> str:
+    def _said_between(self, since: float, until: float) -> str:
+        """The speaker's own words heard from `since` to `until`, as one line."""
+        return " ".join("".join(text for at, text in self._heard if since <= at <= until).split())
+
+    async def _cleaned(self, text: str, said: str) -> Cleaned:
         """The text model's wording of a line, or the line as heard when the model can't answer."""
         assert self._cleanup is not None
         try:
-            cleaned = await asyncio.wait_for(
+            reply = await asyncio.wait_for(
                 self._cleanup(text, list(self._shown), said), timeout=self._cleanup_timeout_s
             )
-            if cleaned.strip():
-                return cleaned.strip()
+            cleaned = reply if isinstance(reply, Cleaned) else Cleaned(reply)
+            finished = cleaned.finished.strip()
+            held = cleaned.unfinished.split()
+            words = text.split()
+            if held and not _ends_with_words(words, held):
+                logger.warning("cleanup skipped: unfinished part is not the end of the line")
+                return Cleaned(text)
+            # The line's own words wait, not the model's copy of them.
+            unfinished = " ".join(words[len(words) - len(held) :]) if held else ""
+            if held and len(held) == len(words):
+                # Nothing of the line is finished, so a finished part could only be made up.
+                return Cleaned("", unfinished)
+            if finished or unfinished:
+                return Cleaned(finished, unfinished)
             logger.warning("cleanup skipped: empty reply")
         except asyncio.TimeoutError:
             logger.warning("cleanup skipped: no reply within %s s", self._cleanup_timeout_s)
         except Exception as exc:
             logger.warning("cleanup skipped: %s", _redact(exc, self._api_key))
-        return text
+        return Cleaned(text)
 
     async def _publish(
         self,
@@ -452,6 +542,30 @@ class GeminiLiveTranslator:
 
 def _ends_sentence(text: str) -> bool:
     return bool(text) and text[-1] in ".?!"
+
+
+@dataclass(slots=True)
+class _Waiting:
+    """A committed line waiting to show: its words, when each arrived, when it was spoken and
+    committed, its mode, whether it is paced and cleaned, how many of its first words waited
+    from the line before, and its cleanup call once started."""
+
+    text: str
+    times: list[float | None]
+    spoken_at: float | None
+    committed_at: float
+    mode: TranslateMode
+    paced: bool
+    cleaning: bool
+    carried: int = 0
+    call: asyncio.Task[Cleaned] | None = None
+
+
+def _ends_with_words(words: list[str], tail: list[str]) -> bool:
+    """Whether `tail` is the last words of `words`, whatever punctuation either copy has."""
+    if not 0 < len(tail) <= len(words):
+        return False
+    return [_bare(w) for w in words[-len(tail) :]] == [_bare(w) for w in tail]
 
 
 def _bare(word: str) -> str:
