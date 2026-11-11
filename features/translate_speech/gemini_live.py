@@ -19,7 +19,7 @@ from features.operator_control.events import (
     WholeSentencesEvent,
     languages_for,
 )
-from features.translate_speech.events import SubtitleEvent
+from features.translate_speech.events import SpeechHeardEvent, SubtitleEvent
 from features.translate_speech.live_line import LiveLine
 from features.translate_speech.tidy import tidy
 
@@ -109,7 +109,11 @@ class GeminiLiveTranslator:
         # The lines most recently shown, for the text model to read the new one against.
         self._shown: deque[str] = deque(maxlen=CLEANUP_CONTEXT_LINES)
         # Committed lines not shown yet, oldest first, and the task that shows them in that order.
-        self._waiting: deque[tuple[asyncio.Future[str], float | None, TranslateMode, bool]] = deque()
+        # Each line, the time it was spoken, its mode, whether it is paced, and its wording
+        # before cleanup (None when it is not being cleaned).
+        self._waiting: deque[
+            tuple[asyncio.Future[str], float | None, TranslateMode, bool, str | None]
+        ] = deque()
         self._in_order: asyncio.Task[None] | None = None
         # The open line keeps the setting it started with; the booth's choice waits for the next.
         self._whole_sentences = whole_sentences
@@ -282,7 +286,7 @@ class GeminiLiveTranslator:
         else:
             line = asyncio.get_running_loop().create_future()
             line.set_result(text)
-        self._waiting.append((line, spoken_at, self._mode, paced))
+        self._waiting.append((line, spoken_at, self._mode, paced, text if cleaning else None))
         if self._in_order is None:
             self._in_order = asyncio.create_task(self._show_in_order(), name="gemini-live-in-order")
 
@@ -295,14 +299,21 @@ class GeminiLiveTranslator:
     async def _show_in_order(self) -> None:
         while self._waiting:
             entry = self._waiting[0]
-            line, spoken_at, mode, paced = entry
+            line, spoken_at, mode, paced, before_cleanup = entry
             await asyncio.wait({line})
             if not self._waiting or self._waiting[0] is not entry:
                 # Captions went off while it was cleaned; lines after it are newer.
                 continue
             self._waiting.popleft()
             text = line.result()
-            await self._publish(text, provisional=False, spoken_at=spoken_at, mode=mode, paced=paced)
+            await self._publish(
+                text,
+                provisional=False,
+                spoken_at=spoken_at,
+                mode=mode,
+                paced=paced,
+                before_cleanup=before_cleanup,
+            )
             self._shown.append(text)
         self._in_order = None
 
@@ -330,6 +341,7 @@ class GeminiLiveTranslator:
         spoken_at: float | None = None,
         mode: TranslateMode | None = None,
         paced: bool = False,
+        before_cleanup: str | None = None,
     ) -> None:
         if not self._active and provisional:
             return
@@ -348,6 +360,7 @@ class GeminiLiveTranslator:
                 provisional=provisional,
                 spoken_at=spoken_at,
                 paced=paced,
+                before_cleanup=before_cleanup,
             )
         )
 
@@ -404,6 +417,10 @@ class GeminiLiveTranslator:
                 heard_text = getattr(heard, "text", None) if heard is not None else None
                 if heard_text:
                     print(f"IN: {heard_text}", flush=True)
+                    source, _target = languages_for(self._mode)
+                    await self._bus.publish(
+                        SpeechHeardEvent(text=heard_text, language=source, heard_at=self._clock())
+                    )
                 transcription = getattr(content, "output_transcription", None)
                 fragment = getattr(transcription, "text", None) if transcription is not None else None
                 if fragment:

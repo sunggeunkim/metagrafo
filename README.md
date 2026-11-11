@@ -153,6 +153,15 @@ One Gemini live pass feeds both:
 
 It writes `sermon.compare.md` (or `{VIDEO_ID}.compare.md` with `--youtube`; `--out` to choose), a table ordered by time from the start of the recording, with B, C, and the Korean C translated. `(+N s)` is each line's delay from its first heard word (B: first English fragment; C: first Korean fragment). Each line is also logged as it lands. Booth control and live captions are unchanged.
 
+### Save the live transcript
+
+To look at a live service afterwards, tick **Save transcript** on booth control. Each finished caption goes to `transcripts/YYYY-MM-DD_HHMMSS.jsonl`, one JSON record per line. Each record holds the time it was shown and how long after the speech began. With Gemini, the file also holds the Korean Gemini heard, each line as it read before **Clean up wording**, and every booth change (captions on or off, mode, Whole sentences, Clean up wording). Booth control shows the file's full path while it is saving. Each time you tick the box, a new file starts. It is off by default, and the choice is kept in `.env` (`SAVE_TRANSCRIPT`).
+
+```json
+{"t_s": 12.4, "at": "2026-11-15T11:20:03.412", "kind": "heard", "text": "오늘은 기도에 대해", "language": "ko"}
+{"t_s": 15.1, "at": "2026-11-15T11:20:06.105", "kind": "shown", "text": "Today, let's talk about prayer.", "delay_s": 1.9, "mode": "ko_to_en", "before_cleanup": "Today, uh, let's talk about prayer."}
+```
+
 ## OBS scene
 
 Put the video in OBS the way you already do. Add the captions as a Browser Source on top of it.

@@ -16,6 +16,7 @@ from features.operator_control.events import (
     CleanUpWordingEvent,
     GeminiKeyChangedEvent,
     ModeChangedEvent,
+    SaveTranscriptEvent,
     OverlayPosition,
     OverlayStyleEvent,
     TranslateMode,
@@ -41,6 +42,7 @@ class OperatorState:
         condition_on_previous_text: bool = True,
         whole_sentences: bool = True,
         clean_up_wording: bool = True,
+        save_transcript: bool = False,
         overlay_position: OverlayPosition = OverlayPosition.TOP_LEFT,
         font_size_vw: float = 2.5,
         inset_vertical_pct: float = 1.0,
@@ -56,6 +58,7 @@ class OperatorState:
         self.condition_on_previous_text = condition_on_previous_text
         self.whole_sentences = whole_sentences
         self.clean_up_wording = clean_up_wording
+        self.save_transcript = save_transcript
         self.overlay_position = overlay_position
         self.font_size_vw = font_size_vw
         self.inset_vertical_pct = inset_vertical_pct
@@ -76,6 +79,7 @@ class OperatorState:
             "condition_on_previous_text": self.condition_on_previous_text,
             "whole_sentences": self.whole_sentences,
             "clean_up_wording": self.clean_up_wording,
+            "save_transcript": self.save_transcript,
             "position": self.overlay_position.value,
             "font_size_vw": self.font_size_vw,
             "inset_vertical_pct": self.inset_vertical_pct,
@@ -116,6 +120,10 @@ class WholeSentencesBody(BaseModel):
 
 class CleanUpWordingBody(BaseModel):
     clean_up_wording: bool
+
+
+class SaveTranscriptBody(BaseModel):
+    save_transcript: bool
 
 
 class OverlayStyleBody(BaseModel):
@@ -223,6 +231,7 @@ def register(
         condition_on_previous_text=settings.condition_on_previous_text,
         whole_sentences=settings.whole_sentences,
         clean_up_wording=settings.clean_up_wording,
+        save_transcript=settings.save_transcript,
     )
     app.state.operator = state
 
@@ -395,6 +404,15 @@ def register(
         settings.clean_up_wording = body.clean_up_wording
         state.clean_up_wording = body.clean_up_wording
         await bus.publish(CleanUpWordingEvent(clean_up_wording=body.clean_up_wording))
+        return public_state()
+
+    @app.put("/save-transcript")
+    async def put_save_transcript(body: SaveTranscriptBody) -> dict[str, object]:
+        # Kept in .env so the booth's choice survives a restart.
+        write_env_values(key_file, {"SAVE_TRANSCRIPT": "true" if body.save_transcript else "false"})
+        settings.save_transcript = body.save_transcript
+        state.save_transcript = body.save_transcript
+        await bus.publish(SaveTranscriptEvent(save_transcript=body.save_transcript))
         return public_state()
 
     @app.put("/overlay-style")

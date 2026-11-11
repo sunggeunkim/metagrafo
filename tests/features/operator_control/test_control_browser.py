@@ -14,6 +14,7 @@ from collections.abc import Iterator
 import pytest
 import uvicorn
 
+from core.settings import Settings
 from main import create_app
 
 sync_api = pytest.importorskip("playwright.sync_api", reason="Playwright is not installed")
@@ -82,5 +83,55 @@ def test_quit_button_does_nothing_when_cancelled(browser, control) -> None:
         page.wait_for_timeout(500)
         assert asked == []
         assert page.is_visible("#captions-toggle")
+    finally:
+        page.close()
+
+
+@pytest.fixture
+def control_saving(tmp_path, monkeypatch) -> Iterator[tuple[str, object]]:
+    """A served app that saves transcripts under tmp_path."""
+    monkeypatch.delenv("SAVE_TRANSCRIPT", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+    app = create_app(
+        settings=Settings(caption_engine="whisper", gemini_api_key="", _env_file=env_file),
+        env_file=env_file,
+        list_input_devices=lambda: [],
+        transcripts_dir=tmp_path / "transcripts",
+    )
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    config = uvicorn.Config(
+        app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=3
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 15
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("control server did not start")
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}", tmp_path / "transcripts"
+    server.should_exit = True
+    thread.join(timeout=15)
+
+
+def test_save_transcript_checkbox_saves_to_a_file_it_names(browser, control_saving) -> None:
+    url, folder = control_saving
+    page = browser.new_page()
+    try:
+        page.goto(f"{url}/control")
+        page.wait_for_selector("#transcript-status:has-text('Not saving')")
+        assert not page.is_checked("#save-transcript")
+
+        page.check("#save-transcript")
+        page.wait_for_selector("#transcript-status:has-text('Saving to')")
+        [saved] = list(folder.glob("*.jsonl"))
+        assert saved.name in page.inner_text("#transcript-status")
+
+        page.uncheck("#save-transcript")
+        page.wait_for_selector("#transcript-status:has-text('Not saving')")
     finally:
         page.close()
