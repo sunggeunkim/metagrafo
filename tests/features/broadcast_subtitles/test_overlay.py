@@ -313,6 +313,17 @@ async def test_a_paced_line_tells_the_overlay_how_long_to_keep_it_up() -> None:
     ]
 
 
+async def test_by_default_a_long_line_stays_up_one_second_per_9_characters() -> None:
+    bus = EventBus()
+    hub = SubtitleHub(bus)
+    socket = _Socket()
+    await hub.connect(socket)
+    # 36 characters at 9 per second: 4.0 s, longer than the 2.5 s minimum.
+    await bus.publish(_line("A line of thirty-six characters, ok."))
+    subtitles = [m for m in socket.sent if m["type"] == "subtitle"]
+    assert [m["min_on_screen_s"] for m in subtitles] == [4.0]
+
+
 async def test_paced_lines_that_arrive_early_wait_and_show_in_order() -> None:
     bus = EventBus()
     hub = SubtitleHub(bus, min_on_screen_s=0.2, chars_per_s=1000.0)
