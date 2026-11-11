@@ -126,7 +126,7 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
             assert hello["inset_horizontal_pct"] == 1.0
             assert hello["box_width_pct"] == 100.0
             assert hello["box_height_pct"] == 30.0
-            assert hello["line_count"] == 2
+            assert hello["line_count"] == 3
             response = client.put(
                 "/overlay-style",
                 json={
@@ -148,7 +148,7 @@ def test_overlay_style_put_broadcasts_on_websocket() -> None:
         "inset_horizontal_pct": 1.5,
         "box_width_pct": 100.0,
         "box_height_pct": 20.0,
-        "line_count": 2,
+        "line_count": 3,
     }
 
 

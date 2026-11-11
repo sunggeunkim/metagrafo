@@ -49,7 +49,7 @@ class OperatorState:
         inset_horizontal_pct: float = 1.0,
         box_width_pct: float = 100.0,
         box_height_pct: float = 30.0,
-        line_count: int = 2,
+        line_count: int = 3,
     ) -> None:
         self.captions_active = True
         self.mode = mode
@@ -133,7 +133,7 @@ class OverlayStyleBody(BaseModel):
     inset_horizontal_pct: float = Field(ge=0.0, le=20.0)
     box_width_pct: float = Field(ge=10.0, le=100.0)
     box_height_pct: float = Field(ge=5.0, le=100.0)
-    line_count: int = Field(default=2, ge=1, le=6)
+    line_count: int = Field(default=3, ge=1, le=6)
 
 
 class AudioDeviceBody(BaseModel):

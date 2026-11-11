@@ -17,7 +17,7 @@ def test_captions_default_on_and_sermon_mode() -> None:
         assert body["vad_min_silence_ms"] == 500
         assert body["vad_pauses"] == 1
         assert body["condition_on_previous_text"] is True
-        assert body["line_count"] == 2
+        assert body["line_count"] == 3
         assert body["position"] == "top_left"
         assert body["font_size_vw"] == 2.5
         assert body["inset_vertical_pct"] == 1.0

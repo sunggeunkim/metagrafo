@@ -103,7 +103,7 @@ Subscribes to `AudioChunkEvent`, `CaptionsStateEvent`, and mode. No `/control`.
 - `GET /overlay` — OBS Browser Source (no booth buttons)
 - `GET /health` — liveness, client count, captions active, mode, model/device/VRAM
 
-Overlay lines: default **2** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries; Korean breaks only at spaces. Each box shows exactly one row, so the line count is the row count. New `text` shifts older lines up. Stop captions **clears the lines**. Fade after a quiet interval.
+Overlay lines: default **3** (newest at the bottom, older lines above). `/control` sets **1–6** lines. Designed for a **1920×1080** OBS Browser Source (do not scale the source — that squashes type). Caption box width/height are percent of that overlay (defaults **100 × 30**). Wrap on word boundaries; Korean breaks only at spaces. Each box shows exactly one row, so the line count is the row count. New `text` shifts older lines up. Stop captions **clears the lines**. Fade after a quiet interval.
 
 - Pacing (`/ws` only; YouTube CC is not paced). A `SubtitleEvent.paced` line stays up at least `max(2.5 s, characters / 13 per second)` before the next paced line is sent, and its message carries that time as `min_on_screen_s` so the overlay keeps it up at least that long, past its 8 s quiet fade. Paced lines that arrive sooner wait in order. If the newest waiting line would show more than ~5 s after it arrived, the **oldest waiting line is dropped** (repeat); the newest is never dropped. Dropping, not merging: a merged line takes as long to read as its parts. Unpaced lines (Whisper, `provisional`, Whole sentences off, `/inject`) go out at once, past any waiting lines, and do not restart the wait. Stop captions empties the waiting lines and cancels the pending wait, so none is sent later; the next paced line shows at once. `SubtitleHub(min_on_screen_s, chars_per_s, max_behind_s)`.
 
@@ -165,7 +165,7 @@ Owns the booth UI. Publishes only.
 - `ConditionOnPreviousTextEvent` — live; feed the caption just written into the next phrase
 - `WholeSentencesEvent` — live; Gemini live shows only finished lines from the next line on. `PUT /whole-sentences` (`{whole_sentences}`) writes `WHOLE_SENTENCES` to `.env`, keeping other lines, so the choice survives a restart; `/mode` and `/health` show `whole_sentences`
 - `CleanUpWordingEvent` — live; a text model rewrites each finished Gemini live line from the next line on. `PUT /clean-up-wording` (`{clean_up_wording}`) writes `CLEAN_UP_WORDING` to `.env`, keeping other lines; `/mode` and `/health` show `clean_up_wording`
-- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6). `line_count` is visible text rows, default 2. A wrapped sentence keeps the newest rows and the oldest row leaves.
+- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6). `line_count` is visible text rows, default 3 (a ~100-character Korean line takes three rows at 2.5 vw). A wrapped sentence keeps the newest rows and the oldest row leaves.
 
 Open `/control` in a normal browser, **not** as an OBS source.
 

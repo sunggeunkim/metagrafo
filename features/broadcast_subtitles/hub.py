@@ -43,7 +43,7 @@ class SubtitleHub:
             "inset_horizontal_pct": 1.0,
             "box_width_pct": 100.0,
             "box_height_pct": 30.0,
-            "line_count": 2,
+            "line_count": 3,
         }
         bus.subscribe(SubtitleEvent, self._on_subtitle)
         bus.subscribe(CaptionsStateEvent, self._on_captions)
