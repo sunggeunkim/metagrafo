@@ -32,7 +32,7 @@ from features.operator_control.events import (
 )
 
 _CONTROL_PAGE = Path(__file__).with_name("control.html")
-# The sermon context goes with every cleaned line, so it stays short enough not to slow cleanup.
+# The additional context goes with every cleaned line, so it stays short enough not to slow cleanup.
 MAX_CLEANUP_CONTEXT_CHARS = 2000
 
 logger = logging.getLogger(__name__)
@@ -172,7 +172,7 @@ def write_env_values(env_file: Path, values: dict[str, str]) -> None:
 
 
 def read_cleanup_context(context_file: Path) -> str:
-    """The saved sermon context, or "" when there is none.
+    """The saved additional context, or "" when there is none.
 
     The file is the only source: booth control writes nothing else. A hand-edited file is
     held to the same limit as a save, and one that cannot be read never stops Metagrafo.
@@ -182,11 +182,11 @@ def read_cleanup_context(context_file: Path) -> str:
     except FileNotFoundError:
         return ""
     except (OSError, UnicodeDecodeError) as exc:
-        logger.warning("sermon context not loaded: cannot read %s (%s)", context_file.name, exc)
+        logger.warning("additional context not loaded: cannot read %s (%s)", context_file.name, exc)
         return ""
     if len(text) > MAX_CLEANUP_CONTEXT_CHARS:
         logger.warning(
-            "sermon context in %s is %d characters; using the first %d",
+            "additional context in %s is %d characters; using the first %d",
             context_file.name,
             len(text),
             MAX_CLEANUP_CONTEXT_CHARS,

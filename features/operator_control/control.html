@@ -98,9 +98,9 @@
   <h2>Clean up wording</h2>
   <p class="hint">Gemini only, and only with Whole sentences on. <strong>On</strong> (default) sends each finished line to a fast Gemini text model with the last few lines shown, to take out false starts and lightly fix grammar without changing the meaning, names, or scripture references. If it takes longer than about 4 s, the line shows as heard. The cleaned line is what the overlay and YouTube captions get. Starts with the next line, and this computer keeps the choice for the next time.</p>
   <label class="check"><input id="clean-up-wording" type="checkbox" /> Clean up wording</label>
-  <h2>Sermon context</h2>
+  <h2>Additional context</h2>
   <p class="hint">Gemini only, used by Clean up wording. A few lines about this service help the text model get names, scripture references and terms right, for example the title, the passage, the speaker, and names or words likely to come up. It is background only and never shows on screen. Up to 2000 characters. Starts with the next cleaned line, and this computer keeps it for the next time; Clear it after the service.</p>
-  <textarea id="cleanup-context" rows="4" maxlength="2000" placeholder="Sermon: The problem of evil&#10;Scripture: Job 1–2&#10;Speaker: Pastor Frank (youth pastor)&#10;Names and terms: Buddha, Nirvana, karma"></textarea>
+  <textarea id="cleanup-context" rows="4" maxlength="2000"></textarea>
   <div>
     <button id="cleanup-context-save" class="mode">Save context</button>
     <button id="cleanup-context-clear" class="off">Clear</button>
@@ -153,7 +153,7 @@
       document.getElementById("cleanup-context").value = text;
       document.getElementById("cleanup-context-status").textContent = text
         ? "Saved. Clean up wording reads it from the next line."
-        : "No sermon context saved.";
+        : "No additional context saved.";
     }
     async function saveCleanupContext(text) {
       const response = await fetch("/cleanup-context", {

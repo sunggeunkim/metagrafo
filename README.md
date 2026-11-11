@@ -162,9 +162,9 @@ To look at a live service afterwards, tick **Save transcript** on booth control.
 {"t_s": 15.1, "at": "2026-11-15T11:20:06.105", "kind": "shown", "text": "Today, let's talk about prayer.", "delay_s": 1.9, "mode": "ko_to_en", "before_cleanup": "Today, uh, let's talk about prayer."}
 ```
 
-### Sermon context
+### Additional context
 
-With Gemini and **Clean up wording** on, the text model that tidies each line can be told about the service. On booth control, type a few lines under **Sermon context**, such as the title, the passage, the speaker, and names or terms likely to come up, then click **Save context**. It applies from the next cleaned line and helps the model get names, scripture references and terms right. It is background only and never shows on screen. It is kept in `cleanup-context.txt` beside `.env` for the next time, so **Clear** it after the service. The live translation itself takes no instructions, so this cannot stop it mistranslating; it only helps the cleanup that follows.
+With Gemini and **Clean up wording** on, the text model that tidies each line can be told about the service. On booth control, type a few lines under **Additional context**, such as the title, the passage, the speaker, and names or terms likely to come up, then click **Save context**. It applies from the next cleaned line and helps the model get names, scripture references and terms right. It is background only and never shows on screen. It is kept in `cleanup-context.txt` beside `.env` for the next time, so **Clear** it after the service. The live translation itself takes no instructions, so this cannot stop it mistranslating; it only helps the cleanup that follows.
 
 ## OBS scene
 
