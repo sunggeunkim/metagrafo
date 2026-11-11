@@ -27,8 +27,9 @@ logger = logging.getLogger(__name__)
 
 MODEL = "gemini-3.5-live-translate-preview"
 Connect = Callable[[TranslateMode], "LiveConnection"]
-# A finished line and the lines shown before it in; the line a text model rewrote out.
-Cleanup = Callable[[str, list[str]], Awaitable[str]]
+# A finished line, the lines shown before it, and what the speaker said around it (in the
+# source language) in; the line a text model rewrote out.
+Cleanup = Callable[[str, list[str], str], Awaitable[str]]
 SHORT_SENTENCE_CHARS = 25
 # Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
 # slack because the overlay can wrap a full two rows onto a third (issue #36).
@@ -36,6 +37,9 @@ LONG_LINE_CHARS = 120
 CLEANUP_CONTEXT_LINES = 3
 # Captions never wait longer than this for the text model; the line shows as heard instead.
 CLEANUP_TIMEOUT_S = 4.0
+# The speaker's words reach the socket a little before their translation, so a line's source
+# is what was heard from this long before its first translated fragment until it is committed.
+SOURCE_LEAD_S = 6.0
 
 
 def echoes_target_language(mode: TranslateMode) -> bool:
@@ -108,6 +112,8 @@ class GeminiLiveTranslator:
         self._cleanup_timeout_s = cleanup_timeout_s
         # The lines most recently shown, for the text model to read the new one against.
         self._shown: deque[str] = deque(maxlen=CLEANUP_CONTEXT_LINES)
+        # Recent input_transcription fragments and when each was heard, for the text model.
+        self._heard: deque[tuple[float, str]] = deque(maxlen=200)
         # Committed lines not shown yet, oldest first, and the task that shows them in that order.
         # Each line, the time it was spoken, its mode, whether it is paced, and its wording
         # before cleanup (None when it is not being cleaned).
@@ -171,6 +177,7 @@ class GeminiLiveTranslator:
         self._stop_quiet_wait()
         self._line.commit()
         self._drop_waiting_lines()
+        self._heard.clear()
 
     async def _on_audio(self, event: ProgramAudioEvent) -> None:
         if not self._active:
@@ -196,6 +203,14 @@ class GeminiLiveTranslator:
         finished = self._finish(self._line.commit())
         if finished and self._active:
             await self._show(finished, spoken_at=spoken_at)
+
+    async def apply_heard(self, text: str) -> None:
+        """A fragment of what the speaker said, in the source language (input_transcription)."""
+        print(f"IN: {text}", flush=True)
+        source, _target = languages_for(self._mode)
+        heard_at = self._clock()
+        self._heard.append((heard_at, text))
+        await self._bus.publish(SpeechHeardEvent(text=text, language=source, heard_at=heard_at))
 
     async def apply_transcript(self, fragment: str, *, turn_complete: bool = False) -> None:
         if not self._active:
@@ -278,7 +293,10 @@ class GeminiLiveTranslator:
             cleaning = False
         if cleaning:
             # The socket keeps reading while the model works; lines still show in spoken order.
-            line: asyncio.Future[str] = asyncio.create_task(self._cleaned(text), name="gemini-live-cleanup")
+            said = self._said_since((spoken_at if spoken_at is not None else self._clock()) - SOURCE_LEAD_S)
+            line: asyncio.Future[str] = asyncio.create_task(
+                self._cleaned(text, said), name="gemini-live-cleanup"
+            )
         elif self._in_order is None:
             await self._publish(text, provisional=False, spoken_at=spoken_at, paced=paced)
             self._shown.append(text)
@@ -317,12 +335,16 @@ class GeminiLiveTranslator:
             self._shown.append(text)
         self._in_order = None
 
-    async def _cleaned(self, text: str) -> str:
+    def _said_since(self, since: float) -> str:
+        """The speaker's own words heard from `since` until now, as one line."""
+        return " ".join("".join(text for at, text in self._heard if at >= since).split())
+
+    async def _cleaned(self, text: str, said: str) -> str:
         """The text model's wording of a line, or the line as heard when the model can't answer."""
         assert self._cleanup is not None
         try:
             cleaned = await asyncio.wait_for(
-                self._cleanup(text, list(self._shown)), timeout=self._cleanup_timeout_s
+                self._cleanup(text, list(self._shown), said), timeout=self._cleanup_timeout_s
             )
             if cleaned.strip():
                 return cleaned.strip()
@@ -416,11 +438,7 @@ class GeminiLiveTranslator:
                 heard = getattr(content, "input_transcription", None)
                 heard_text = getattr(heard, "text", None) if heard is not None else None
                 if heard_text:
-                    print(f"IN: {heard_text}", flush=True)
-                    source, _target = languages_for(self._mode)
-                    await self._bus.publish(
-                        SpeechHeardEvent(text=heard_text, language=source, heard_at=self._clock())
-                    )
+                    await self.apply_heard(heard_text)
                 transcription = getattr(content, "output_transcription", None)
                 fragment = getattr(transcription, "text", None) if transcription is not None else None
                 if fragment:

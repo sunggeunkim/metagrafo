@@ -125,12 +125,13 @@ def register(
     if settings.caption_engine == "gemini_live" and not settings.gemini_api_key.strip():
         logger.warning("CAPTION_ENGINE=gemini_live but GEMINI_API_KEY is empty; using Whisper")
     connect_factory = gemini_connect_factory or gemini_connect
-    # The real cleanup reads the booth's context and Korean style for every line;
+    # The real cleanup reads the booth's context, Korean style and glossary for every line;
     # a test's stand-in needs neither.
     cleanup_factory = gemini_cleanup_factory or partial(
         gemini_cleanup,
         context=lambda: settings.cleanup_context,
         korean_style=lambda: settings.korean_style,
+        glossary=lambda: settings.glossary,
     )
     if settings.gemini_live():
         live = GeminiLiveTranslator(

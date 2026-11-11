@@ -289,6 +289,8 @@ class _CompareRun:
                 heard_text = getattr(heard, "text", None) if heard is not None else None
                 if heard_text and heard_text.strip():
                     self._hear(heard_text)
+                    # B's cleanup reads the speaker's words too, as in the live pipeline.
+                    await self._b.apply_heard(heard_text)
                 said = getattr(content, "output_transcription", None)
                 fragment = getattr(said, "text", None) if said is not None else None
                 turn_complete = bool(getattr(content, "turn_complete", False))

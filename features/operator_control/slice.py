@@ -10,13 +10,14 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.event_bus import EventBus
-from core.settings import KOREAN_STYLE_DEFAULT, Settings
+from core.settings import GLOSSARY_DEFAULT, KOREAN_STYLE_DEFAULT, Settings
 from features.operator_control.events import (
     AudioDeviceChangedEvent,
     CaptionsStateEvent,
     CleanUpWordingEvent,
     CleanupContextEvent,
     GeminiKeyChangedEvent,
+    GlossaryEvent,
     KoreanStyleEvent,
     ModeChangedEvent,
     OneSentenceEvent,
@@ -38,6 +39,8 @@ _CONTROL_PAGE = Path(__file__).with_name("control.html")
 MAX_CLEANUP_CONTEXT_CHARS = 2000
 # The Korean style also goes with every cleaned line; a style needs far less than the context.
 MAX_KOREAN_STYLE_CHARS = 1000
+# The glossary goes with every cleaned line too; about 3000 characters is under 2000 tokens.
+MAX_GLOSSARY_CHARS = 3000
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +150,10 @@ class KoreanStyleBody(BaseModel):
     text: str = Field(max_length=MAX_KOREAN_STYLE_CHARS)
 
 
+class GlossaryBody(BaseModel):
+    text: str = Field(max_length=MAX_GLOSSARY_CHARS)
+
+
 class SaveTranscriptBody(BaseModel):
     save_transcript: bool
 
@@ -209,6 +216,12 @@ def read_cleanup_context(context_file: Path) -> str:
     """The saved additional context, or "" when there is none."""
     text = _read_booth_text(context_file, "additional context", MAX_CLEANUP_CONTEXT_CHARS)
     return text if text is not None else ""
+
+
+def read_glossary(glossary_file: Path) -> str:
+    """The saved glossary ("" turns it off), or the church default when none was saved."""
+    text = _read_booth_text(glossary_file, "glossary", MAX_GLOSSARY_CHARS)
+    return text if text is not None else GLOSSARY_DEFAULT
 
 
 def read_korean_style(style_file: Path) -> str:
@@ -287,6 +300,9 @@ def register(
     # No file means the default style; an empty file means the booth turned the rule off.
     style_file = key_file.with_name("korean-style.txt")
     settings.korean_style = read_korean_style(style_file)
+    # Like the Korean style: no file means the default, an empty file means no glossary.
+    glossary_file = key_file.with_name("glossary.txt")
+    settings.glossary = read_glossary(glossary_file)
     state = OperatorState(
         initial_mode,
         vad_min_silence_ms=settings.vad_min_silence_ms,
@@ -307,6 +323,8 @@ def register(
         body["cleanup_context"] = settings.cleanup_context
         body["korean_style"] = settings.korean_style
         body["korean_style_default"] = KOREAN_STYLE_DEFAULT
+        body["glossary"] = settings.glossary
+        body["glossary_default"] = GLOSSARY_DEFAULT
         body["audio_device"] = settings.audio_device_name
         status = capture_status() if capture_status is not None else {}
         body["audio_capturing"] = status.get("capturing")
@@ -506,6 +524,23 @@ def register(
         style_file.unlink(missing_ok=True)
         settings.korean_style = KOREAN_STYLE_DEFAULT
         await bus.publish(KoreanStyleEvent(text=KOREAN_STYLE_DEFAULT))
+        return public_state()
+
+    @app.put("/glossary")
+    async def put_glossary(body: GlossaryBody) -> dict[str, object]:
+        # Saved even when empty: an empty file keeps the glossary off after a restart.
+        text = body.text.strip()
+        glossary_file.parent.mkdir(parents=True, exist_ok=True)
+        glossary_file.write_text(text, encoding="utf-8")
+        settings.glossary = text
+        await bus.publish(GlossaryEvent(text=text))
+        return public_state()
+
+    @app.delete("/glossary")
+    async def reset_glossary() -> dict[str, object]:
+        glossary_file.unlink(missing_ok=True)
+        settings.glossary = GLOSSARY_DEFAULT
+        await bus.publish(GlossaryEvent(text=GLOSSARY_DEFAULT))
         return public_state()
 
     @app.put("/save-transcript")

@@ -15,6 +15,7 @@ from features.operator_control.events import (
     CaptionsStateEvent,
     CleanUpWordingEvent,
     CleanupContextEvent,
+    GlossaryEvent,
     KoreanStyleEvent,
     ModeChangedEvent,
     SaveTranscriptEvent,
@@ -134,6 +135,7 @@ def register(
             "clean_up_wording": operator.clean_up_wording,
             "cleanup_context": settings.cleanup_context,
             "korean_style": settings.korean_style,
+            "glossary": settings.glossary,
         }
 
     async def on_caption(event: SubtitleEvent) -> None:
@@ -166,6 +168,9 @@ def register(
     async def on_korean_style(event: KoreanStyleEvent) -> None:
         recorder.setting("korean_style", event.text)
 
+    async def on_glossary(event: GlossaryEvent) -> None:
+        recorder.setting("glossary", event.text)
+
     @app.get("/transcript")
     async def get_transcript() -> dict[str, object]:
         path = recorder.path
@@ -177,6 +182,7 @@ def register(
     bus.subscribe(CleanUpWordingEvent, on_clean_up_wording)
     bus.subscribe(CleanupContextEvent, on_cleanup_context)
     bus.subscribe(KoreanStyleEvent, on_korean_style)
+    bus.subscribe(GlossaryEvent, on_glossary)
     bus.subscribe(SubtitleEvent, on_caption)
     bus.subscribe(SpeechHeardEvent, on_heard)
     bus.subscribe(SaveTranscriptEvent, on_save)

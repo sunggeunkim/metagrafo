@@ -8,6 +8,7 @@ __pycache__/
 .env
 cleanup-context.txt
 korean-style.txt
+glossary.txt
 metagrafo_job/
 .agents/
 .scratch/

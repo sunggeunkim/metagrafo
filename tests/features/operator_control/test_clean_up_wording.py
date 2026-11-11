@@ -72,7 +72,7 @@ def _shouting_cleanup(made: list[tuple[str, str]]):
     def factory(api_key: str, model: str):
         made.append((api_key, model))
 
-        async def clean(line: str, _shown: list[str]) -> str:
+        async def clean(line: str, _shown: list[str], _said: str) -> str:
             return line.upper()
 
         return clean
@@ -146,7 +146,7 @@ def test_gemini_shows_the_line_as_heard_when_cleanup_outlasts_the_timeout_from_e
     monkeypatch.setenv("CLEANUP_TIMEOUT_S", "0.05")
 
     def slow_cleanup(_api_key: str, _model: str):
-        async def clean(line: str, _shown: list[str]) -> str:
+        async def clean(line: str, _shown: list[str], _said: str) -> str:
             await asyncio.sleep(0.5)
             return line.upper()
 

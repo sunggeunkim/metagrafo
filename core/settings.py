@@ -10,6 +10,17 @@ KOREAN_STYLE_DEFAULT = (
     "'3박 4일 동안.' into the sentence they belong to."
 )
 
+# Church vocabulary for any service, kept in either direction, until the booth saves its own
+# glossary. One sermon's names and terms belong in its Additional context, not here.
+GLOSSARY_DEFAULT = """God → 하나님 (never 신 or 하느님); the Lord → 주님; Jesus Christ → 예수 그리스도, 예수님; the Holy Spirit → 성령, 성령님
+the Word, Scripture, the Bible → 말씀, 성경
+grace → 은혜; salvation → 구원; faith → 믿음; repentance → 회개; sin → 죄; the cross → 십자가; resurrection → 부활; the gospel → 복음; eternal life → 영생
+worship, the service → 예배; prayer → 기도; praise → 찬양; blessing → 복, 축복; Amen → 아멘; Hallelujah → 할렐루야
+church members, brothers and sisters → 성도 여러분; the congregation → 성도들
+pastor → 목사님; elder → 장로님; deacon → 집사님; youth pastor → 청소년부 목사님
+sermon → 설교; Sunday → 주일; church → 교회
+Bible books and references as in the 개역개정 Bible: Genesis → 창세기, Job → 욥기, Psalms → 시편, Romans → 로마서, John 3:16 → 요한복음 3장 16절"""
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -35,6 +46,9 @@ class Settings(BaseSettings):
     # Booth control fills it from korean-style.txt at startup (the default when there is none),
     # replacing any KOREAN_STYLE value from the environment. Empty means no Korean style rule.
     korean_style: str = KOREAN_STYLE_DEFAULT
+    # Booth control fills it from glossary.txt at startup (the default when there is none),
+    # replacing any GLOSSARY value from the environment. Empty means no glossary.
+    glossary: str = GLOSSARY_DEFAULT
     save_transcript: bool = False
     # The overlay shows only the newest sentence, whole, until the next replaces it.
     one_sentence: bool = True

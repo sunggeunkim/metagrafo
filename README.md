@@ -162,6 +162,10 @@ To look at a live service afterwards, tick **Save transcript** on booth control.
 {"t_s": 15.1, "at": "2026-11-15T11:20:06.105", "kind": "shown", "text": "Today, let's talk about prayer.", "delay_s": 1.9, "mode": "ko_to_en", "before_cleanup": "Today, uh, let's talk about prayer."}
 ```
 
+### What cleanup sees
+
+With Gemini and **Clean up wording** on, each finished line goes to a text model along with the last three lines shown and what the speaker actually said around it, in the language they spoke. With the speaker's own words beside the translation, the model corrects mistranslated words instead of keeping them: in one test, "동성애 문제" ("homosexuality") for "the issue of suffering" became "고통이라는 문제". This needs no setup and works for every service. The three boxes below add to it.
+
 ### Additional context
 
 With Gemini and **Clean up wording** on, the text model that tidies each line can be told about the service. On booth control, type a few lines under **Additional context**, such as the title, the passage, the speaker, and names or terms likely to come up, then click **Save context**. It applies from the next cleaned line and helps the model get names, scripture references and terms right. You can also give one-off wording or style instructions there, and the model follows them. It is background only and never shows on screen. It is kept in `cleanup-context.txt` beside `.env` for the next time, so **Clear** it after the service. The live translation itself takes no instructions, so this cannot stop it mistranslating; it only helps the cleanup that follows.
@@ -169,6 +173,10 @@ With Gemini and **Clean up wording** on, the text model that tidies each line ca
 ### Korean style
 
 For Korean captions (English guest → Korean), **Korean style** on booth control tells the cleanup model how to word each line. The default is formal sermon language: 합니다체 endings, never 해요체 or 반말, honorifics for God and Jesus (하나님께서, 예수님께서), the congregation addressed as 여러분, never 당신, and natural Korean word order (time, place and duration phrases the English speaker added at the end, such as "지난달에. 3박 4일 동안.", are moved before the verb). This only works within one caption line: a phrase that arrives after its sentence is already on screen cannot be moved back into it. Edit the box and click **Save style** to change it, for example for a youth service. Save it empty to turn the rule off, so lines keep the wording they were translated with. **Reset to default** brings back the formal style. It is kept in `korean-style.txt` beside `.env` for the next time. Lines that cleanup cannot finish within about 4 s show as the live translation wrote them, so a few may still read casually.
+
+### Glossary
+
+**Glossary** on booth control is church vocabulary the cleanup model keeps to in every service, in both directions: 하나님 (never 신), 말씀, 은혜, 성도 여러분, 목사님, and Bible book names and references as in the 개역개정 Bible. Add a term when the same mistake keeps coming back across services, then click **Save glossary**. One sermon's names and topics belong in **Additional context**, not here. Save it empty to turn it off; **Reset to default** brings back the church terms. Up to 3000 characters, kept in `glossary.txt` beside `.env`.
 
 ## OBS scene
 
