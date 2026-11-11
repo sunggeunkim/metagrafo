@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import time
 from types import SimpleNamespace
 
@@ -30,7 +31,7 @@ def test_cleanup_context_starts_empty(env_file) -> None:
         assert client.get("/mode").json()["cleanup_context"] == ""
 
 
-def test_saved_context_is_announced_and_kept_beside_env_for_next_time(env_file) -> None:
+def test_saved_context_is_announced_and_forgotten_when_metagrafo_starts_again(env_file) -> None:
     bus = EventBus()
     seen: list[str] = []
 
@@ -43,19 +44,24 @@ def test_saved_context_is_announced_and_kept_beside_env_for_next_time(env_file) 
         assert response.status_code == 200
         assert response.json()["cleanup_context"] == CONTEXT
     assert seen == [CONTEXT]
-    # Several lines do not fit one line of .env, so the text has its own file; .env is untouched.
-    assert (env_file.parent / "cleanup-context.txt").read_text(encoding="utf-8") == CONTEXT
     assert env_file.read_text(encoding="utf-8") == "AUDIO_DEVICE_NAME=Booth Mic\n"
+    # Notes about one service must not carry over to the next, and nobody remembers to clear them.
     with TestClient(_app(env_file)) as client:
-        assert client.get("/mode").json()["cleanup_context"] == CONTEXT
+        assert client.get("/mode").json()["cleanup_context"] == ""
 
 
-def test_clearing_the_context_empties_the_file(env_file) -> None:
+def test_a_context_file_left_by_an_earlier_version_is_not_loaded(env_file) -> None:
+    (env_file.parent / "cleanup-context.txt").write_text(CONTEXT, encoding="utf-8")
+    with TestClient(_app(env_file)) as client:
+        assert client.get("/mode").json()["cleanup_context"] == ""
+
+
+def test_clearing_the_context_empties_it(env_file) -> None:
     with TestClient(_app(env_file)) as client:
         client.put("/cleanup-context", json={"text": CONTEXT})
         response = client.put("/cleanup-context", json={"text": ""})
         assert response.json()["cleanup_context"] == ""
-    assert (env_file.parent / "cleanup-context.txt").read_text(encoding="utf-8") == ""
+        assert client.get("/mode").json()["cleanup_context"] == ""
 
 
 def test_a_context_too_long_for_every_cleanup_call_is_refused(env_file) -> None:
@@ -66,7 +72,10 @@ def test_a_context_too_long_for_every_cleanup_call_is_refused(env_file) -> None:
 
 
 class _SpeakingSession:
-    """A Gemini socket that says one sentence, then stays open."""
+    """A Gemini socket that says one sentence once `speak` is set, then stays open."""
+
+    def __init__(self, speak: threading.Event) -> None:
+        self._speak = speak
 
     async def __aenter__(self):
         return self
@@ -78,6 +87,8 @@ class _SpeakingSession:
         return None
 
     async def receive(self):
+        while not self._speak.is_set():
+            await asyncio.sleep(0.01)
         yield SimpleNamespace(
             go_away=None,
             server_content=SimpleNamespace(
@@ -102,14 +113,16 @@ def test_the_saved_context_reaches_the_cleanup_model(env_file, monkeypatch) -> N
             self.aio = SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))
 
     monkeypatch.setattr(genai, "Client", RecordingClient)
-    (env_file.parent / "cleanup-context.txt").write_text(CONTEXT, encoding="utf-8")
+    speak = threading.Event()
     settings = Settings(caption_engine="gemini_live", gemini_api_key="saved-key", _env_file=env_file)
     app = create_app(
         settings=settings,
         env_file=env_file,
-        gemini_connect_factory=lambda _key: (lambda _mode: _SpeakingSession()),
+        gemini_connect_factory=lambda _key: (lambda _mode: _SpeakingSession(speak)),
     )
     with TestClient(app) as client:
+        client.put("/cleanup-context", json={"text": CONTEXT}).raise_for_status()
+        speak.set()
         for _ in range(200):
             if instructions:
                 break
@@ -118,24 +131,9 @@ def test_the_saved_context_reaches_the_cleanup_model(env_file, monkeypatch) -> N
     assert instructions and CONTEXT in instructions[0]
 
 
-def test_the_file_is_the_only_source_so_an_env_value_is_ignored(env_file, monkeypatch) -> None:
+def test_an_env_value_is_ignored_so_every_start_is_empty(env_file, monkeypatch) -> None:
     monkeypatch.setenv("CLEANUP_CONTEXT", "From the shell, never saved on booth control.")
     with env_file.open("a", encoding="utf-8") as env:
         env.write("CLEANUP_CONTEXT=From .env, never saved on booth control.\n")
     with TestClient(_app(env_file)) as client:
         assert client.get("/mode").json()["cleanup_context"] == ""
-
-
-def test_a_hand_edited_file_over_the_limit_is_cut_to_it(env_file, caplog) -> None:
-    (env_file.parent / "cleanup-context.txt").write_text("x" * 5000, encoding="utf-8")
-    with TestClient(_app(env_file)) as client:
-        assert client.get("/mode").json()["cleanup_context"] == "x" * 2000
-    assert "cleanup-context.txt" in caplog.text
-    assert "2000" in caplog.text
-
-
-def test_an_unreadable_file_does_not_stop_metagrafo_starting(env_file, caplog) -> None:
-    (env_file.parent / "cleanup-context.txt").write_bytes(b"\xff\xfe\x00 not utf-8 \x81")
-    with TestClient(_app(env_file)) as client:
-        assert client.get("/mode").json()["cleanup_context"] == ""
-    assert "cleanup-context.txt" in caplog.text

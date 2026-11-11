@@ -212,12 +212,6 @@ def _read_booth_text(path: Path, what: str, limit: int) -> str | None:
     return text
 
 
-def read_cleanup_context(context_file: Path) -> str:
-    """The saved additional context, or "" when there is none."""
-    text = _read_booth_text(context_file, "additional context", MAX_CLEANUP_CONTEXT_CHARS)
-    return text if text is not None else ""
-
-
 def read_glossary(glossary_file: Path) -> str:
     """The saved glossary ("" turns it off), or the church default when none was saved."""
     text = _read_booth_text(glossary_file, "glossary", MAX_GLOSSARY_CHARS)
@@ -293,10 +287,9 @@ def register(
     settings.translate_mode = initial_mode.value
     pauses = settings.vad_pauses if settings.vad_pauses in (1, 2) else 1
     key_file = env_file or Path.cwd() / ".env"
-    # Several lines do not fit one line of .env, so the context has its own file beside it.
-    context_file = key_file.with_name("cleanup-context.txt")
-    # Replaces any CLEANUP_CONTEXT from the environment or .env, which booth control never writes.
-    settings.cleanup_context = read_cleanup_context(context_file)
+    # Notes about one service, kept only while Metagrafo runs: nobody remembers to clear them
+    # for the next one. Replaces any CLEANUP_CONTEXT from the environment or .env.
+    settings.cleanup_context = ""
     # No file means the default style; an empty file means the booth turned the rule off.
     style_file = key_file.with_name("korean-style.txt")
     settings.korean_style = read_korean_style(style_file)
@@ -503,8 +496,6 @@ def register(
     @app.put("/cleanup-context")
     async def put_cleanup_context(body: CleanupContextBody) -> dict[str, object]:
         text = body.text.strip()
-        context_file.parent.mkdir(parents=True, exist_ok=True)
-        context_file.write_text(text, encoding="utf-8")
         settings.cleanup_context = text
         await bus.publish(CleanupContextEvent(text=text))
         return public_state()

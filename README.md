@@ -168,7 +168,7 @@ With Gemini and **Clean up wording** on, each finished line goes to a text model
 
 ### Additional context
 
-With Gemini and **Clean up wording** on, the text model that tidies each line can be told about the service. On booth control, type a few lines under **Additional context**, such as the title, the passage, the speaker, and names or terms likely to come up, then click **Save context**. It applies from the next cleaned line and helps the model get names, scripture references and terms right. You can also give one-off wording or style instructions there, and the model follows them. It is background only and never shows on screen. It is kept in `cleanup-context.txt` beside `.env` for the next time, so **Clear** it after the service. The live translation itself takes no instructions, so this cannot stop it mistranslating; it only helps the cleanup that follows.
+With Gemini and **Clean up wording** on, the text model that tidies each line can be told about the service. On booth control, type a few lines under **Additional context**, such as the title, the passage, the speaker, and names or terms likely to come up, then click **Save context**. It applies from the next cleaned line and helps the model get names, scripture references and terms right. You can also give one-off wording or style instructions there, and the model follows them. It is background only and never shows on screen. It is forgotten when Metagrafo quits, so each service starts with an empty box and one sermon's notes never carry over to the next. The live translation itself takes no instructions, so this cannot stop it mistranslating; it only helps the cleanup that follows.
 
 ### Korean style
 
