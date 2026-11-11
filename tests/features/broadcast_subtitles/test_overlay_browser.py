@@ -361,3 +361,56 @@ def test_one_sentence_taller_than_the_box_keeps_its_end_and_drops_its_start(brow
     for box in boxes:
         assert box["top"] >= stage["top"] - 1
         assert box["bottom"] <= stage["bottom"] + 1
+
+
+TWO_ROW_KOREAN = (
+    "왜냐하면 이건 큰 주제거든요. 저는 이 모든 설명을 다 할 수는 없겠지만, 기독교 신앙이 "
+    "이 문제를 어떻게 다루는지에 대해 말씀드리겠습니다."
+)
+
+
+def _one_sentence_screens(browser: object, server: str, texts: list[str]) -> list[list[str]]:
+    """Inject finished sentences one by one in one-sentence mode; return the rows after each."""
+    httpx.put(f"{server}/one-sentence", json={"one_sentence": True}).raise_for_status()
+    httpx.put(f"{server}/overlay-style", json=DEFAULT_STYLE).raise_for_status()
+    context = browser.new_context(viewport={"width": 1920, "height": 1080})
+    page = context.new_page()
+    screens = []
+    try:
+        clients = httpx.get(f"{server}/health").json()["clients"]
+        page.goto(f"{server}/overlay")
+        deadline = time.monotonic() + 10
+        while httpx.get(f"{server}/health").json()["clients"] <= clients:
+            if time.monotonic() > deadline:
+                raise RuntimeError("overlay did not open /ws")
+            time.sleep(0.05)
+        for text in texts:
+            httpx.post(f"{server}/inject", json={"text": text}).raise_for_status()
+            last_word = text.split()[-1]
+            page.wait_for_function(
+                f"[...document.querySelectorAll('#lines .line')].some((el) => el.textContent.endsWith({last_word!r}))"
+            )
+            screens.append([box["text"] for box in page.evaluate(_BOXES_JS)])
+    finally:
+        context.close()
+    return screens
+
+
+def test_two_lines_at_a_time_keeps_a_one_line_sentence_under_the_one_before(browser, server) -> None:
+    screens = _one_sentence_screens(
+        browser, server, ["First short sentence.", "Second short sentence.", "Third short sentence."]
+    )
+    assert screens == [
+        ["First short sentence."],
+        ["First short sentence.", "Second short sentence."],
+        # The screen is full at two lines, so the next sentence starts afresh.
+        ["Third short sentence."],
+    ]
+
+
+def test_two_lines_at_a_time_never_shows_more_than_two_lines(browser, server) -> None:
+    screens = _one_sentence_screens(browser, server, ["First short sentence.", TWO_ROW_KOREAN])
+    assert screens[0] == ["First short sentence."]
+    # One line plus two would be three, so the two-line sentence starts afresh.
+    assert len(screens[1]) == 2
+    assert " ".join(screens[1]).split() == TWO_ROW_KOREAN.split()

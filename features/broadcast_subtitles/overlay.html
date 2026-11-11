@@ -83,11 +83,16 @@
     const POSITIONS = ["pos-top_left", "pos-top_center", "pos-bottom_center"];
     let fontSizeVw = 2.5;
     let lineCount = 3;
-    // On: only the newest sentence, all of its rows, until the next replaces it.
+    // On: whole sentences, up to PAGE_ROWS rows on screen. A sentence joins the ones shown
+    // while they all fit in PAGE_ROWS rows; otherwise the screen clears and it starts afresh.
+    // A sentence longer than PAGE_ROWS rows still shows whole, alone.
     // Off: rolling rows, the newest lineCount rows across lines.
+    const PAGE_ROWS = 2;
     let oneSentence = true;
     let draftText = null;
     let committed = [];
+    // The finished sentences on screen in one-sentence mode, oldest first.
+    let page = [];
     let renderRetry = false;
 
     function setLineCount(count) {
@@ -151,9 +156,10 @@
         }
         return;
       }
-      const blocks = draftText !== null ? committed.concat(draftText) : committed;
+      const lines = oneSentence ? page : committed;
+      const blocks = draftText !== null ? lines.concat(draftText) : lines;
       const rows = [];
-      for (const block of oneSentence ? blocks.slice(-1) : blocks) {
+      for (const block of blocks) {
         rows.push(...measureRows(block));
       }
       while (committed.length > 30) {
@@ -173,13 +179,27 @@
       }
     }
 
+    function fitsPage(text) {
+      let rows = measureRows(text).length;
+      for (const line of page) {
+        rows += measureRows(line).length;
+      }
+      return rows <= PAGE_ROWS;
+    }
+
+    // A growing sentence that no longer fits clears the screen for good, so its finished
+    // version starts afresh too, even if cleanup made it shorter.
     function showDraft(text) {
+      if (!fitsPage(text)) {
+        page = [];
+      }
       draftText = text;
       render();
     }
 
     function commitLine(text) {
       committed.push(text);
+      page = fitsPage(text) ? page.concat(text) : [text];
       draftText = null;
       render();
     }
@@ -224,6 +244,7 @@
 
     function clearLines() {
       committed = [];
+      page = [];
       draftText = null;
       linesEl.replaceChildren();
       stage.classList.add("hidden");

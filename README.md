@@ -186,7 +186,7 @@ Put the video in OBS the way you already do. Add the captions as a Browser Sourc
    - Width **1920**, height **1080**. Then **Transform → Reset Transform** so letters are not stretched.
    - Do not drag the red handles or change source Height to crop captions. Use **Box height (%)** on `/control`.
    - Shutdown source when not visible
-   - Transparent page. **One sentence at a time** (default on) shows only the newest finished sentence, all of it at once, until the next sentence replaces it; nothing scrolls. A sentence too tall for the caption box shows its last rows. Untick it on booth control for rolling rows: **Lines on screen** (default **3**, range 1–6) is then how many text rows stay visible, and the oldest row leaves when the next one starts. Not karaoke.
+   - Transparent page. **Two lines at a time** (default on) shows whole finished sentences, up to two lines on screen; nothing scrolls. A sentence that fits joins the one on screen; one that doesn't clears the screen and starts afresh. A sentence longer than two lines still shows whole, alone. A sentence too tall for the caption box shows its last rows. Untick it on booth control for rolling rows: **Lines on screen** (default **3**, range 1–6) is then how many text rows stay visible, and the oldest row leaves when the next one starts. Not karaoke.
    - After overlay HTML changes, right-click the source → **Refresh**.
 2. Keep the Browser Source **above** the video.
 3. A stream, projector, or other display of this program shows the same captions.
