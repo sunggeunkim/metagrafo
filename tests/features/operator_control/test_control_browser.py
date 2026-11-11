@@ -162,3 +162,32 @@ def test_additional_context_box_saves_and_comes_back_on_reload(browser, control_
         assert page.input_value("#cleanup-context") == ""
     finally:
         page.close()
+
+
+def test_korean_style_box_starts_at_the_default_saves_turns_off_and_resets(browser, control_saving) -> None:
+    from core.settings import KOREAN_STYLE_DEFAULT
+
+    url, _folder = control_saving
+    youth = "청소년 예배입니다. 해요체로 친근하게 쓰십시오."
+    page = browser.new_page()
+    try:
+        page.goto(f"{url}/control")
+        page.wait_for_selector("#korean-style-status:has-text('Default')")
+        assert page.input_value("#korean-style") == KOREAN_STYLE_DEFAULT
+
+        page.fill("#korean-style", youth)
+        page.click("#korean-style-save")
+        page.wait_for_selector("#korean-style-status:has-text('Saved')")
+        page.reload()
+        page.wait_for_function("document.getElementById('korean-style').value.includes('청소년')")
+        assert page.input_value("#korean-style") == youth
+
+        page.fill("#korean-style", "")
+        page.click("#korean-style-save")
+        page.wait_for_selector("#korean-style-status:has-text('Off')")
+
+        page.click("#korean-style-reset")
+        page.wait_for_selector("#korean-style-status:has-text('Default')")
+        assert page.input_value("#korean-style") == KOREAN_STYLE_DEFAULT
+    finally:
+        page.close()

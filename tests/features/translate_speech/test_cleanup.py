@@ -85,7 +85,8 @@ async def test_cleanup_without_context_keeps_the_plain_instructions(monkeypatch)
     from features.translate_speech.cleanup import INSTRUCTION
 
     _built, asked = _record_client(monkeypatch, "Cleaned.")
-    await gemini_cleanup("test-key", model="gemini-test-lite", context=lambda: "  ")("A line.", [])
+    clean = gemini_cleanup("test-key", model="gemini-test-lite", context=lambda: "  ", korean_style=lambda: "")
+    await clean("A line.", [])
     assert asked["config"].system_instruction == INSTRUCTION
 
 
@@ -106,3 +107,22 @@ async def test_korean_lines_are_cleaned_into_formal_sermon_language_with_no_cont
     instruction = asked["config"].system_instruction
     for asks in ("합니다체", "never 해요체 or 반말", "하나님께서"):
         assert asks in instruction
+
+
+async def test_the_booth_korean_style_replaces_the_default(monkeypatch) -> None:
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    style = "청소년 예배이니 해요체로 친근하게 쓰십시오."
+    clean = gemini_cleanup("test-key", model="gemini-test-lite", korean_style=lambda: style)
+    await clean("오늘 만나서 반가워요.", [])
+    instruction = asked["config"].system_instruction
+    assert style in instruction
+    assert "never 해요체 or 반말" not in instruction
+
+
+async def test_an_empty_korean_style_adds_no_korean_rule(monkeypatch) -> None:
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    clean = gemini_cleanup("test-key", model="gemini-test-lite", korean_style=lambda: "  ")
+    await clean("오늘 만나서 반가워요.", [])
+    instruction = asked["config"].system_instruction
+    assert "When the line is Korean" not in instruction
+    assert "합니다체" not in instruction

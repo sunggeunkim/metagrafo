@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from core.event_bus import EventBus
-from core.settings import Settings
+from core.settings import KOREAN_STYLE_DEFAULT, Settings
 from features.translate_speech.events import SubtitleEvent
 from main import create_app
 
@@ -215,6 +215,7 @@ def test_the_file_notes_the_settings_at_the_start_and_each_booth_change(env_file
         client.put("/whole-sentences", json={"whole_sentences": False})
         client.put("/clean-up-wording", json={"clean_up_wording": True})
         client.put("/cleanup-context", json={"text": "Sermon on Job 1-2."})
+        client.put("/korean-style", json={"text": "해요체로 쓰십시오."})
 
     [records] = _records(tmp_path)
     assert _without_clock_time(records[0]) == {
@@ -226,6 +227,7 @@ def test_the_file_notes_the_settings_at_the_start_and_each_booth_change(env_file
         "whole_sentences": True,
         "clean_up_wording": False,
         "cleanup_context": "",
+        "korean_style": KOREAN_STYLE_DEFAULT,
     }
     assert [_without_clock_time(r) for r in records[1:]] == [
         {"t_s": 5.0, "kind": "setting", "captions_active": False},
@@ -233,6 +235,7 @@ def test_the_file_notes_the_settings_at_the_start_and_each_booth_change(env_file
         {"t_s": 5.0, "kind": "setting", "whole_sentences": False},
         {"t_s": 5.0, "kind": "setting", "clean_up_wording": True},
         {"t_s": 5.0, "kind": "setting", "cleanup_context": "Sermon on Job 1-2."},
+        {"t_s": 5.0, "kind": "setting", "korean_style": "해요체로 쓰십시오."},
     ]
 
 

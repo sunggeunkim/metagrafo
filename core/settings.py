@@ -1,5 +1,12 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# How cleanup writes a Korean caption line until the booth saves its own style.
+KOREAN_STYLE_DEFAULT = (
+    "Write it as a sermon is spoken from the pulpit: formal 합니다체 endings "
+    "(~합니다, ~입니까, ~하십시오), never 해요체 or 반말, and honorifics for God and Jesus "
+    "(하나님께서 ~하셨습니다, 예수님께서)."
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -22,6 +29,9 @@ class Settings(BaseSettings):
     # Background on this service for the cleanup model. Booth control fills it from
     # cleanup-context.txt at startup, replacing any CLEANUP_CONTEXT value from the environment.
     cleanup_context: str = ""
+    # Booth control fills it from korean-style.txt at startup (the default when there is none),
+    # replacing any KOREAN_STYLE value from the environment. Empty means no Korean style rule.
+    korean_style: str = KOREAN_STYLE_DEFAULT
     save_transcript: bool = False
     vad_max_utterance_s: float = 12
     vad_min_speech_ms: int = 250

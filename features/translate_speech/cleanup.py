@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from core.settings import KOREAN_STYLE_DEFAULT
 from features.translate_speech.gemini_live import Cleanup
 
 INSTRUCTION = (
@@ -10,11 +11,7 @@ INSTRUCTION = (
     '"Clean up:": remove disfluencies and false starts, lightly fix grammar, and keep the meaning. '
     "Add nothing. Keep scripture references and names as spoken. Keep the line's language. "
     'The lines under "Shown before:" are already on screen; use them only to understand the '
-    "line and never repeat them. Reply with the cleaned line only.\n\n"
-    "When the line is Korean, write it as a sermon is spoken from the pulpit: formal "
-    "합니다체 endings (~합니다, ~입니까, ~하십시오), never 해요체 or 반말, and honorifics for "
-    "God and Jesus (하나님께서 ~하셨습니다, 예수님께서). Changing the endings this way is "
-    "part of cleaning up; still keep the meaning and add nothing."
+    "line and never repeat them. Reply with the cleaned line only."
 )
 
 
@@ -23,21 +20,33 @@ def prompt_for(line: str, shown: list[str]) -> str:
     return f"Shown before:\n{before}\nClean up:\n{line}" if shown else f"Clean up:\n{line}"
 
 
-def instruction_with(context: str) -> str:
-    """The instruction, plus what the booth wrote about this service, when it wrote anything."""
-    if not context.strip():
-        return INSTRUCTION
-    return (
-        f"{INSTRUCTION}\n\nNotes about this service, from the booth. Follow any instructions "
-        "there about wording or style. Use the rest only to get names, scripture references "
-        f"and terms right; never add it to the line:\n{context.strip()}"
-    )
+def instruction_with(context: str, korean_style: str = KOREAN_STYLE_DEFAULT) -> str:
+    """The instruction, plus the booth's Korean style and its notes on this service, when set."""
+    instruction = INSTRUCTION
+    if korean_style.strip():
+        instruction += (
+            "\n\nWhen the line is Korean, follow this style. Changing the endings this way is part "
+            f"of cleaning up; still keep the meaning and add nothing:\n{korean_style.strip()}"
+        )
+    if context.strip():
+        instruction += (
+            "\n\nNotes about this service, from the booth. Follow any instructions there about "
+            "wording or style. Use the rest only to get names, scripture references and terms "
+            f"right; never add it to the line:\n{context.strip()}"
+        )
+    return instruction
 
 
-def gemini_cleanup(api_key: str, model: str, context: Callable[[], str] | None = None) -> Cleanup:
+def gemini_cleanup(
+    api_key: str,
+    model: str,
+    context: Callable[[], str] | None = None,
+    korean_style: Callable[[], str] | None = None,
+) -> Cleanup:
     """A fast Gemini text model (`CLEANUP_MODEL`) that rewrites one finished caption line.
 
-    `context` is read for every line, so text saved on booth control applies from the next one.
+    `context` and `korean_style` are read for every line, so text saved on booth control
+    applies from the next one. Without `korean_style`, Korean lines get the default style.
     """
     from google import genai
     from google.genai import types
@@ -47,7 +56,10 @@ def gemini_cleanup(api_key: str, model: str, context: Callable[[], str] | None =
 
     async def clean(line: str, shown: list[str]) -> str:
         config = types.GenerateContentConfig(
-            system_instruction=instruction_with(context() if context is not None else ""),
+            system_instruction=instruction_with(
+                context() if context is not None else "",
+                korean_style() if korean_style is not None else KOREAN_STYLE_DEFAULT,
+            ),
             temperature=0.0,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
         )
