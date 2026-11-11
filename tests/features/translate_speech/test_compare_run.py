@@ -468,3 +468,33 @@ async def test_a_line_finished_after_the_audio_ran_out_is_timed_when_it_finished
     at_s = int(minutes) * 60 + float(seconds)
     # The audio ends near 1.0 s; the line finished about 0.6 s of work after the sentence was heard at 0.5 s.
     assert 1.4 <= at_s <= 2.5
+
+
+async def test_b_cleanup_gets_what_the_speaker_said(tmp_path: Path) -> None:
+    wav = tmp_path / "sermon.wav"
+    _write_wav(wav, 4.0)
+    socket = _ScriptedSocket(
+        [
+            (1.0, _heard("오늘은 기도로")),
+            # Like real input_transcription fragments, each after the first starts with a space.
+            (1.5, _heard(" 시작하겠습니다.")),
+            (2.0, _said("Today we begin")),
+            (2.5, _said("with prayer.")),
+        ]
+    )
+    asked: list[str] = []
+
+    async def cleanup(line: str, _shown: list[str], said: str) -> str:
+        asked.append(said)
+        return line
+
+    await compare_wav(
+        wav_path=wav,
+        out_path=tmp_path / "sermon.compare.md",
+        connect=lambda _mode: socket,
+        cleanup=cleanup,
+        translate=_cleaned,
+        pace=_no_wait,
+        cleanup_timeout_s=0.05,
+    )
+    assert asked == ["오늘은 기도로 시작하겠습니다."]
