@@ -62,12 +62,17 @@ async def test_cleanup_asks_the_text_model_with_the_shown_lines_as_context(monke
     instruction = config.system_instruction
     for asks in (
         "remove disfluencies and false starts",
-        "lightly fix grammar",
-        "keep the meaning",
-        "Add nothing",
+        # Natural, fluent wording, not a light touch: captions read as the speaker would say them.
+        "reads as natural, fluent speech in its language",
+        "smooth awkward wording and word order",
+        # Smoothing changes how a line is said, never what it says.
+        "never what it says",
+        "every idea, name and detail of the line stays in it",
+        "nothing is added",
         "Keep scripture references and names as spoken",
     ):
         assert asks in instruction
+    assert "lightly fix grammar" not in instruction
 
 
 async def test_cleanup_reads_the_booth_context_into_its_instructions_on_each_line(monkeypatch) -> None:

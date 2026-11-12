@@ -9,8 +9,11 @@ from features.translate_speech.gemini_live import Cleaned, Cleanup, is_korean
 CLEANUP_RULES = (
     "You clean up live captions of a church sermon. They were machine-translated while the "
     "pastor was still speaking, so they can backtrack or read awkwardly. Rewrite the line under "
-    '"Clean up:": remove disfluencies and false starts, lightly fix grammar, and keep the meaning. '
-    "Add nothing. Keep scripture references and names as spoken. Keep the line's language. "
+    '"Clean up:" so it reads as natural, fluent speech in its language, the way a native speaker '
+    "would say it: remove disfluencies and false starts, fix grammar, and smooth awkward wording "
+    "and word order. Smooth how it is said, never what it says: every idea, name and detail of "
+    "the line stays in it, and nothing is added. Keep scripture references and names as spoken. "
+    "Keep the line's language. "
     'The lines under "Shown before:" are already on screen; use them only to understand the '
     "line and never repeat them.\n\n"
     'Under "Said:" is what the speaker actually said around this line, in the language they '
