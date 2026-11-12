@@ -166,7 +166,7 @@ To look at a live service afterwards, tick **Save transcript** on booth control.
 
 With Gemini and **Clean up wording** on, each finished line goes to a text model along with the last three lines shown and what the speaker actually said around it, in the language they spoke. With the speaker's own words beside the translation, the model corrects mistranslated words instead of keeping them: in one test, "동성애 문제" ("homosexuality") for "the issue of suffering" became "고통이라는 문제". This needs no setup and works for every service. The three boxes below add to it.
 
-A caption is cut wherever the live translation pauses, and it often pauses mid-sentence. So cleanup replies in two parts: the complete sentences, which show now, and the unfinished words at the end, which wait and start the next caption. A sentence cut in half shows once, whole, instead of as a fragment followed by a repeat. Held words wait up to 5 seconds for the rest of their sentence; if the speaker has stopped, they show on their own. In a replay of one youth sermon, this cut repeated sentences from 25 to 5.
+A caption is cut wherever the live translation pauses, and it often pauses mid-sentence. So cleanup replies in two parts: the complete sentences, which show now, and the unfinished words at the end, which wait and start the next caption. A sentence cut in half shows once, whole, instead of as a fragment followed by a repeat. Held words wait up to 5 seconds for the rest of their sentence; if the speaker has stopped, they show on their own. Words wait only once: the caption they start is cleaned to show whole, even if it ends mid-sentence, instead of showing as the raw translation. In a replay of one youth sermon, this cut repeated sentences from 25 to 5.
 
 ### Additional context
 
