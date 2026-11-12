@@ -170,7 +170,7 @@ A caption is cut wherever the live translation pauses, and it often pauses mid-s
 
 ### Additional context
 
-With Gemini and **Clean up wording** on, the text model that tidies each line can be told about the service. On booth control, type a few lines under **Additional context**, such as the title, the passage, the speaker, and names or terms likely to come up, then click **Save context**. It applies from the next cleaned line and helps the model get names, scripture references and terms right. You can also give one-off wording or style instructions there, and the model follows them. It is background only and never shows on screen. It is kept in `cleanup-context.txt` beside `.env` for the next time, so **Clear** it after the service. The live translation itself takes no instructions, so this cannot stop it mistranslating; it only helps the cleanup that follows.
+With Gemini and **Clean up wording** on, the text model that tidies each line can be told about the service. On booth control, type a few lines under **Additional context**, such as the title, the passage, the speaker, and names or terms likely to come up, then click **Save context**. It applies from the next cleaned line and helps the model get names, scripture references and terms right. You can also give one-off wording or style instructions there, and the model follows them. It is background only and never shows on screen. It is forgotten when Metagrafo quits, so each service starts with an empty box and one sermon's notes never carry over to the next. The live translation itself takes no instructions, so this cannot stop it mistranslating; it only helps the cleanup that follows.
 
 ### Korean style
 
@@ -195,7 +195,7 @@ Put the video in OBS the way you already do. Add the captions as a Browser Sourc
 
 Booth UI is **not** an OBS source. Open `http://127.0.0.1:8000/control` in a normal browser on the booth PC.
 
-Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before a pause counts (100–3000, default 500); **pauses per caption** (1 or 2, default 1; 2 waits for a second pause, then one line per phrase); **previous text** (on by default; gives Whisper the caption it just wrote; turn off on `/control`); **lines on screen** (1–6, default 3; a longer sentence scrolls the oldest row off); **overlay position** (top left / top center / bottom center); **font size (vw)** (1–8, default 2.5); **box width/height (%)** (10–100 / 5–100, default 100 × 30); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart. A file run can set pauses with `--pauses 2`. Previous text is already on; turn it off with `--no-condition-on-previous-text`.
+Live (no uvicorn restart): **VAD pause (ms)** — wait after speech before a pause counts (100–3000, default 500); **pauses per caption** (1 or 2, default 1; 2 waits for a second pause, then one line per phrase); **previous text** (on by default; gives Whisper the caption it just wrote; turn off on `/control`); **lines on screen** (1–6, default 3; a longer sentence scrolls the oldest row off); **overlay position** (top left / top center / bottom left / bottom center); **font size (vw)** (1–8, default 2.5); **box width/height (%)** (10–100 / 5–100, default 100 × 30); **edge insets (%)** (0–20, default 1 vertical / 1 horizontal). Whisper model / CUDA / float16 still need a restart. A file run can set pauses with `--pauses 2`. Previous text is already on; turn it off with `--no-condition-on-previous-text`.
 
 ## Sunday morning (`/control`)
 

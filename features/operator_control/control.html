@@ -99,7 +99,7 @@
   <p class="hint">Gemini only, and only with Whole sentences on. <strong>On</strong> (default) sends each finished line to a fast Gemini text model with the last few lines shown, to take out false starts and lightly fix grammar without changing the meaning, names, or scripture references. If it takes longer than about 4 s, the line shows as heard. The cleaned line is what the overlay and YouTube captions get. Starts with the next line, and this computer keeps the choice for the next time.</p>
   <label class="check"><input id="clean-up-wording" type="checkbox" /> Clean up wording</label>
   <h2>Additional context</h2>
-  <p class="hint">Gemini only, used by Clean up wording. A few lines about this service help the text model get names, scripture references and terms right, for example the title, the passage, the speaker, and names or words likely to come up. You can also ask for a wording or style here, for example <em>Style: use 합니다체, never 해요체</em>. How Korean captions are worded is set under Korean style below. It is background only and never shows on screen. Up to 2000 characters. Starts with the next cleaned line, and this computer keeps it for the next time; Clear it after the service.</p>
+  <p class="hint">Gemini only, used by Clean up wording. A few lines about this service help the text model get names, scripture references and terms right, for example the title, the passage, the speaker, and names or words likely to come up. You can also ask for a wording or style here, for example <em>Style: use 합니다체, never 해요체</em>. How Korean captions are worded is set under Korean style below. It is background only and never shows on screen. Up to 2000 characters. Starts with the next cleaned line. It is forgotten when Metagrafo quits, so each service starts with an empty box.</p>
   <textarea id="cleanup-context" rows="4" maxlength="2000"></textarea>
   <div>
     <button id="cleanup-context-save" class="mode">Save context</button>
@@ -132,6 +132,7 @@
   <p class="hint">Font: <strong>2.0 vw</strong> small · <strong>2.5 vw</strong> default · <strong>4.5 vw</strong> large. Box height <strong>10</strong> thin band · <strong>30</strong> default. If a line is sliced, raise box height, not OBS source height.</p>  <div>
     <button class="pos" data-pos="top_left">Top left</button>
     <button class="pos" data-pos="top_center">Top center</button>
+    <button class="pos" data-pos="bottom_left">Bottom left</button>
     <button class="pos" data-pos="bottom_center">Bottom center</button>
   </div>
   <label for="font-vw">Font size (vw)</label>
