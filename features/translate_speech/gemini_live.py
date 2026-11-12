@@ -445,9 +445,10 @@ class GeminiLiveTranslator:
                 ),
             )
             finished = cleaned.finished.strip()
-            answer = f"{finished} {cleaned.unfinished}".strip()
-            if answer and is_korean(answer) != is_korean(text):
-                # Seen on the real model: an English caption came back as the speaker's Korean.
+            # What shows is "finished" (the unfinished words are checked as a copy below), so its
+            # language is the one to match. Seen on the real model: an English caption came back
+            # as the speaker's Korean.
+            if finished and is_korean(finished) != is_korean(text):
                 logger.warning("cleanup skipped: reply is in another language")
                 return Cleaned(text)
             held = cleaned.unfinished.split()
@@ -600,8 +601,11 @@ class _Waiting:
 
 
 def is_korean(text: str) -> bool:
-    """Whether a caption is Korean: it has Hangul. An English caption has none."""
-    return any("가" <= ch <= "힣" for ch in text)
+    """Whether a caption is Korean: more Hangul than Latin letters. An English caption that quotes
+    a Korean word ("the love of 하나님") is still English; a Korean one naming "Romans" is Korean."""
+    hangul = sum("가" <= ch <= "힣" for ch in text)
+    latin = sum(ch.isascii() and ch.isalpha() for ch in text)
+    return hangul > latin
 
 
 def _ends_with_words(words: list[str], tail: list[str]) -> bool:

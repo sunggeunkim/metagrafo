@@ -265,3 +265,9 @@ async def test_an_english_line_gets_no_korean_style_and_is_told_to_stay_english(
     korean = asked["config"].system_instruction
     assert "When the line is Korean" in korean
     assert "The line is English" not in korean
+
+    # Mostly English with one Korean word is English; Korean with an English name is Korean.
+    await clean("And so we know that the love of 하나님 never fails us.", [])
+    assert "The line is English" in asked["config"].system_instruction
+    await clean("오늘은 Romans 8장을 함께 읽겠습니다.", [])
+    assert "When the line is Korean" in asked["config"].system_instruction
