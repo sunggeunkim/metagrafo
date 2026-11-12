@@ -971,7 +971,7 @@ async def test_unfinished_words_wait_and_open_the_next_caption() -> None:
     seen = _collect(bus)
     asked: list[str] = []
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         asked.append(line)
         if line == RAINDROP:
             return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
@@ -1000,7 +1000,7 @@ async def test_unfinished_words_join_a_caption_already_waiting_to_be_cleaned() -
     asked: list[str] = []
     first_may_finish = asyncio.Event()
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         asked.append(line)
         if line == RAINDROP:
             await first_may_finish.wait()
@@ -1031,7 +1031,7 @@ async def test_words_wait_for_the_next_caption_only_once() -> None:
     bus = EventBus()
     seen = _collect(bus)
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         # A model that never thinks the raindrop sentence is finished.
         if line.endswith("You are a raindrop"):
             finished = line[: -len("You are a raindrop")].strip()
@@ -1057,7 +1057,7 @@ async def test_an_unfinished_part_that_is_not_the_end_of_the_line_shows_the_line
     bus = EventBus()
     seen = _collect(bus)
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         return Cleaned(finished="Think of it this way.", unfinished="Imagine a raindrop")
 
     translator = GeminiLiveTranslator(
@@ -1079,7 +1079,7 @@ async def test_a_line_held_back_whole_shows_nothing_the_model_made_up_for_it() -
     seen = _collect(bus)
     fragment = "Even in Buddhism, for example, its founder"
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         if line == fragment:
             # The model finishes the sentence from the speaker's next words, and holds it all back.
             return Cleaned(finished="Even in Buddhism, its founder taught that life is suffering.", unfinished=line)
@@ -1104,7 +1104,7 @@ async def test_held_words_wait_through_a_pause_for_the_rest_of_their_sentence() 
     bus = EventBus()
     seen = _collect(bus)
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         if line == RAINDROP:
             return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
         return line
@@ -1132,7 +1132,7 @@ async def test_unfinished_words_copied_with_other_punctuation_still_wait_as_the_
     seen = _collect(bus)
     asked: list[str] = []
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         asked.append(line)
         if line == "Think of it this way. You are, a raindrop":
             return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop.")
@@ -1161,7 +1161,7 @@ async def test_held_words_never_join_a_line_that_started_after_a_setting_went_of
     seen = _collect(bus)
     first_may_finish = asyncio.Event()
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         if line == RAINDROP:
             await first_may_finish.wait()
             return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
@@ -1194,7 +1194,7 @@ async def test_held_words_left_over_from_a_long_line_cut_wait_only_once() -> Non
     seen = _collect(bus)
     held = "every drop of rain that falls on the hills and on the long roads, runs into a stream"
 
-    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
         if line.startswith("Think of it this way."):
             return Cleaned(finished="Think of it this way.", unfinished=held)
         if line.startswith("runs into"):
@@ -1219,3 +1219,78 @@ async def test_held_words_left_over_from_a_long_line_cut_wait_only_once() -> Non
         "every drop of rain that falls on the hills and on the long roads,",
         "runs into a stream and on and on through the fields into the wide sea",
     ]
+
+
+async def test_unfinished_words_the_model_put_in_the_korean_style_still_wait_as_the_line_has_them() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[tuple[str, bool]] = []
+    line = "그게 사실 열반입니다. 그러니까 사실상, 당신은"
+
+    async def cleanup(text: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
+        asked.append((text, hold))
+        if text == line:
+            # The style turns 당신 into 여러분 even in words it was told to copy unchanged.
+            return Cleaned(finished="그것이 사실 열반입니다.", unfinished="그러니까 사실상, 여러분은")
+        return text
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(line, turn_complete=True)
+    await _settle()
+    await translator.apply_transcript("모든 문제들이 우리 때문입니다.")
+    await _settle()
+    assert [e.text for e in seen] == ["그것이 사실 열반입니다.", "그러니까 사실상, 당신은 모든 문제들이 우리 때문입니다."]
+    # The next line starts with words that waited once, so it is cleaned to show whole.
+    assert asked == [(line, True), ("그러니까 사실상, 당신은 모든 문제들이 우리 때문입니다.", False)]
+
+
+async def test_a_line_starting_with_held_words_shows_in_the_models_words_even_if_it_holds_again() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
+        if line == RAINDROP:
+            return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
+        # Told to hold nothing, the model holds the whole line anyway, in its own words.
+        return Cleaned(finished="", unfinished="You are a raindrop, falling from…")
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(RAINDROP, turn_complete=True)
+    await _settle()
+    await translator.apply_transcript("falling from", turn_complete=True)
+    await _settle()
+    assert [e.text for e in seen] == ["Think of it this way.", "You are a raindrop, falling from…"]
+
+
+async def test_a_reply_that_leaves_out_words_before_the_unfinished_part_shows_the_line_as_heard(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
+        # Nothing finished, and only the last word held: "Think of it this way. You are a" would vanish.
+        return Cleaned(finished="", unfinished="raindrop")
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript(RAINDROP, turn_complete=True)
+        await _settle()
+    assert [e.text for e in seen] == [RAINDROP]
+    assert "cleanup skipped: the reply leaves out words before the unfinished part" in caplog.text

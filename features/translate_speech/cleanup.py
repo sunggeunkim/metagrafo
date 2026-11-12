@@ -26,6 +26,15 @@ INSTRUCTION = (
     'empty; when none of it is, "finished" is empty.'
 )
 
+# For a line that starts with words held over from the line before: they have waited once.
+SHOW_WHOLE = (
+    "\n\nThis line shows now, even if it ends in the middle of a sentence: its first words "
+    'already waited for it. Put all of it, cleaned up, in "finished", and leave "unfinished" empty. '
+    "Where the line stops in the middle of a sentence, stop at the same place: never add words "
+    "to finish it, and never change what the words mean to make it sound complete. Still clean "
+    "up the words that are there, and follow the Korean style, if any, for every ending in it."
+)
+
 # Gemini's structured output: every reply is this object.
 REPLY_SCHEMA = {
     "type": "object",
@@ -86,13 +95,14 @@ def gemini_cleanup(
     # Pinned like the live socket: google-genai 3.x changed the default API version.
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))
 
-    async def clean(line: str, shown: list[str], said: str = "") -> Cleaned:
+    async def clean(line: str, shown: list[str], said: str = "", *, hold: bool = True) -> Cleaned:
+        instruction = instruction_with(
+            context() if context is not None else "",
+            korean_style() if korean_style is not None else KOREAN_STYLE_DEFAULT,
+            glossary() if glossary is not None else GLOSSARY_DEFAULT,
+        )
         config = types.GenerateContentConfig(
-            system_instruction=instruction_with(
-                context() if context is not None else "",
-                korean_style() if korean_style is not None else KOREAN_STYLE_DEFAULT,
-                glossary() if glossary is not None else GLOSSARY_DEFAULT,
-            ),
+            system_instruction=instruction if hold else instruction + SHOW_WHOLE,
             temperature=0.0,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             response_mime_type="application/json",
