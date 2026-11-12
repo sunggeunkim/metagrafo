@@ -225,3 +225,11 @@ async def test_a_line_that_must_show_whole_asks_the_model_to_hold_nothing(monkey
     assert 'leave "unfinished" empty' in whole
     # Made to show a fragment, the model must not invent its ending (seen live: "멀리" → "멀리하셨습니다").
     assert "never add words" in whole
+
+
+async def test_a_reply_that_is_not_json_says_what_the_model_sent(monkeypatch) -> None:
+    import pytest
+
+    _record_client(monkeypatch, "{not json at all")
+    with pytest.raises(ValueError, match="not JSON: '{not json at all'"):
+        await gemini_cleanup("test-key", model="gemini-test-lite")("A line.", [])

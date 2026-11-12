@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 import uuid
@@ -435,6 +436,14 @@ class GeminiLiveTranslator:
             call = self._cleanup(text, shown, said) if hold else self._cleanup(text, shown, said, hold=False)
             reply = await asyncio.wait_for(call, timeout=self._cleanup_timeout_s)
             cleaned = reply if isinstance(reply, Cleaned) else Cleaned(reply)
+            # What the model sent, before any check, so a skipped or odd line can be read back.
+            logger.info(
+                "cleanup reply: %s",
+                json.dumps(
+                    {"line": text, "finished": cleaned.finished, "unfinished": cleaned.unfinished},
+                    ensure_ascii=False,
+                ),
+            )
             finished = cleaned.finished.strip()
             held = cleaned.unfinished.split()
             words = text.split()

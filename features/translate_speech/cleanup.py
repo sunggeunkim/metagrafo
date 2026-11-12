@@ -112,7 +112,10 @@ def gemini_cleanup(
             model=model, contents=prompt_for(line, shown, said), config=config
         )
         # A reply that isn't this object raises, and the line shows as heard.
-        reply = json.loads(response.text or "")
+        try:
+            reply = json.loads(response.text or "")
+        except json.JSONDecodeError:
+            raise ValueError(f"reply is not JSON: {(response.text or '')[:300]!r}") from None
         return Cleaned(finished=str(reply["finished"]), unfinished=str(reply["unfinished"]))
 
     return clean
