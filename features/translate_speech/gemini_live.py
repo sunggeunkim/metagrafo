@@ -445,6 +445,12 @@ class GeminiLiveTranslator:
                 ),
             )
             finished = cleaned.finished.strip()
+            # What shows is "finished" (the unfinished words are checked as a copy below), so its
+            # language is the one to match. Seen on the real model: an English caption came back
+            # as the speaker's Korean.
+            if finished and is_korean(finished) != is_korean(text):
+                logger.warning("cleanup skipped: reply is in another language")
+                return Cleaned(text)
             held = cleaned.unfinished.split()
             words = text.split()
             if held and not _copies_end_of(words, held):
@@ -592,6 +598,14 @@ class _Waiting:
     cleaning: bool
     carried: int = 0
     call: asyncio.Task[Cleaned] | None = None
+
+
+def is_korean(text: str) -> bool:
+    """Whether a caption is Korean: more Hangul than Latin letters. An English caption that quotes
+    a Korean word ("the love of 하나님") is still English; a Korean one naming "Romans" is Korean."""
+    hangul = sum("가" <= ch <= "힣" for ch in text)
+    latin = sum(ch.isascii() and ch.isalpha() for ch in text)
+    return hangul > latin
 
 
 def _ends_with_words(words: list[str], tail: list[str]) -> bool:

@@ -1418,3 +1418,62 @@ async def test_a_reply_under_half_the_line_shows_the_line_as_heard(caplog, hold:
     expected = [line] if hold else ["Think of it this way.", f"You are a raindrop {line}"]
     assert [e.text for e in seen] == expected
     assert "cleanup skipped: the reply is under half the line" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("line", "reply"),
+    [
+        (
+            "And so when we read the opening chapters of this book we see real suffering in the life of Job.",
+            "그래서 이 책의 첫 장들을 읽어 보면 욥의 삶에 진짜 고통이 찾아왔습니다.",
+        ),
+        ("그래서 오늘 저는 그 문제, 즉 악의 문제에 대해 다루고자 합니다.", "So today I want to address the problem of evil."),
+        # An English line that quotes one Korean word is still English.
+        (
+            "And so we know that the love of 하나님 never fails us, whatever we go through.",
+            "그래서 우리는 무엇을 겪든 하나님의 사랑이 결코 우리를 저버리지 않는다는 것을 압니다.",
+        ),
+    ],
+)
+async def test_a_reply_in_another_language_shows_the_line_as_heard(caplog, line: str, reply: str) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(_line: str, _context: list[str], _said: str) -> str:
+        return reply
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript(line)
+        await _settle()
+    assert [e.text for e in seen] == [line]
+    assert "cleanup skipped: reply is in another language" in caplog.text
+
+
+async def test_an_english_finished_part_for_a_korean_line_shows_the_line_as_heard(caplog) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    line = "그리고 이렇게 생각해보세요. 마치 개별적인 존재로서의 당신이"
+
+    async def cleanup(_line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
+        # The copied tail is Korean, so the reply as a whole has Hangul, but what shows is English.
+        return Cleaned(finished="And think of it this way.", unfinished="마치 개별적인 존재로서의 당신이")
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript(line, turn_complete=True)
+        await _settle()
+    assert [e.text for e in seen] == [line]
+    assert "cleanup skipped: reply is in another language" in caplog.text

@@ -96,7 +96,7 @@ async def test_cleanup_without_context_keeps_the_plain_instructions(monkeypatch)
     clean = gemini_cleanup(
         "test-key", model="gemini-test-lite", context=lambda: "  ", korean_style=lambda: "", glossary=lambda: ""
     )
-    await clean("A line.", [])
+    await clean("오늘의 말씀입니다.", [])
     assert asked["config"].system_instruction == INSTRUCTION
 
 
@@ -281,3 +281,36 @@ def test_the_default_glossary_gives_the_speakers_own_title_without_nim() -> None
 
     assert "youth pastor (someone else's title) → 목사님, 장로님, 집사님, 청소년부 목사님" in GLOSSARY_DEFAULT
     assert "youth pastor (the speaker's own title) → 목사, 장로, 집사, 청소년부 목사" in GLOSSARY_DEFAULT
+
+
+async def test_an_english_line_gets_no_korean_style_and_is_told_to_stay_english(monkeypatch) -> None:
+    from core.settings import GLOSSARY_DEFAULT
+
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    clean = gemini_cleanup("test-key", model="gemini-test-lite")
+    # Seen on the real model: with the Korean style and glossary in the instruction, English
+    # captions came back in Korean, often as the speaker's own Korean from "Said:".
+    await clean(
+        "And so Paul, what he says is, nothing can separate us from the love of God.",
+        [],
+        "그래서 바울이 말하는 것은, 그 무엇도 우리를 하나님의 사랑에서 끊을 수 없다는 것입니다.",
+    )
+    english = asked["config"].system_instruction
+    assert "When the line is Korean" not in english
+    assert "합니다체" not in english
+    assert "The line is English, so the reply is English" in english
+    assert "never translate it" in english
+    # The glossary still names terms both ways; only its English side applies.
+    assert GLOSSARY_DEFAULT in english
+    assert "Use only the English side of the glossary" in english
+
+    await clean("오늘 만나서 반가워요.", [])
+    korean = asked["config"].system_instruction
+    assert "When the line is Korean" in korean
+    assert "The line is English" not in korean
+
+    # Mostly English with one Korean word is English; Korean with an English name is Korean.
+    await clean("And so we know that the love of 하나님 never fails us.", [])
+    assert "The line is English" in asked["config"].system_instruction
+    await clean("오늘은 Romans 8장을 함께 읽겠습니다.", [])
+    assert "When the line is Korean" in asked["config"].system_instruction
