@@ -35,6 +35,9 @@
     #stage.pos-top_center {
       top: var(--inset-v); left: var(--inset-h); right: var(--inset-h); bottom: auto; margin-left: auto; margin-right: auto; text-align: center;
     }
+    #stage.pos-bottom_left {
+      top: auto; left: var(--inset-h); right: auto; bottom: var(--inset-v); text-align: left;
+    }
     #stage.pos-bottom_center {
       top: auto; left: var(--inset-h); right: var(--inset-h); bottom: var(--inset-v); margin-left: auto; margin-right: auto; text-align: center;
     }
@@ -80,7 +83,7 @@
   <script>
     const stage = document.getElementById("stage");
     const linesEl = document.getElementById("lines");
-    const POSITIONS = ["pos-top_left", "pos-top_center", "pos-bottom_center"];
+    const POSITIONS = ["pos-top_left", "pos-top_center", "pos-bottom_left", "pos-bottom_center"];
     let fontSizeVw = 2.5;
     let lineCount = 3;
     // On: whole sentences, up to PAGE_ROWS rows on screen. A sentence joins the ones shown

@@ -169,7 +169,7 @@ Owns the booth UI. Publishes only.
 - `OneSentenceEvent` — live. `PUT /one-sentence` (`{one_sentence}`) writes `ONE_SENTENCE` to `.env`; the hub adds `one_sentence` to every `overlay_style` message (on connect and on change), so the overlay switches at once.
 - `WholeSentencesEvent` — live; Gemini live shows only finished lines from the next line on. `PUT /whole-sentences` (`{whole_sentences}`) writes `WHOLE_SENTENCES` to `.env`, keeping other lines, so the choice survives a restart; `/mode` and `/health` show `whole_sentences`
 - `CleanUpWordingEvent` — live; a text model rewrites each finished Gemini live line from the next line on. `PUT /clean-up-wording` (`{clean_up_wording}`) writes `CLEAN_UP_WORDING` to `.env`, keeping other lines; `/mode` and `/health` show `clean_up_wording`
-- `OverlayStyleEvent` — live over `/ws` (`position`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6). `line_count` is visible text rows, default 3 (a ~100-character Korean line takes three rows at 2.5 vw). A wrapped sentence keeps the newest rows and the oldest row leaves.
+- `OverlayStyleEvent` — live over `/ws` (`position` `top_left` \| `top_center` \| `bottom_left` \| `bottom_center`, `font_size_vw` 1–8, `box_width_pct` 10–100, `box_height_pct` 5–100, `inset_vertical_pct` / `inset_horizontal_pct` 0–20, `line_count` 1–6). `line_count` is visible text rows, default 3 (a ~100-character Korean line takes three rows at 2.5 vw). A wrapped sentence keeps the newest rows and the oldest row leaves.
 
 Open `/control` in a normal browser, **not** as an OBS source.
 
