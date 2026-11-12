@@ -234,3 +234,11 @@ def test_the_default_glossary_keeps_titles_and_address_to_where_they_belong() ->
 
     assert "(only when the speaker addresses them) → 성도 여러분" in GLOSSARY_DEFAULT
     assert "the speaker's own title" in GLOSSARY_DEFAULT
+
+
+async def test_a_reply_that_is_not_json_says_what_the_model_sent(monkeypatch) -> None:
+    import pytest
+
+    _record_client(monkeypatch, "{not json at all")
+    with pytest.raises(ValueError, match="not JSON: '{not json at all'"):
+        await gemini_cleanup("test-key", model="gemini-test-lite")("A line.", [])
