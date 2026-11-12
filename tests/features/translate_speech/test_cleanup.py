@@ -242,3 +242,22 @@ async def test_a_reply_that_is_not_json_says_what_the_model_sent(monkeypatch) ->
     _record_client(monkeypatch, "{not json at all")
     with pytest.raises(ValueError, match="not JSON: '{not json at all'"):
         await gemini_cleanup("test-key", model="gemini-test-lite")("A line.", [])
+
+
+def test_the_default_korean_style_gives_only_formal_endings_as_examples() -> None:
+    from core.settings import KOREAN_STYLE_DEFAULT
+
+    # A question stays a question, in 합니다체: "알겠습니다." flattens it, "아시겠지요?" is 해요체.
+    assert "아시겠습니까?" in KOREAN_STYLE_DEFAULT
+    for informal in ("아시겠지요", "그렇지요"):
+        assert informal not in KOREAN_STYLE_DEFAULT
+    # The 해요체 shapes seen in captions, each with what it becomes.
+    for shape in ("했어요 → 했습니다", "있어요 → 있습니다", "거예요 → 것입니다", "것이었죠 → 것이었습니다"):
+        assert shape in KOREAN_STYLE_DEFAULT
+
+
+def test_the_default_glossary_gives_the_speakers_own_title_without_nim() -> None:
+    from core.settings import GLOSSARY_DEFAULT
+
+    assert "youth pastor (someone else's title) → 목사님, 장로님, 집사님, 청소년부 목사님" in GLOSSARY_DEFAULT
+    assert "youth pastor (the speaker's own title) → 목사, 장로, 집사, 청소년부 목사" in GLOSSARY_DEFAULT
