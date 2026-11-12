@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import time
 import uuid
@@ -39,7 +40,9 @@ class Cleaned:
 
 # A finished line, the lines shown before it, and what the speaker said around it (in the
 # source language) in; the line a text model rewrote out. A plain string is all finished.
-Cleanup = Callable[[str, list[str], str], Awaitable["str | Cleaned"]]
+# (line, shown lines, what the speaker said) -> its wording. Called with `hold=False` for a line
+# that starts with words held over already: it shows whole, so nothing of it may wait again.
+Cleanup = Callable[..., Awaitable["str | Cleaned"]]
 SHORT_SENTENCE_CHARS = 25
 # Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
 # slack because the overlay can wrap a full two rows onto a third (issue #36).
@@ -358,7 +361,9 @@ class GeminiLiveTranslator:
             if entry.cleaning:
                 start = entry.spoken_at if entry.spoken_at is not None else entry.committed_at
                 said = self._said_between(start - SOURCE_LEAD_S, entry.committed_at)
-                entry.call = asyncio.create_task(self._cleaned(entry.text, said), name="gemini-live-cleanup")
+                entry.call = asyncio.create_task(
+                    self._cleaned(entry.text, said, hold=entry.carried == 0), name="gemini-live-cleanup"
+                )
                 await asyncio.wait({entry.call})
                 if not self._waiting or self._waiting[0] is not entry:
                     # Captions went off while it was cleaned; lines after it are newer.
@@ -422,14 +427,23 @@ class GeminiLiveTranslator:
         """The speaker's own words heard from `since` to `until`, as one line."""
         return " ".join("".join(text for at, text in self._heard if since <= at <= until).split())
 
-    async def _cleaned(self, text: str, said: str) -> Cleaned:
-        """The text model's wording of a line, or the line as heard when the model can't answer."""
+    async def _cleaned(self, text: str, said: str, *, hold: bool = True) -> Cleaned:
+        """The text model's wording of a line, or the line as heard when the model can't answer.
+        Without `hold`, the line shows whole: nothing of it waits for the next line."""
         assert self._cleanup is not None
+        shown = list(self._shown)
         try:
-            reply = await asyncio.wait_for(
-                self._cleanup(text, list(self._shown), said), timeout=self._cleanup_timeout_s
-            )
+            call = self._cleanup(text, shown, said) if hold else self._cleanup(text, shown, said, hold=False)
+            reply = await asyncio.wait_for(call, timeout=self._cleanup_timeout_s)
             cleaned = reply if isinstance(reply, Cleaned) else Cleaned(reply)
+            # What the model sent, before any check, so a skipped or odd line can be read back.
+            logger.info(
+                "cleanup reply: %s",
+                json.dumps(
+                    {"line": text, "finished": cleaned.finished, "unfinished": cleaned.unfinished},
+                    ensure_ascii=False,
+                ),
+            )
             finished = cleaned.finished.strip()
             answer = f"{finished} {cleaned.unfinished}".strip()
             if answer and is_korean(answer) != is_korean(text):
@@ -438,9 +452,23 @@ class GeminiLiveTranslator:
                 return Cleaned(text)
             held = cleaned.unfinished.split()
             words = text.split()
-            if held and not _ends_with_words(words, held):
+            if held and not _copies_end_of(words, held):
                 logger.warning("cleanup skipped: unfinished part is not the end of the line")
                 return Cleaned(text)
+            if held and not finished and len(held) < len(words):
+                logger.warning("cleanup skipped: the reply leaves out words before the unfinished part")
+                return Cleaned(text)
+            answer = f"{finished} {cleaned.unfinished}".strip()
+            if answer and 2 * len(answer) < len(text):
+                # Cleanup trims fillers and false starts, not half a line: the rest was dropped.
+                logger.warning("cleanup skipped: the reply is under half the line")
+                return Cleaned(text)
+            if held and not hold:
+                # Held anyway: it still shows now, in the model's words. A cleaned "finished" wins
+                # over a copy of the whole line, and a copy of its tail shows only once.
+                if len(held) == len(words) or _copies_end_of(finished.split(), held):
+                    return Cleaned(finished or " ".join(held))
+                return Cleaned(f"{finished} {' '.join(held)}")
             # The line's own words wait, not the model's copy of them.
             unfinished = " ".join(words[len(words) - len(held) :]) if held else ""
             if held and len(held) == len(words):
@@ -581,6 +609,28 @@ def _ends_with_words(words: list[str], tail: list[str]) -> bool:
     if not 0 < len(tail) <= len(words):
         return False
     return [_bare(w) for w in words[-len(tail) :]] == [_bare(w) for w in tail]
+
+
+def _copies_end_of(words: list[str], tail: list[str]) -> bool:
+    """Whether `tail` is the model's copy of the last words of `words`. The Korean style
+    rewords "당신은" to "여러분은" even in a copy, so that one change, in that direction only,
+    still counts as a copy."""
+    if not 0 < len(tail) <= len(words):
+        return False
+    return all(
+        _bare(copy) in (_bare(word), _as_styled(word)) for word, copy in zip(words[-len(tail) :], tail)
+    )
+
+
+# The Korean style's "never 당신 or 너": how a copy of the line may have rewritten them.
+_YOU_AS_STYLED = {"너는": "여러분은", "너를": "여러분을", "너의": "여러분의", "네가": "여러분이", "너에게": "여러분에게", "너": "여러분"}
+
+
+def _as_styled(word: str) -> str:
+    word = _bare(word)
+    if word.startswith("당신"):
+        return "여러분" + word[len("당신") :]
+    return _YOU_AS_STYLED.get(word, word)
 
 
 def _bare(word: str) -> str:
