@@ -96,7 +96,7 @@ async def test_cleanup_without_context_keeps_the_plain_instructions(monkeypatch)
     clean = gemini_cleanup(
         "test-key", model="gemini-test-lite", context=lambda: "  ", korean_style=lambda: "", glossary=lambda: ""
     )
-    await clean("A line.", [])
+    await clean("오늘의 말씀입니다.", [])
     assert asked["config"].system_instruction == INSTRUCTION
 
 
@@ -210,3 +210,30 @@ async def test_cleanup_replies_with_the_finished_sentences_and_the_unfinished_wo
         "never finish them with words from",
     ):
         assert asks in instruction
+
+
+async def test_an_english_line_gets_no_korean_style_and_is_told_to_stay_english(monkeypatch) -> None:
+    from core.settings import GLOSSARY_DEFAULT
+
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    clean = gemini_cleanup("test-key", model="gemini-test-lite")
+    # Seen on the real model: with the Korean style and glossary in the instruction, English
+    # captions came back in Korean, often as the speaker's own Korean from "Said:".
+    await clean(
+        "And so Paul, what he says is, nothing can separate us from the love of God.",
+        [],
+        "그래서 바울이 말하는 것은, 그 무엇도 우리를 하나님의 사랑에서 끊을 수 없다는 것입니다.",
+    )
+    english = asked["config"].system_instruction
+    assert "When the line is Korean" not in english
+    assert "합니다체" not in english
+    assert "The line is English, so the reply is English" in english
+    assert "never translate it" in english
+    # The glossary still names terms both ways; only its English side applies.
+    assert GLOSSARY_DEFAULT in english
+    assert "Use only the English side of the glossary" in english
+
+    await clean("오늘 만나서 반가워요.", [])
+    korean = asked["config"].system_instruction
+    assert "When the line is Korean" in korean
+    assert "The line is English" not in korean

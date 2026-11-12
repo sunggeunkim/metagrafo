@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 
 from core.settings import GLOSSARY_DEFAULT, KOREAN_STYLE_DEFAULT
-from features.translate_speech.gemini_live import Cleaned, Cleanup
+from features.translate_speech.gemini_live import Cleaned, Cleanup, is_korean
 
 INSTRUCTION = (
     "You clean up live captions of a church sermon. They were machine-translated while the "
@@ -24,6 +24,13 @@ INSTRUCTION = (
     'once the sentence is complete. Leave them out of "finished", and never finish them with '
     'words from "Said:" or "Shown before:". When the whole line is complete, "unfinished" is '
     'empty; when none of it is, "finished" is empty.'
+)
+
+# For an English line, instead of the Korean style: with the style and the glossary's Korean in
+# the instruction, the model answered English captions in Korean.
+ENGLISH_LINE = (
+    "\n\nThe line is English, so the reply is English: clean it up in English and never translate "
+    "it. Use only the English side of the glossary."
 )
 
 # Gemini's structured output: every reply is this object.
@@ -87,12 +94,15 @@ def gemini_cleanup(
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))
 
     async def clean(line: str, shown: list[str], said: str = "") -> Cleaned:
+        korean = is_korean(line)
+        style = korean_style() if korean_style is not None else KOREAN_STYLE_DEFAULT
+        instruction = instruction_with(
+            context() if context is not None else "",
+            style if korean else "",
+            glossary() if glossary is not None else GLOSSARY_DEFAULT,
+        )
         config = types.GenerateContentConfig(
-            system_instruction=instruction_with(
-                context() if context is not None else "",
-                korean_style() if korean_style is not None else KOREAN_STYLE_DEFAULT,
-                glossary() if glossary is not None else GLOSSARY_DEFAULT,
-            ),
+            system_instruction=instruction if korean else instruction + ENGLISH_LINE,
             temperature=0.0,
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             response_mime_type="application/json",

@@ -1219,3 +1219,34 @@ async def test_held_words_left_over_from_a_long_line_cut_wait_only_once() -> Non
         "every drop of rain that falls on the hills and on the long roads,",
         "runs into a stream and on and on through the fields into the wide sea",
     ]
+
+
+@pytest.mark.parametrize(
+    ("line", "reply"),
+    [
+        (
+            "And so when we read the opening chapters of this book we see real suffering in the life of Job.",
+            "그래서 이 책의 첫 장들을 읽어 보면 욥의 삶에 진짜 고통이 찾아왔습니다.",
+        ),
+        ("그래서 오늘 저는 그 문제, 즉 악의 문제에 대해 다루고자 합니다.", "So today I want to address the problem of evil."),
+    ],
+)
+async def test_a_reply_in_another_language_shows_the_line_as_heard(caplog, line: str, reply: str) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(_line: str, _context: list[str], _said: str) -> str:
+        return reply
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript(line)
+        await _settle()
+    assert [e.text for e in seen] == [line]
+    assert "cleanup skipped: reply is in another language" in caplog.text

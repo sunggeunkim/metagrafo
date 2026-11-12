@@ -108,7 +108,8 @@ def test_an_unreadable_file_falls_back_to_the_default(env_file, caplog) -> None:
 
 
 class _SpeakingSession:
-    """A Gemini socket that says one sentence, then stays open."""
+    """A Gemini socket that says one Korean sentence, then stays open: the Korean style is only
+    for Korean captions."""
 
     async def __aenter__(self):
         return self
@@ -123,7 +124,7 @@ class _SpeakingSession:
         yield SimpleNamespace(
             go_away=None,
             server_content=SimpleNamespace(
-                output_transcription=SimpleNamespace(text="Today we talk about suffering."),
+                output_transcription=SimpleNamespace(text="오늘은 고통의 문제에 대해 여러분과 함께 이야기하겠습니다."),
                 turn_complete=False,
             ),
         )

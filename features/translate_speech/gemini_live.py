@@ -431,6 +431,11 @@ class GeminiLiveTranslator:
             )
             cleaned = reply if isinstance(reply, Cleaned) else Cleaned(reply)
             finished = cleaned.finished.strip()
+            answer = f"{finished} {cleaned.unfinished}".strip()
+            if answer and is_korean(answer) != is_korean(text):
+                # Seen on the real model: an English caption came back as the speaker's Korean.
+                logger.warning("cleanup skipped: reply is in another language")
+                return Cleaned(text)
             held = cleaned.unfinished.split()
             words = text.split()
             if held and not _ends_with_words(words, held):
@@ -564,6 +569,11 @@ class _Waiting:
     cleaning: bool
     carried: int = 0
     call: asyncio.Task[Cleaned] | None = None
+
+
+def is_korean(text: str) -> bool:
+    """Whether a caption is Korean: it has Hangul. An English caption has none."""
+    return any("가" <= ch <= "힣" for ch in text)
 
 
 def _ends_with_words(words: list[str], tail: list[str]) -> bool:
