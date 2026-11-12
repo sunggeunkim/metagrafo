@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+
+import pytest
 from types import SimpleNamespace
 
 from core.event_bus import EventBus
@@ -1149,3 +1151,71 @@ async def test_unfinished_words_copied_with_other_punctuation_still_wait_as_the_
     await _settle()
     assert asked[-1] == "You are, a raindrop falling from the sky."
     assert [e.text for e in seen] == ["Think of it this way.", "You are, a raindrop falling from the sky."]
+
+
+@pytest.mark.parametrize("switch", ["whole sentences off", "clean up wording off"])
+async def test_held_words_never_join_a_line_that_started_after_a_setting_went_off(switch: str) -> None:
+    from features.operator_control.events import CleanUpWordingEvent
+
+    bus = EventBus()
+    seen = _collect(bus)
+    first_may_finish = asyncio.Event()
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        if line == RAINDROP:
+            await first_may_finish.wait()
+            return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(RAINDROP, turn_complete=True)
+    if switch == "whole sentences off":
+        await bus.publish(WholeSentencesEvent(whole_sentences=False))
+    else:
+        await bus.publish(CleanUpWordingEvent(clean_up_wording=False))
+    # The next line opens while the raindrop line is still being cleaned, so it starts with the new setting.
+    await translator.apply_transcript("And so")
+    first_may_finish.set()
+    await _settle()
+    await translator.apply_transcript("we pray for the church in Rome.")
+    await _settle()
+    # That line is never cleaned (or never waits for a pause), so the held words show where they were.
+    assert [e.text for e in seen if not e.provisional] == [RAINDROP, "And so we pray for the church in Rome."]
+
+
+async def test_held_words_left_over_from_a_long_line_cut_wait_only_once() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    held = "every drop of rain that falls on the hills and on the long roads, runs into a stream"
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        if line.startswith("Think of it this way."):
+            return Cleaned(finished="Think of it this way.", unfinished=held)
+        if line.startswith("runs into"):
+            # The model holds back the rest again, held words and all.
+            return Cleaned(finished="", unfinished=line)
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(f"Think of it this way. {held}", turn_complete=True)
+    await _settle()
+    # Too long for one caption: it is cut after "roads,", and the held words after the cut go on.
+    await translator.apply_transcript("and on and on through the fields into the wide sea", turn_complete=True)
+    await _settle()
+    assert [e.text for e in seen] == [
+        "Think of it this way.",
+        "every drop of rain that falls on the hills and on the long roads,",
+        "runs into a stream and on and on through the fields into the wide sea",
+    ]

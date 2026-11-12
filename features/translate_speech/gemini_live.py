@@ -303,6 +303,8 @@ class GeminiLiveTranslator:
             # The rest may have started in an earlier fragment; it keeps the times its words arrived.
             for word, word_at in zip(words[front:], times[front:]):
                 self._line.extend(word, at=word_at)
+            # Held words past the cut have waited once already, like the ones on the front.
+            self._line.carried = max(0, carried - front)
 
     def _holds_short_sentence(self, text: str) -> bool:
         """A sentence like "Yes." waits to join the next one instead of filling a line alone."""
@@ -410,6 +412,9 @@ class GeminiLiveTranslator:
             # Shown when the speaker pauses, if no more words come to finish the sentence.
             self._commit_when_quiet()
         else:
+            # The open line keeps the settings it started with; it may never be cleaned or wait.
+            if not (self._whole_sentences and self._clean_up_wording):
+                return everything
             self._line.prepend(cleaned.unfinished, times)
         return cleaned.finished
 
