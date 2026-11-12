@@ -210,3 +210,27 @@ async def test_cleanup_replies_with_the_finished_sentences_and_the_unfinished_wo
         "never finish them with words from",
     ):
         assert asks in instruction
+
+
+async def test_the_default_korean_style_keeps_honorifics_and_address_to_what_the_speaker_said(monkeypatch) -> None:
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    await gemini_cleanup("test-key", model="gemini-test-lite")("그리고 그는 남은 생애를 보냈어요.", [])
+    instruction = asked["config"].system_instruction
+    # Seen live: the Buddha became "예수님께서", Frank called himself "청소년부 목사님", and
+    # "성도 여러분" was added where the speaker addressed no one.
+    for asks in (
+        "only for God and Jesus",
+        "never make God or Jesus the subject of a sentence about anyone else",
+        "목사입니다, not 목사님입니다",
+        "never add 여러분 or 성도 여러분 where the speaker addresses no one",
+        "stays a question",
+        "for every ending, even in a fragment",
+    ):
+        assert asks in instruction
+
+
+def test_the_default_glossary_keeps_titles_and_address_to_where_they_belong() -> None:
+    from core.settings import GLOSSARY_DEFAULT
+
+    assert "(only when the speaker addresses them) → 성도 여러분" in GLOSSARY_DEFAULT
+    assert "the speaker's own title" in GLOSSARY_DEFAULT

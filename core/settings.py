@@ -3,9 +3,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # How cleanup writes a Korean caption line until the booth saves its own style.
 KOREAN_STYLE_DEFAULT = (
     "Write it as a sermon is spoken from the pulpit: formal 합니다체 endings "
-    "(~합니다, ~입니까, ~하십시오), never 해요체 or 반말, and honorifics for God and Jesus "
-    "(하나님께서 ~하셨습니다, 예수님께서). Address the congregation as 여러분 (여러분이, 여러분은, 여러분의), never 당신 or 너. "
-    "Use natural Korean word order, not the English speaker's: put time, place and duration "
+    "(~합니다, ~입니까, ~하십시오), never 해요체 or 반말, for every ending, even in a fragment: "
+    "~것이었죠 becomes ~것이었습니다, and a trailing ~요 as in '곳에서요.' is dropped. Use honorifics (하나님께서 ~하셨습니다, "
+    "예수님께서) only for God and Jesus, where the line speaks of them; never make God or Jesus "
+    "the subject of a sentence about anyone else. The speaker never honors their own title: "
+    "저는 청소년부 목사입니다, not 목사님입니다. Where the speaker says \"you\" to the listeners, "
+    "write 여러분 (여러분이, 여러분은, 여러분의), never 당신 or 너; never add 여러분 or 성도 여러분 "
+    "where the speaker addresses no one. A question to the listeners, such as \"okay?\" or "
+    "\"right?\", stays a question (아시겠지요?, 그렇지요?). Use natural Korean word order, not the English speaker's: put time, place and duration "
     "phrases before the verb, and fold trailing fragments such as '지난달에.' or "
     "'3박 4일 동안.' into the sentence they belong to."
 )
@@ -16,8 +21,8 @@ GLOSSARY_DEFAULT = """God → 하나님 (never 신 or 하느님); the Lord → �
 the Word, Scripture, the Bible → 말씀, 성경
 grace → 은혜; salvation → 구원; faith → 믿음; repentance → 회개; sin → 죄; the cross → 십자가; resurrection → 부활; the gospel → 복음; eternal life → 영생
 worship, the service → 예배; prayer → 기도; praise → 찬양; blessing → 복, 축복; Amen → 아멘; Hallelujah → 할렐루야
-church members, brothers and sisters → 성도 여러분; the congregation → 성도들
-pastor → 목사님; elder → 장로님; deacon → 집사님; youth pastor → 청소년부 목사님
+church members, brothers and sisters (only when the speaker addresses them) → 성도 여러분; the congregation → 성도들
+pastor → 목사님; elder → 장로님; deacon → 집사님; youth pastor → 청소년부 목사님 (for the speaker's own title, no 님: 목사, 장로, 집사)
 sermon → 설교; Sunday → 주일; church → 교회
 Bible books and references as in the 개역개정 Bible: Genesis → 창세기, Job → 욥기, Psalms → 시편, Romans → 로마서, John 3:16 → 요한복음 3장 16절"""
 
