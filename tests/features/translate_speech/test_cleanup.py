@@ -219,12 +219,17 @@ async def test_a_line_that_must_show_whole_asks_the_model_to_hold_nothing(monkey
     usual = asked["config"].system_instruction
     await clean("예를 들어, 불교에서는 창시자인 부처에 대한 이야기는", [], hold=False)
     whole = asked["config"].system_instruction
-    rule = 'This line shows now, even if it ends in the middle of a sentence'
+    rule = "This line shows now, even if it ends in the middle of a sentence"
     assert rule not in usual
     assert rule in whole
-    assert 'leave "unfinished" empty' in whole
+    assert '"unfinished" is always empty' in whole
+    # The tail is part of what shows: it must not be dropped from "finished".
+    assert "leave nothing out" in whole
     # Made to show a fragment, the model must not invent its ending (seen live: "멀리" → "멀리하셨습니다").
-    assert "never add words" in whole
+    assert "no word or ending added" in whole
+    # The usual split rules are replaced, not contradicted.
+    assert 'when none of it is, "finished" is empty' not in whole
+    assert 'Leave them out of "finished"' not in whole
 
 
 async def test_a_reply_that_is_not_json_says_what_the_model_sent(monkeypatch) -> None:

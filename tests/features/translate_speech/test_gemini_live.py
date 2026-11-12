@@ -1322,3 +1322,99 @@ async def test_every_cleanup_reply_goes_to_the_booth_log_with_the_line_it_answer
     ]
     # One line per reply, Korean as written, so the log reads beside the IN: and OUT: lines.
     assert "\n" not in replies[0] and "당신" in replies[0]
+
+
+@pytest.mark.parametrize(
+    ("finished", "unfinished", "expected"),
+    [
+        # Cleaned whole, and the raw line copied again: the cleaned words show.
+        ("You are a raindrop, falling from…", "You are a raindrop falling from", "You are a raindrop, falling from…"),
+        # Cleaned whole, and its tail copied again: the tail shows once.
+        ("You are a raindrop, falling from", "falling from", "You are a raindrop, falling from"),
+    ],
+)
+async def test_a_line_shown_whole_keeps_the_cleaned_words_when_the_model_also_copies_them(
+    finished: str, unfinished: str, expected: str
+) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
+        if line == RAINDROP:
+            return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
+        return Cleaned(finished=finished, unfinished=unfinished)
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    await translator.apply_transcript(RAINDROP, turn_complete=True)
+    await _settle()
+    await translator.apply_transcript("falling from", turn_complete=True)
+    await _settle()
+    assert [e.text for e in seen] == ["Think of it this way.", expected]
+
+
+@pytest.mark.parametrize(
+    ("line", "copy"),
+    [
+        # The style only turns 당신/너 into 여러분, never back, and never one into the other.
+        ("그게 사실 열반입니다. 그러니까 사실상, 여러분은", "그러니까 사실상, 당신은"),
+        ("그게 사실 열반입니다. 그러니까 사실상, 너는", "그러니까 사실상, 당신은"),
+    ],
+)
+async def test_a_copy_that_rewrites_you_the_other_way_is_not_the_end_of_the_line(caplog, line: str, copy: str) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+
+    async def cleanup(_line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
+        return Cleaned(finished="그것이 사실 열반입니다.", unfinished=copy)
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        await translator.apply_transcript(line, turn_complete=True)
+        await _settle()
+    assert [e.text for e in seen] == [line]
+    assert "cleanup skipped: unfinished part is not the end of the line" in caplog.text
+
+
+@pytest.mark.parametrize("hold", [True, False])
+async def test_a_reply_under_half_the_line_shows_the_line_as_heard(caplog, hold: bool) -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    line = "이 문제에 대해 오랫동안 논의해 왔어요. 심지어"
+
+    async def cleanup(text: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
+        if text == RAINDROP:
+            return Cleaned(finished="Think of it this way.", unfinished="You are a raindrop")
+        # Seen on the real model with hold=False: the first sentence dropped, only "심지어" kept.
+        return Cleaned(finished="심지어", unfinished="")
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("WARNING"):
+        if hold:
+            await translator.apply_transcript(line, turn_complete=True)
+        else:
+            # Held words first, so the line is cleaned to show whole.
+            await translator.apply_transcript(RAINDROP, turn_complete=True)
+            await _settle()
+            await translator.apply_transcript(line, turn_complete=True)
+        await _settle()
+    expected = [line] if hold else ["Think of it this way.", f"You are a raindrop {line}"]
+    assert [e.text for e in seen] == expected
+    assert "cleanup skipped: the reply is under half the line" in caplog.text

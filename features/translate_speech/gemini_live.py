@@ -453,10 +453,16 @@ class GeminiLiveTranslator:
             if held and not finished and len(held) < len(words):
                 logger.warning("cleanup skipped: the reply leaves out words before the unfinished part")
                 return Cleaned(text)
+            answer = f"{finished} {cleaned.unfinished}".strip()
+            if answer and 2 * len(answer) < len(text):
+                # Cleanup trims fillers and false starts, not half a line: the rest was dropped.
+                logger.warning("cleanup skipped: the reply is under half the line")
+                return Cleaned(text)
             if held and not hold:
-                # Held anyway: it still shows now, in the model's words.
-                if len(held) == len(words):
-                    return Cleaned(" ".join(held))
+                # Held anyway: it still shows now, in the model's words. A cleaned "finished" wins
+                # over a copy of the whole line, and a copy of its tail shows only once.
+                if len(held) == len(words) or _copies_end_of(finished.split(), held):
+                    return Cleaned(finished or " ".join(held))
                 return Cleaned(f"{finished} {' '.join(held)}")
             # The line's own words wait, not the model's copy of them.
             unfinished = " ".join(words[len(words) - len(held) :]) if held else ""
@@ -597,10 +603,13 @@ def _ends_with_words(words: list[str], tail: list[str]) -> bool:
 
 def _copies_end_of(words: list[str], tail: list[str]) -> bool:
     """Whether `tail` is the model's copy of the last words of `words`. The Korean style
-    rewords "당신은" to "여러분은" even in a copy, so that one change still counts as a copy."""
+    rewords "당신은" to "여러분은" even in a copy, so that one change, in that direction only,
+    still counts as a copy."""
     if not 0 < len(tail) <= len(words):
         return False
-    return [_as_styled(w) for w in words[-len(tail) :]] == [_as_styled(w) for w in tail]
+    return all(
+        _bare(copy) in (_bare(word), _as_styled(word)) for word, copy in zip(words[-len(tail) :], tail)
+    )
 
 
 # The Korean style's "never 당신 or 너": how a copy of the line may have rewritten them.
