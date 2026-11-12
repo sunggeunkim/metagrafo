@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 import uuid
 from collections import deque
@@ -53,6 +54,9 @@ CLEANUP_TIMEOUT_S = 4.0
 # Words cleanup held back for the rest of their sentence wait this long for more words, not the
 # usual quiet: the translation often pauses longer than that mid-sentence (2026-11-11 replay).
 HELD_QUIET_S = 5.0
+# A line still growing after this long shows up to its last comma: a speaker who strings clauses
+# together for 10-15 s otherwise leaves the screen still, then fills it with two or three rows.
+LONG_WAIT_S = 6.0
 # The speaker's words reach the socket a little before their translation, so a line's source
 # is what was heard from this long before its first translated fragment until it is committed.
 SOURCE_LEAD_S = 6.0
@@ -117,6 +121,7 @@ class GeminiLiveTranslator:
         whole_sentences: bool = False,
         quiet_s: float = 1.2,
         held_quiet_s: float = HELD_QUIET_S,
+        long_wait_s: float = LONG_WAIT_S,
         clean_up_wording: bool = False,
         cleanup: Cleanup | None = None,
         cleanup_timeout_s: float = CLEANUP_TIMEOUT_S,
@@ -140,6 +145,7 @@ class GeminiLiveTranslator:
         self._next_whole_sentences = whole_sentences
         self._quiet_s = quiet_s
         self._held_quiet_s = held_quiet_s
+        self._long_wait_s = long_wait_s
         self._quiet: asyncio.Task[None] | None = None
         self._clock = clock
         self._connect = connect
@@ -239,6 +245,8 @@ class GeminiLiveTranslator:
         shown = self._line.extend(fragment, at=at) if fragment.strip() else ""
         if self._whole_sentences:
             await self._cut_long_line()
+            if at is not None:
+                await self._cut_waiting_line(at)
         spoken_at = self._line.opened_at
         text = self._finish(self._line.text) or ""
         if (turn_complete or _ends_sentence(text)) and not self._holds_short_sentence(text):
@@ -291,23 +299,43 @@ class GeminiLiveTranslator:
         """Publish the front of a line that would overflow the overlay; the rest opens the next line."""
         while len(text := tidy(self._line.text)) > LONG_LINE_CHARS:
             cut = _cut_point(text, LONG_LINE_CHARS)
-            if cut is None:
+            if cut is None or not await self._show_front(text, cut):
                 return
-            spoken_at = self._line.opened_at
-            words = text.split()
-            front = len(text[:cut].split())
-            times, carried = self._commit_line(text)
-            await self._show(
-                text[:cut].strip(), spoken_at=spoken_at, times=times[:front], carried=min(carried, front)
-            )
-            if not self._active:
-                # Captions went off while the front was shown; the off switch already cleared the line.
-                return
-            # The rest may have started in an earlier fragment; it keeps the times its words arrived.
-            for word, word_at in zip(words[front:], times[front:]):
-                self._line.extend(word, at=word_at)
-            # Held words past the cut have waited once already, like the ones on the front.
-            self._line.carried = max(0, carried - front)
+
+    async def _cut_waiting_line(self, now: float) -> None:
+        """Show the front of a line that has grown for LONG_WAIT_S with no sentence end, up to its
+        last comma, as of a fragment arriving `now`. It shows whole: cleanup holding its last
+        clause back would bring the wait back."""
+        opened_at = self._line.opened_at
+        if opened_at is None or now - opened_at < self._long_wait_s:
+            return
+        text = tidy(self._line.text)
+        cut = _clause_end(text)
+        if cut is not None:
+            await self._show_front(text, cut, show_whole=True)
+
+    async def _show_front(self, text: str, cut: int, *, show_whole: bool = False) -> bool:
+        """Show `text` up to `cut`; the rest opens the next line. False once captions went off."""
+        spoken_at = self._line.opened_at
+        words = text.split()
+        front = len(text[:cut].split())
+        times, carried = self._commit_line(text)
+        await self._show(
+            text[:cut].strip(),
+            spoken_at=spoken_at,
+            times=times[:front],
+            carried=min(carried, front),
+            show_whole=show_whole,
+        )
+        if not self._active:
+            # Captions went off while the front was shown; the off switch already cleared the line.
+            return False
+        # The rest may have started in an earlier fragment; it keeps the times its words arrived.
+        for word, word_at in zip(words[front:], times[front:]):
+            self._line.extend(word, at=word_at)
+        # Held words past the cut have waited once already, like the ones on the front.
+        self._line.carried = max(0, carried - front)
+        return True
 
     def _holds_short_sentence(self, text: str) -> bool:
         """A sentence like "Yes." waits to join the next one instead of filling a line alone."""
@@ -320,6 +348,7 @@ class GeminiLiveTranslator:
         spoken_at: float | None,
         times: list[float | None] | None = None,
         carried: int = 0,
+        show_whole: bool = False,
     ) -> None:
         """A committed line, rewritten by the text model when the booth asks for clean wording."""
         # Decided now: a line still being cleaned keeps it if Whole sentences changes meanwhile.
@@ -343,6 +372,7 @@ class GeminiLiveTranslator:
                 paced=paced,
                 cleaning=cleaning,
                 carried=carried,
+                show_whole=show_whole,
             )
         )
         if self._in_order is None:
@@ -362,7 +392,7 @@ class GeminiLiveTranslator:
                 start = entry.spoken_at if entry.spoken_at is not None else entry.committed_at
                 said = self._said_between(start - SOURCE_LEAD_S, entry.committed_at)
                 entry.call = asyncio.create_task(
-                    self._cleaned(entry.text, said, hold=entry.carried == 0), name="gemini-live-cleanup"
+                    self._cleaned(entry.text, said, hold=entry.carried == 0 and not entry.show_whole), name="gemini-live-cleanup"
                 )
                 await asyncio.wait({entry.call})
                 if not self._waiting or self._waiting[0] is not entry:
@@ -597,6 +627,7 @@ class _Waiting:
     paced: bool
     cleaning: bool
     carried: int = 0
+    show_whole: bool = False
     call: asyncio.Task[Cleaned] | None = None
 
 
@@ -654,6 +685,14 @@ def _times_of_kept(raw: list[str], times: list[float | None], kept: list[str]) -
         else:
             out.append(times[-1] if times else None)
     return out
+
+
+def _clause_end(text: str) -> int | None:
+    """Where a line that has waited long can end: after its last comma or sentence end, if that
+    leaves at least a short sentence's worth in front. A one-letter word before the comma is a
+    filler ("어,", "음,"), not the end of a clause. None when it has no such place."""
+    ends = [m.end() for m in re.finditer(r"(?<=\S\S)[,.?!](?=\s|$)", text) if m.end() >= SHORT_SENTENCE_CHARS]
+    return ends[-1] if ends else None
 
 
 def _cut_point(text: str, limit: int) -> int | None:

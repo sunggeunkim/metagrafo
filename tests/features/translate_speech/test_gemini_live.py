@@ -1477,3 +1477,79 @@ async def test_an_english_finished_part_for_a_korean_line_shows_the_line_as_hear
         await _settle()
     assert [e.text for e in seen] == [line]
     assert "cleanup skipped: reply is in another language" in caplog.text
+
+
+# Gemini's Korean for a run-on English sentence: clauses joined by commas, no full stop for 13 s.
+RUN_ON = [
+    (0.0, "어, 그래서 몇 주 전에, 저희 청소년부에서 이미 시작한"),
+    (3.0, "새로운 설교 시리즈가 있는데, 그건 어려운"),
+    (6.5, "질문에 대한 내용이에요, 어, 우리가"),
+]
+
+
+async def test_a_line_that_has_waited_long_shows_up_to_its_last_comma() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    now = [0.0]
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True, quiet_s=60, clock=lambda: now[0]
+    )
+    for at, fragment in RUN_ON[:2]:
+        now[0] = at
+        await translator.apply_transcript(fragment)
+    # Under 6 s: still waiting for the sentence to end.
+    assert seen == []
+    now[0], fragment = RUN_ON[2]
+    await translator.apply_transcript(fragment)
+    # 6.5 s since the line began: it shows up to its last comma, and the rest keeps growing.
+    assert [e.text for e in seen] == [
+        "어, 그래서 몇 주 전에, 저희 청소년부에서 이미 시작한 새로운 설교 시리즈가 있는데, 그건 어려운 질문에 대한 내용이에요,"
+    ]
+    now[0] = 8.0
+    await translator.apply_transcript("가질 수 있는 기독교와 삶에 대한 질문들입니다.")
+    assert [e.text for e in seen][1:] == ["어, 우리가 가질 수 있는 기독교와 삶에 대한 질문들입니다."]
+
+
+async def test_a_line_cut_for_waiting_long_is_cleaned_to_show_whole() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    asked: list[tuple[str, bool]] = []
+    now = [0.0]
+
+    async def cleanup(line: str, _context: list[str], _said: str, hold: bool = True) -> str | Cleaned:
+        asked.append((line, hold))
+        if hold:
+            # Ends on a connective, so the model would hold it all back, and the wait would return.
+            return Cleaned(finished="", unfinished=line)
+        return line
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+        quiet_s=60,
+        clock=lambda: now[0],
+    )
+    for at, fragment in RUN_ON:
+        now[0] = at
+        await translator.apply_transcript(fragment)
+    await _settle()
+    front = "어, 그래서 몇 주 전에, 저희 청소년부에서 이미 시작한 새로운 설교 시리즈가 있는데, 그건 어려운 질문에 대한 내용이에요,"
+    assert asked == [(front, False)]
+    assert [e.text for e in seen] == [front]
+
+
+async def test_a_line_that_has_waited_long_with_no_comma_keeps_waiting() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    now = [0.0]
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True, quiet_s=60, clock=lambda: now[0]
+    )
+    for at, fragment in [(0.0, "저희 청소년부에서 이미 시작한 새로운"), (7.0, "설교 시리즈가 있는데 그건 어려운")]:
+        now[0] = at
+        await translator.apply_transcript(fragment)
+    # Nowhere to end a clause: cutting between words would show half a phrase.
+    assert seen == []
