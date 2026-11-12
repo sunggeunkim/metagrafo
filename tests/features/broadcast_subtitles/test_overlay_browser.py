@@ -218,6 +218,9 @@ LONG_KOREAN = (
 )
 
 
+LONG_SENTENCE = LONG_KOREAN[:-1] + "."
+
+
 def test_a_long_korean_line_shows_whole_at_the_default_line_count(browser, server) -> None:
     # Omitting line_count takes the default, as a booth that never changed it does.
     style = {k: v for k, v in DEFAULT_STYLE.items() if k != "line_count"}
@@ -316,7 +319,8 @@ def test_one_sentence_at_a_time_shows_the_newest_sentence_whole_then_replaces_it
             if time.monotonic() > deadline:
                 raise RuntimeError("overlay did not open /ws")
             time.sleep(0.05)
-        httpx.post(f"{server}/inject", json={"text": LONG_KOREAN}).raise_for_status()
+        # Ends on a full stop: after a comma, the next sentence would continue it instead.
+        httpx.post(f"{server}/inject", json={"text": LONG_SENTENCE}).raise_for_status()
         page.wait_for_selector("#stage:not(.hidden) #lines .line", state="attached")
         first = page.evaluate(_BOXES_JS)
         httpx.post(f"{server}/inject", json={"text": "Then the next sentence."}).raise_for_status()
@@ -328,7 +332,7 @@ def test_one_sentence_at_a_time_shows_the_newest_sentence_whole_then_replaces_it
         context.close()
     assert len(first) == 3
     assert [box["rows"] for box in first] == [1, 1, 1]
-    assert " ".join(box["text"] for box in first).split() == LONG_KOREAN.split()
+    assert " ".join(box["text"] for box in first).split() == LONG_SENTENCE.split()
     assert [box["text"] for box in second] == ["Then the next sentence."]
 
 
@@ -416,4 +420,30 @@ def test_two_lines_at_a_time_never_shows_more_than_two_lines(browser, server) ->
     assert screens[0] == ["First short sentence."]
     # One line plus two would be three, so the two-line sentence starts afresh.
     assert len(screens[1]) == 2
+    assert " ".join(screens[1]).split() == TWO_ROW_KOREAN.split()
+
+
+def test_a_sentence_after_a_comma_continues_on_the_same_line(browser, server) -> None:
+    screens = _one_sentence_screens(browser, server, ["그래서 지난 몇 주 동안,", "저희는 고통의 문제를 다루었습니다."])
+    assert screens[0] == ["그래서 지난 몇 주 동안,"]
+    # Placed next to the clause it finishes, not on a line of its own.
+    assert screens[1] == ["그래서 지난 몇 주 동안, 저희는 고통의 문제를 다루었습니다."]
+
+
+# Two rows that end on a comma, as a long sentence shown up to its last comma does.
+TWO_ROW_CLAUSE = TWO_ROW_KOREAN[:-1] + ","
+
+
+def test_a_sentence_after_a_comma_may_fill_three_lines(browser, server) -> None:
+    rest = "그리고 오늘은 그 질문을 함께 생각해 보겠습니다."
+    screens = _one_sentence_screens(browser, server, [TWO_ROW_CLAUSE, rest])
+    assert len(screens[0]) == 2
+    # Two rows and one more would clear the screen after a full stop; after a comma it continues.
+    assert len(screens[1]) <= 3
+    assert " ".join(screens[1]).split() == TWO_ROW_CLAUSE.split() + rest.split()
+
+
+def test_a_sentence_after_a_comma_starts_afresh_past_three_lines(browser, server) -> None:
+    screens = _one_sentence_screens(browser, server, [TWO_ROW_CLAUSE, TWO_ROW_KOREAN])
+    # Two rows and two more would make four.
     assert " ".join(screens[1]).split() == TWO_ROW_KOREAN.split()

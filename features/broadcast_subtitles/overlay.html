@@ -89,8 +89,12 @@
     // On: whole sentences, up to PAGE_ROWS rows on screen. A sentence joins the ones shown
     // while they all fit in PAGE_ROWS rows; otherwise the screen clears and it starts afresh.
     // A sentence longer than PAGE_ROWS rows still shows whole, alone.
+    // A line that ends on a comma is a clause cut short (a long sentence shows up to its last
+    // comma after a while), so the next line continues it on the same line, while the two
+    // together fit in CONTINUED_ROWS rows; otherwise the next line starts afresh.
     // Off: rolling rows, the newest lineCount rows across lines.
     const PAGE_ROWS = 2;
+    const CONTINUED_ROWS = 3;
     let oneSentence = true;
     let draftText = null;
     let committed = [];
@@ -182,12 +186,32 @@
       }
     }
 
-    function fitsPage(text) {
-      let rows = measureRows(text).length;
-      for (const line of page) {
+    function rowsOf(lines) {
+      let rows = 0;
+      for (const line of lines) {
         rows += measureRows(line).length;
       }
-      return rows <= PAGE_ROWS;
+      return rows;
+    }
+
+    function fitsPage(text) {
+      return rowsOf(page.concat(text)) <= PAGE_ROWS;
+    }
+
+    // The sentences on screen once `text` is finished.
+    function pageWith(text) {
+      const last = page[page.length - 1];
+      if (last !== undefined && /,\s*$/.test(last)) {
+        const joined = last + " " + text;
+        // Keep the sentences above it if they still fit; the clause and its rest come first.
+        for (const lines of [page.slice(0, -1).concat(joined), [joined]]) {
+          if (rowsOf(lines) <= CONTINUED_ROWS) {
+            return lines;
+          }
+        }
+        return [text];
+      }
+      return fitsPage(text) ? page.concat(text) : [text];
     }
 
     // A growing sentence that no longer fits clears the screen for good, so its finished
@@ -202,7 +226,7 @@
 
     function commitLine(text) {
       committed.push(text);
-      page = fitsPage(text) ? page.concat(text) : [text];
+      page = pageWith(text);
       draftText = null;
       render();
     }
