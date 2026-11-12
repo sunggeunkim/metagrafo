@@ -210,3 +210,11 @@ async def test_cleanup_replies_with_the_finished_sentences_and_the_unfinished_wo
         "never finish them with words from",
     ):
         assert asks in instruction
+
+
+async def test_a_reply_that_is_not_json_says_what_the_model_sent(monkeypatch) -> None:
+    import pytest
+
+    _record_client(monkeypatch, "{not json at all")
+    with pytest.raises(ValueError, match="not JSON: '{not json at all'"):
+        await gemini_cleanup("test-key", model="gemini-test-lite")("A line.", [])

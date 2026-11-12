@@ -1219,3 +1219,31 @@ async def test_held_words_left_over_from_a_long_line_cut_wait_only_once() -> Non
         "every drop of rain that falls on the hills and on the long roads,",
         "runs into a stream and on and on through the fields into the wide sea",
     ]
+
+
+async def test_every_cleanup_reply_goes_to_the_booth_log_with_the_line_it_answers(caplog) -> None:
+    import json
+
+    bus = EventBus()
+    _collect(bus)
+
+    async def cleanup(line: str, _context: list[str], _said: str) -> str | Cleaned:
+        # A copy that doesn't match the line: the log shows what the model sent anyway.
+        return Cleaned(finished="이렇게 생각해 보십시오.", unfinished="마치 여러분이라는 개인이")
+
+    translator = GeminiLiveTranslator(
+        bus,
+        connect=lambda _mode: HoldingSession(),
+        whole_sentences=True,
+        clean_up_wording=True,
+        cleanup=cleanup,
+    )
+    with caplog.at_level("INFO"):
+        await translator.apply_transcript("그러니까 이렇게 한번 생각해 보세요. 마치 당신이라는 개인이", turn_complete=True)
+        await _settle()
+    replies = [r.getMessage() for r in caplog.records if r.getMessage().startswith("cleanup reply: ")]
+    assert [json.loads(m.removeprefix("cleanup reply: ")) for m in replies] == [
+        {"line": "그러니까 이렇게 한번 생각해 보세요. 마치 당신이라는 개인이", "finished": "이렇게 생각해 보십시오.", "unfinished": "마치 여러분이라는 개인이"}
+    ]
+    # One line per reply, Korean as written, so the log reads beside the IN: and OUT: lines.
+    assert "\n" not in replies[0] and "당신" in replies[0]
