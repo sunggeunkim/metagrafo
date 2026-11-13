@@ -237,9 +237,18 @@ uv run python -m main
 
 `GET /health` reports `model`, `device`, `compute_type`, `vram_gb`, captions on/off, and mode.
 
-To run Whisper on the church's Hermeneia GPU server instead of this PC, paste the Hermeneia token you were given on booth control under **Hermeneia token** and click **Save token**. The server address (`HERMENEIA_URL`) defaults to `https://hermeneia.stugen.net`. With no token saved, Whisper runs on this PC. `HERMENEIA_MODEL` defaults to `whisper`.
+To run speech on the church's Hermeneia GPU server instead of this PC, paste the Hermeneia token you were given on booth control under **Hermeneia token** and click **Save token**. The server address (`HERMENEIA_URL`) defaults to `https://hermeneia.stugen.net`. With no token saved, Whisper runs on this PC.
 
-Booth control's **Caption engine** buttons switch between **Gemini live** and **Whisper** while Metagrafo runs, and the choice is kept in `.env` (`CAPTION_ENGINE`) for the next start. Gemini live needs a saved Gemini key. Whisper needs a saved Hermeneia token, or Whisper on this PC loaded at start (Metagrafo started on Whisper); it captions only into English, so it is refused in English → Korean mode.
+Booth control's **Caption engine** buttons switch engines while Metagrafo runs, and the choice is kept in `.env` for the next start:
+
+| Button | Needs | Kept in `.env` as |
+|---|---|---|
+| **Gemini live** | a saved Gemini key | `CAPTION_ENGINE=gemini_live` |
+| **Whisper on this PC** | Whisper installed (not by `Start Metagrafo.cmd`) and an NVIDIA GPU with room beside OBS | `CAPTION_ENGINE=whisper`, `USE_HERMENEIA=false` |
+| **Whisper on Hermeneia** | a saved Hermeneia token | `CAPTION_ENGINE=whisper`, `USE_HERMENEIA=true`, `HERMENEIA_MODEL=whisper` |
+| **Seamless on Hermeneia** | a saved Hermeneia token | `CAPTION_ENGINE=whisper`, `USE_HERMENEIA=true`, `HERMENEIA_MODEL=seamless-m4t-v2` |
+
+Whisper on this PC loads the first time it is picked, which can take a minute; if it cannot load, the engine stays as it was and booth control says why. The three non-Gemini engines caption only into English, so they are refused in English → Korean mode. The Hermeneia server keeps one model in memory at a time and takes several seconds to swap, so every booth using it should pick the same model.
 
 To give another booth access, send them the Hermeneia token privately (a password manager or a direct message, never the repository or a group chat). The address needs no setup.
 

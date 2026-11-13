@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.event_bus import EventBus
-from core.settings import GLOSSARY_DEFAULT, KOREAN_STYLE_DEFAULT, Settings
+from core.settings import GLOSSARY_DEFAULT, HERMENEIA_MODELS, KOREAN_STYLE_DEFAULT, Settings
 from features.operator_control.events import (
     AudioDeviceChangedEvent,
     CaptionEngineChangedEvent,
@@ -117,7 +117,9 @@ class HermeneiaTokenBody(BaseModel):
 
 
 class CaptionEngineBody(BaseModel):
-    engine: Literal["gemini_live", "whisper"] = Field(description="gemini_live, or whisper (Hermeneia when its token is saved)")
+    engine: Literal["gemini_live", "whisper_local", "whisper_hermeneia", "seamless_hermeneia"] = Field(
+        description="gemini_live, Whisper on this PC, or Whisper or Seamless on the Hermeneia server"
+    )
 
 
 class CaptionsBody(BaseModel):
@@ -318,18 +320,18 @@ def register(
     )
     app.state.operator = state
 
-    def whisper_ready() -> bool:
-        """Whisper has somewhere to run: the Hermeneia server, or this PC if it loaded at start."""
+    def whisper_local_ready() -> bool:
+        """Whisper is on this PC: loaded, or installed and loads when picked."""
         translator = getattr(app.state, "translator", None)
-        return settings.hermeneia() or bool(getattr(translator, "whisper_on_this_pc", False))
+        return bool(getattr(translator, "whisper_local_ready", False))
 
     def public_state() -> dict[str, object]:
         body = state.snapshot()
         body["gemini_key_set"] = bool(settings.gemini_api_key.strip())
         body["gemini_live"] = settings.gemini_live()
-        body["caption_engine"] = "gemini_live" if settings.gemini_live() else "whisper"
+        body["caption_engine"] = settings.engine()
         body["hermeneia_token_set"] = bool(settings.hermeneia_token.strip())
-        body["whisper_ready"] = whisper_ready()
+        body["whisper_local_ready"] = whisper_local_ready()
         body["youtube_url_set"] = bool(settings.youtube_caption_url.strip())
         body["cleanup_context"] = settings.cleanup_context
         body["korean_style"] = settings.korean_style
@@ -413,21 +415,42 @@ def register(
 
     @app.put("/caption-engine")
     async def put_caption_engine(body: CaptionEngineBody) -> dict[str, object]:
-        if body.engine == "gemini_live" and not settings.gemini_api_key.strip():
-            raise HTTPException(status_code=409, detail="Gemini needs a key. Save a Gemini key first.")
-        if body.engine == "whisper":
-            if not whisper_ready():
-                raise HTTPException(
-                    status_code=409,
-                    detail="Whisper runs on Hermeneia here. Save the Hermeneia token first.",
-                )
+        if body.engine == "gemini_live":
+            if not settings.gemini_api_key.strip():
+                raise HTTPException(status_code=409, detail="Gemini needs a key. Save a Gemini key first.")
+            values = {"CAPTION_ENGINE": "gemini_live"}
+        else:
             if needs_gemini(state.mode):
                 raise HTTPException(
                     status_code=409,
-                    detail="Whisper cannot write Korean captions. Pick another mode first.",
+                    detail="Only Gemini live writes Korean captions. Pick another mode first.",
                 )
-        write_env_values(key_file, {"CAPTION_ENGINE": body.engine})
-        settings.caption_engine = body.engine
+            if body.engine == "whisper_local":
+                # Loaded before the switch, so a GPU that cannot hold it leaves the engine as it was.
+                translator = getattr(app.state, "translator", None)
+                if translator is None:
+                    raise HTTPException(status_code=409, detail="Whisper is not installed on this PC.")
+                problem = await translator.load_local_whisper()
+                if problem is not None:
+                    raise HTTPException(status_code=409, detail=problem)
+                values = {"CAPTION_ENGINE": "whisper", "USE_HERMENEIA": "false"}
+            else:
+                if not settings.hermeneia_token.strip():
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Hermeneia needs its token. Save the Hermeneia token first.",
+                    )
+                values = {
+                    "CAPTION_ENGINE": "whisper",
+                    "USE_HERMENEIA": "true",
+                    "HERMENEIA_MODEL": HERMENEIA_MODELS[body.engine],
+                }
+        write_env_values(key_file, values)
+        settings.caption_engine = values["CAPTION_ENGINE"]
+        if "USE_HERMENEIA" in values:
+            settings.use_hermeneia = values["USE_HERMENEIA"] == "true"
+        if "HERMENEIA_MODEL" in values:
+            settings.hermeneia_model = values["HERMENEIA_MODEL"]
         await bus.publish(CaptionEngineChangedEvent())
         return public_state()
 

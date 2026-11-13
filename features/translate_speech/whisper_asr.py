@@ -24,6 +24,13 @@ def _warmup(model) -> None:
     list(segments)
 
 
+def installed() -> bool:
+    """Whether Whisper can load on this PC. Start Metagrafo.cmd installs only what Gemini needs."""
+    import importlib.util
+
+    return importlib.util.find_spec("faster_whisper") is not None
+
+
 def make_transcribe(profile: WhisperProfile):
     from faster_whisper import WhisperModel
 

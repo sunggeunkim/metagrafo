@@ -240,3 +240,56 @@ def test_glossary_box_starts_at_the_church_default_saves_turns_off_and_resets(br
         assert page.input_value("#glossary") == GLOSSARY_DEFAULT
     finally:
         page.close()
+
+
+@pytest.fixture
+def control_hermeneia(tmp_path, monkeypatch) -> Iterator[str]:
+    """A served app with a Hermeneia token saved and no Whisper on this PC."""
+    for name in ("CAPTION_ENGINE", "HERMENEIA_TOKEN", "HERMENEIA_MODEL", "USE_HERMENEIA"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        "features.translate_speech.hermeneia_client.make_hermeneia_transcribe",
+        lambda *_args, **_kwargs: lambda _pcm, **_kw: "",
+    )
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+    app = create_app(
+        settings=Settings(caption_engine="whisper", gemini_api_key="", hermeneia_token="tok-42", _env_file=env_file),
+        env_file=env_file,
+        list_input_devices=lambda: [],
+    )
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    config = uvicorn.Config(
+        app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=3
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 15
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("control server did not start")
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=15)
+
+
+def test_engine_buttons_switch_to_seamless_and_grey_out_what_cannot_run(browser, control_hermeneia) -> None:
+    page = browser.new_page()
+    try:
+        page.goto(f"{control_hermeneia}/control")
+        page.wait_for_selector("#engine-whisper_hermeneia.active")
+        # No Gemini key, and Whisper is not on this PC.
+        assert page.is_disabled("#engine-gemini_live")
+        assert page.is_disabled("#engine-whisper_local")
+        assert page.is_enabled("#engine-seamless_hermeneia")
+
+        page.click("#engine-seamless_hermeneia")
+        page.wait_for_selector("#engine-seamless_hermeneia.active")
+        assert "engine Seamless on Hermeneia" in page.inner_text("body")
+        assert not page.is_visible("#engine-whisper_hermeneia.active")
+    finally:
+        page.close()

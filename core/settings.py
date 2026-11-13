@@ -28,6 +28,10 @@ pastor, elder, deacon, youth pastor (the speaker's own title) → 목사, 장로
 sermon → 설교; Sunday → 주일; church → 교회
 Bible books and references as in the 개역개정 Bible: Genesis → 창세기, Job → 욥기, Psalms → 시편, Romans → 로마서, John 3:16 → 요한복음 3장 16절"""
 
+# Booth control's caption engines. The two on Hermeneia name the model the server runs.
+CAPTION_ENGINES = ("gemini_live", "whisper_local", "whisper_hermeneia", "seamless_hermeneia")
+HERMENEIA_MODELS = {"whisper_hermeneia": "whisper", "seamless_hermeneia": "seamless-m4t-v2"}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -67,10 +71,12 @@ class Settings(BaseSettings):
     whisper_device: str | None = "cuda"
     whisper_compute_type: str | None = "float16"
     translate_queue_size: int = 4
-    # The church's Whisper server. Whisper uses it once a token is saved; until then, this PC.
+    # The church's speech server. Whisper uses it once a token is saved; until then, this PC.
+    # Booth control's "Whisper on this PC" sets USE_HERMENEIA=false, so the token stays saved.
     hermeneia_url: str = "https://hermeneia.stugen.net"
     hermeneia_token: str = ""
     hermeneia_model: str = "whisper"
+    use_hermeneia: bool = True
     hermeneia_timeout_s: float = 30.0
     caption_engine: str = "whisper"
     gemini_api_key: str = ""
@@ -81,4 +87,14 @@ class Settings(BaseSettings):
 
     def hermeneia(self) -> bool:
         """Whether Whisper runs on the Hermeneia server rather than this PC."""
-        return bool(self.hermeneia_url.strip() and self.hermeneia_token.strip())
+        return self.use_hermeneia and bool(self.hermeneia_url.strip() and self.hermeneia_token.strip())
+
+    def engine(self) -> str:
+        """The booth control engine these settings run: one of CAPTION_ENGINES."""
+        if self.gemini_live():
+            return "gemini_live"
+        if not self.hermeneia():
+            return "whisper_local"
+        if self.hermeneia_model == HERMENEIA_MODELS["seamless_hermeneia"]:
+            return "seamless_hermeneia"
+        return "whisper_hermeneia"

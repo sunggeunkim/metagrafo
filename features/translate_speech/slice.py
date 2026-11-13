@@ -48,13 +48,36 @@ class TranslateSlice:
         self._connect_factory: Callable[[str], Connect] = gemini_connect
         self._bus: EventBus | None = None
         self._mode: str | None = None
-        # Whisper on this PC, when it loaded at start; and where the worker's Whisper runs now.
+        # Whisper on this PC once loaded, and how to load it; where the worker's Whisper runs now.
         self.local_transcribe: TranscribeFn | None = None
+        self.load_local: Callable[[], TranscribeFn] | None = None
+        self._loading = asyncio.Lock()
         self.worker_runs_on: object = None
 
     @property
-    def whisper_on_this_pc(self) -> bool:
-        return self.local_transcribe is not None
+    def whisper_local_ready(self) -> bool:
+        """Whisper has loaded on this PC, or is installed and can load when picked."""
+        if self.local_transcribe is not None:
+            return True
+        from features.translate_speech import whisper_asr
+
+        return self.load_local is not None and whisper_asr.installed()
+
+    async def load_local_whisper(self) -> str | None:
+        """Load Whisper on this PC if it is not loaded yet. None once it runs; else why not."""
+        async with self._loading:
+            if self.local_transcribe is not None:
+                return None
+            if not self.whisper_local_ready:
+                return "Whisper is not installed on this PC. Pick Whisper or Seamless on Hermeneia."
+            assert self.load_local is not None
+            try:
+                # Loading takes the model off disk onto the GPU: seconds, a first time minutes.
+                self.local_transcribe = await asyncio.to_thread(self.load_local)
+            except Exception as error:
+                logger.exception("Whisper could not load on this PC")
+                return f"Whisper could not load on this PC ({error}). The engine is unchanged."
+            return None
 
     def watch_gemini_key(
         self,
@@ -124,7 +147,7 @@ class TranslateSlice:
             return
         runs_on = _whisper_place(settings)
         if runs_on == "this PC" and self.local_transcribe is None:
-            logger.warning("Whisper has nowhere to run: save the Hermeneia token")
+            logger.warning("Whisper is not loaded on this PC: pick Whisper on this PC, or save the Hermeneia token")
             return
         if self.worker is None:
             self.worker = TranslateWorker(
@@ -188,9 +211,14 @@ class TranslateSlice:
 
 
 def _whisper_place(settings: Settings) -> object:
-    """Where Whisper runs for these settings: Hermeneia (with its address and token), or this PC."""
+    """Where speech goes for these settings: Hermeneia (address, token and model), or this PC."""
     if settings.hermeneia():
-        return ("hermeneia", settings.hermeneia_url.strip(), settings.hermeneia_token.strip())
+        return (
+            "hermeneia",
+            settings.hermeneia_url.strip(),
+            settings.hermeneia_token.strip(),
+            settings.hermeneia_model,
+        )
     return "this PC"
 
 
@@ -233,6 +261,16 @@ def register(
         korean_style=lambda: settings.korean_style,
         glossary=lambda: settings.glossary,
     )
+    # Whisper on this PC loads only when it runs: at start when picked, else when first picked.
+    # A transcriber handed in (tests, the file run) is Whisper on this PC, already loaded.
+    load_local: Callable[[], TranscribeFn] | None = None
+    if transcribe is None and load_whisper:
+
+        def load_local() -> TranscribeFn:
+            from features.translate_speech.whisper_asr import make_transcribe
+
+            return make_transcribe(profile)
+
     if settings.gemini_live():
         live = GeminiLiveTranslator(
             bus,
@@ -248,20 +286,19 @@ def register(
         if app is not None:
             app.state.whisper_profile = profile
         slice_ = TranslateSlice(live=live)
+        slice_.local_transcribe = transcribe
+        slice_.load_local = load_local
         slice_.watch_gemini_key(bus, settings, connect_factory, cleanup_factory)
         return slice_
-    # A transcriber handed in (tests, the file run) is Whisper on this PC.
     local_transcribe = transcribe
     if transcribe is None and settings.hermeneia():
         transcribe = _hermeneia_transcribe(settings)
-    elif transcribe is None and load_whisper:
+    elif load_local is not None:
         try:
-            from features.translate_speech.whisper_asr import make_transcribe
-
-            transcribe = local_transcribe = make_transcribe(profile)
+            transcribe = local_transcribe = load_local()
         except ImportError:
             logger.warning(
-                "Whisper is not installed. Save a Gemini key on booth control."
+                "Whisper is not installed. Save a Gemini key or the Hermeneia token on booth control."
             )
     if transcribe is None:
 
@@ -279,6 +316,7 @@ def register(
         app.state.whisper_profile = profile
     slice_ = TranslateSlice(worker)
     slice_.local_transcribe = local_transcribe
+    slice_.load_local = load_local
     slice_.worker_runs_on = "this PC" if local_transcribe is not None else _whisper_place(settings)
     slice_.watch_gemini_key(bus, settings, connect_factory, cleanup_factory)
     return slice_
