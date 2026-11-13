@@ -317,6 +317,10 @@ def register(
     slice_ = TranslateSlice(worker)
     slice_.local_transcribe = local_transcribe
     slice_.load_local = load_local
-    slice_.worker_runs_on = "this PC" if local_transcribe is not None else _whisper_place(settings)
+    # None while the worker holds the empty stand-in, so a later load always goes into it.
+    if local_transcribe is not None:
+        slice_.worker_runs_on = "this PC"
+    elif settings.hermeneia():
+        slice_.worker_runs_on = _whisper_place(settings)
     slice_.watch_gemini_key(bus, settings, connect_factory, cleanup_factory)
     return slice_

@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.event_bus import EventBus
-from core.settings import GLOSSARY_DEFAULT, HERMENEIA_MODELS, KOREAN_STYLE_DEFAULT, Settings
+from core.settings import ENGINE_NAMES, GLOSSARY_DEFAULT, HERMENEIA_MODELS, KOREAN_STYLE_DEFAULT, Settings
 from features.operator_control.events import (
     AudioDeviceChangedEvent,
     CaptionEngineChangedEvent,
@@ -319,6 +319,9 @@ def register(
         one_sentence=settings.one_sentence,
     )
     app.state.operator = state
+    # Counts engine picks (a Gemini key saved is one), so a pick that waited on Whisper loading
+    # can tell a newer one landed meanwhile and leave it standing.
+    engine_picks = 0
 
     def whisper_local_ready() -> bool:
         """Whisper is on this PC: loaded, or installed and loads when picked."""
@@ -396,6 +399,8 @@ def register(
         key = body.api_key.strip()
         if not key or "\n" in body.api_key or "\r" in body.api_key:
             raise HTTPException(status_code=422, detail="Gemini key is empty")
+        nonlocal engine_picks
+        engine_picks += 1
         write_gemini_key(key_file, key)
         settings.gemini_api_key = key
         settings.caption_engine = "gemini_live"
@@ -415,16 +420,23 @@ def register(
 
     @app.put("/caption-engine")
     async def put_caption_engine(body: CaptionEngineBody) -> dict[str, object]:
-        if body.engine == "gemini_live":
-            if not settings.gemini_api_key.strip():
-                raise HTTPException(status_code=409, detail="Gemini needs a key. Save a Gemini key first.")
-            values = {"CAPTION_ENGINE": "gemini_live"}
-        else:
+        nonlocal engine_picks
+        engine_picks += 1
+        pick = engine_picks
+
+        def refuse_in_korean() -> None:
             if needs_gemini(state.mode):
                 raise HTTPException(
                     status_code=409,
                     detail="Only Gemini live writes Korean captions. Pick another mode first.",
                 )
+
+        if body.engine == "gemini_live":
+            if not settings.gemini_api_key.strip():
+                raise HTTPException(status_code=409, detail="Gemini needs a key. Save a Gemini key first.")
+            values = {"CAPTION_ENGINE": "gemini_live"}
+        else:
+            refuse_in_korean()
             if body.engine == "whisper_local":
                 # Loaded before the switch, so a GPU that cannot hold it leaves the engine as it was.
                 translator = getattr(app.state, "translator", None)
@@ -433,6 +445,14 @@ def register(
                 problem = await translator.load_local_whisper()
                 if problem is not None:
                     raise HTTPException(status_code=409, detail=problem)
+                # The load can take a minute, and the booth kept working meanwhile.
+                if engine_picks != pick:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"{ENGINE_NAMES[settings.engine()]} was picked while Whisper loaded on this PC, "
+                        "so it stays. Whisper on this PC is ready when you pick it again.",
+                    )
+                refuse_in_korean()
                 values = {"CAPTION_ENGINE": "whisper", "USE_HERMENEIA": "false"}
             else:
                 if not settings.hermeneia_token.strip():

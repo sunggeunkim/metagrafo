@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import time
 
 import pytest
@@ -43,6 +44,7 @@ class _Booth:
         close_s: float = 0.0,
         whisper_installed: bool = True,
         whisper_fails: bool = False,
+        load_gate: threading.Event | None = None,
         **settings,
     ) -> None:
         for name in (
@@ -56,6 +58,8 @@ class _Booth:
         self.models: list[str] = []
         self.loads = 0
         self.captions: list[str] = []
+        # Install Whisper can make this true while Metagrafo runs.
+        self.installed = whisper_installed
 
         def make_hermeneia_transcribe(url: str, token: str, model: str, **_kwargs: object):
             self.servers.append((url, token))
@@ -64,7 +68,12 @@ class _Booth:
             return lambda _pcm, **_kw: f"Hello from {name} on Hermeneia."
 
         def make_transcribe(_profile):
+            if not self.installed:
+                raise ImportError("No module named 'faster_whisper'")
             self.loads += 1
+            if load_gate is not None:
+                # Loading onto the GPU takes a while; other clicks land meanwhile.
+                assert load_gate.wait(5)
             if whisper_fails:
                 raise RuntimeError("CUDA failed with error out of memory")
             return lambda _pcm, **_kw: "Hello from this PC."
@@ -73,7 +82,7 @@ class _Booth:
             "features.translate_speech.hermeneia_client.make_hermeneia_transcribe", make_hermeneia_transcribe
         )
         monkeypatch.setattr("features.translate_speech.whisper_asr.make_transcribe", make_transcribe)
-        monkeypatch.setattr("features.translate_speech.whisper_asr.installed", lambda: whisper_installed)
+        monkeypatch.setattr("features.translate_speech.whisper_asr.installed", lambda: self.installed)
 
         def factory(api_key: str):
             def connect(_mode: object) -> _HoldingSession:
@@ -115,6 +124,16 @@ class _Booth:
             client.get("/health")
             time.sleep(0.01)
         raise AssertionError("timed out")
+
+    def put_while_loading(self, client: TestClient, engine: str):
+        """PUT /caption-engine from another tab; returns the thread and where its response lands."""
+        responses: list = []
+        thread = threading.Thread(
+            target=lambda: responses.append(client.put("/caption-engine", json={"engine": engine}))
+        )
+        thread.start()
+        self.wait_until(client, lambda: self.loads == 1)
+        return thread, responses
 
     def saved(self) -> Settings:
         return Settings(_env_file=self.env_file)
@@ -393,3 +412,58 @@ def test_hermeneia_engines_are_refused_without_a_token(tmp_path, monkeypatch, en
         assert response.status_code == 409
         assert "Hermeneia token" in response.json()["detail"]
         assert client.get("/mode").json()["caption_engine"] == "whisper_local"
+
+
+def test_whisper_installed_after_a_start_without_it_captions_when_picked(tmp_path, monkeypatch) -> None:
+    # Started on Whisper on this PC with no Whisper and no token: the worker has nothing to run.
+    booth = _Booth(tmp_path, monkeypatch, caption_engine="whisper", load_whisper=True, whisper_installed=False)
+    with TestClient(booth.app) as client:
+        assert client.get("/mode").json()["whisper_local_ready"] is False
+        booth.installed = True
+        assert client.get("/mode").json()["whisper_local_ready"] is True
+        response = client.put("/caption-engine", json={"engine": "whisper_local"})
+        assert response.status_code == 200
+        assert booth.speak(client) == "Hello from this PC."
+    assert booth.loads == 1
+
+
+def test_a_pick_made_while_whisper_loads_on_this_pc_wins(tmp_path, monkeypatch) -> None:
+    gate = threading.Event()
+    booth = _Booth(
+        tmp_path, monkeypatch, caption_engine="whisper", hermeneia_token="tok-42", load_whisper=True, load_gate=gate
+    )
+    with TestClient(booth.app) as client:
+        slow, responses = booth.put_while_loading(client, "whisper_local")
+        # Another tab picks Seamless while Whisper is still loading here.
+        assert client.put("/caption-engine", json={"engine": "seamless_hermeneia"}).status_code == 200
+        gate.set()
+        slow.join(5)
+        assert responses[0].status_code == 409
+        assert "Seamless on Hermeneia" in responses[0].json()["detail"]
+        assert client.get("/mode").json()["caption_engine"] == "seamless_hermeneia"
+        assert booth.speak(client) == "Hello from Seamless on Hermeneia."
+    saved = booth.saved()
+    assert (saved.use_hermeneia, saved.hermeneia_model) == (True, "seamless-m4t-v2")
+
+
+def test_whisper_on_this_pc_is_refused_when_korean_captions_start_while_it_loads(tmp_path, monkeypatch) -> None:
+    gate = threading.Event()
+    booth = _Booth(
+        tmp_path,
+        monkeypatch,
+        caption_engine="gemini_live",
+        gemini_api_key="gem-key",
+        load_whisper=True,
+        load_gate=gate,
+    )
+    with TestClient(booth.app) as client:
+        slow, responses = booth.put_while_loading(client, "whisper_local")
+        # Korean captions are allowed: Gemini is still the engine.
+        assert client.put("/mode", json={"mode": "en_to_ko"}).status_code == 200
+        gate.set()
+        slow.join(5)
+        assert responses[0].status_code == 409
+        assert "Korean" in responses[0].json()["detail"]
+        assert client.get("/mode").json()["caption_engine"] == "gemini_live"
+    # .env is left as it was: nothing saved Whisper.
+    assert booth.env_file.read_text(encoding="utf-8") == ""
