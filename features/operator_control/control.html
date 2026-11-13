@@ -155,6 +155,15 @@
   <label for="gemini-key">Gemini key</label>
   <input id="gemini-key" class="key" type="password" autocomplete="off" />
   <button id="gemini-save" class="mode">Save key</button>
+  <h2>Caption engine</h2>
+  <p class="hint"><strong>Gemini live</strong> translates as the speaker talks and needs the Gemini key. <strong>Whisper</strong> captions each stretch of speech once the speaker pauses, on the church's Hermeneia server once its token is saved, and only into English. The switch takes effect at once, and this computer keeps the choice for the next time.</p>
+  <button id="engine-gemini" class="mode">Gemini live</button>
+  <button id="engine-whisper" class="mode">Whisper</button>
+  <h2>Hermeneia token</h2>
+  <p class="hint">Paste the Hermeneia token you were given, then Save token. Whisper then runs on the Hermeneia server instead of this computer, and this computer keeps the token for the next time you open Metagrafo.</p>
+  <label for="hermeneia-token">Hermeneia token</label>
+  <input id="hermeneia-token" class="key" type="password" autocomplete="off" />
+  <button id="hermeneia-save" class="mode">Save token</button>
   <h2>YouTube captions</h2>
   <p class="hint">Sends each finished line to YouTube as closed captions (the CC button). In YouTube Studio, open the stream's <strong>Stream settings</strong>, set latency to <strong>Normal</strong>, turn on <strong>Closed captions</strong> with <strong>POST captions to URL</strong>, and set the source language to the caption language (English, or Korean for en_to_ko). Copy the <strong>Captions Ingestion URL</strong>, paste it here, then Save URL. Sending starts at once, and this computer keeps the URL for the next time. YouTube refuses lines until the stream is live.</p>
   <label for="youtube-url">Captions Ingestion URL</label>
@@ -301,6 +310,8 @@
         " · box " + s.box_width_pct + "×" + s.box_height_pct + " %" +
         " · inset " + s.inset_vertical_pct + "/" + s.inset_horizontal_pct + " %" +
         " · Gemini key " + (s.gemini_key_set ? "saved" : "needed") +
+        " · engine " + (s.caption_engine === "gemini_live" ? "Gemini live" : "Whisper") +
+        " · Hermeneia token " + (s.hermeneia_token_set ? "saved" : "not saved") +
         " · YouTube captions " + (s.youtube_url_set ? "on" : "off");
       refreshYouTube();
       showAudioStatus(s);
@@ -308,6 +319,10 @@
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
       document.getElementById("mode-en-ko").classList.toggle("active", s.mode === "en_to_ko");
       document.getElementById("mode-en-ko").disabled = !s.gemini_live;
+      document.getElementById("engine-gemini").classList.toggle("active", s.caption_engine === "gemini_live");
+      document.getElementById("engine-whisper").classList.toggle("active", s.caption_engine === "whisper");
+      document.getElementById("engine-gemini").disabled = !s.gemini_key_set;
+      document.getElementById("engine-whisper").disabled = !s.whisper_ready || s.mode === "en_to_ko";
       document.querySelectorAll(".pos").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.pos === s.position);
       });
@@ -497,6 +512,32 @@
       });
       if (response.ok) {
         document.getElementById("gemini-key").value = "";
+      }
+      refresh();
+    };
+    async function setEngine(engine) {
+      const response = await fetch("/caption-engine", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ engine }),
+      });
+      if (!response.ok) {
+        const body = await response.json();
+        alert(typeof body.detail === "string" ? body.detail : "Engine not changed");
+      }
+      refresh();
+    }
+    document.getElementById("engine-gemini").onclick = () => setEngine("gemini_live");
+    document.getElementById("engine-whisper").onclick = () => setEngine("whisper");
+    document.getElementById("hermeneia-save").onclick = async () => {
+      const token = document.getElementById("hermeneia-token").value;
+      const response = await fetch("/hermeneia-token", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      if (response.ok) {
+        document.getElementById("hermeneia-token").value = "";
       }
       refresh();
     };

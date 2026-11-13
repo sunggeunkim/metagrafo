@@ -50,6 +50,19 @@ class TranslateWorker:
         bus.subscribe(ConditionOnPreviousTextEvent, self._on_previous_text)
         bus.subscribe(AudioChunkEvent, self._on_chunk)
 
+    def use_transcribe(self, transcribe: TranscribeFn) -> None:
+        """Whisper moved, between this PC and Hermeneia: the next chunk goes to `transcribe`."""
+        self._captioner.use_recognize(transcribe)
+
+    def drop_waiting(self) -> None:
+        """Chunks queued while Gemini ran are stale, so they never become captions."""
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+                self._queue.task_done()
+            except (asyncio.QueueEmpty, ValueError):
+                break
+
     async def _on_previous_text(self, event: ConditionOnPreviousTextEvent) -> None:
         self._captioner.set_condition_on_previous_text(event.condition_on_previous_text)
 

@@ -97,6 +97,11 @@ class GeminiKeyChangedEvent:
 
 
 @dataclass(frozen=True, slots=True)
+class CaptionEngineChangedEvent:
+    """The operator picked an engine or saved a Hermeneia token. Both stay on Settings."""
+
+
+@dataclass(frozen=True, slots=True)
 class YouTubeCaptionUrlChangedEvent:
     """The operator saved or cleared the YouTube caption URL. The URL stays on Settings."""
 

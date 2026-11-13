@@ -237,7 +237,11 @@ uv run python -m main
 
 `GET /health` reports `model`, `device`, `compute_type`, `vram_gb`, captions on/off, and mode.
 
-To run the model on the Hermeneia GPU box instead of this PC, set `HERMENEIA_URL` (for example `https://hermeneia.stugen.net`) and `HERMENEIA_TOKEN`. `HERMENEIA_MODEL` defaults to `whisper` and stays fixed for the process. Leave the URL unset to keep local Whisper.
+To run Whisper on the church's Hermeneia GPU server instead of this PC, paste the Hermeneia token you were given on booth control under **Hermeneia token** and click **Save token**. The server address (`HERMENEIA_URL`) defaults to `https://hermeneia.stugen.net`. With no token saved, Whisper runs on this PC. `HERMENEIA_MODEL` defaults to `whisper`.
+
+Booth control's **Caption engine** buttons switch between **Gemini live** and **Whisper** while Metagrafo runs, and the choice is kept in `.env` (`CAPTION_ENGINE`) for the next start. Gemini live needs a saved Gemini key. Whisper needs a saved Hermeneia token, or Whisper on this PC loaded at start (Metagrafo started on Whisper); it captions only into English, so it is refused in English → Korean mode.
+
+To give another booth access, send them the Hermeneia token privately (a password manager or a direct message, never the repository or a group chat). The address needs no setup.
 
 ## YouTube closed captions (optional)
 

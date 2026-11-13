@@ -313,7 +313,7 @@ def run_offline(
         pauses_to_cut=pause_count,
         is_speech=is_speech,
     )
-    if transcribe is None and settings.hermeneia_url:
+    if transcribe is None and settings.hermeneia():
         from features.translate_speech.hermeneia_client import make_hermeneia_transcribe
 
         transcribe = make_hermeneia_transcribe(

@@ -97,3 +97,31 @@ async def test_a_gemini_key_saved_on_booth_control_streams_audio_to_gemini(monke
         await capture.gate.accept_frame(silence)
 
     assert len(seen) == 1
+
+
+async def test_switching_to_whisper_on_booth_control_stops_streaming_audio_to_gemini(monkeypatch) -> None:
+    from features.capture_audio.events import ProgramAudioEvent
+    from features.operator_control.events import CaptionEngineChangedEvent, CaptionsStateEvent
+
+    monkeypatch.setattr(capture_slice, "load_is_speech", lambda: lambda _frame: False)
+    bus = EventBus()
+    settings = Settings(_env_file=None, caption_engine="gemini_live", gemini_api_key="key")
+    capture = capture_slice.register(bus, settings)
+    seen: list[ProgramAudioEvent] = []
+
+    async def handler(event: ProgramAudioEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(ProgramAudioEvent, handler)
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    silence = bytes(1024)
+    for _ in range(4):
+        await capture.gate.accept_frame(silence)
+    assert len(seen) == 1
+
+    settings.caption_engine = "whisper"
+    await bus.publish(CaptionEngineChangedEvent())
+    for _ in range(8):
+        await capture.gate.accept_frame(silence)
+
+    assert len(seen) == 1

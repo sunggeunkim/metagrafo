@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, HTTPException, Query
@@ -13,6 +14,7 @@ from core.event_bus import EventBus
 from core.settings import GLOSSARY_DEFAULT, KOREAN_STYLE_DEFAULT, Settings
 from features.operator_control.events import (
     AudioDeviceChangedEvent,
+    CaptionEngineChangedEvent,
     CaptionsStateEvent,
     CleanUpWordingEvent,
     CleanupContextEvent,
@@ -108,6 +110,14 @@ class OperatorState:
 
 class GeminiKeyBody(BaseModel):
     api_key: str
+
+
+class HermeneiaTokenBody(BaseModel):
+    token: str
+
+
+class CaptionEngineBody(BaseModel):
+    engine: Literal["gemini_live", "whisper"] = Field(description="gemini_live, or whisper (Hermeneia when its token is saved)")
 
 
 class CaptionsBody(BaseModel):
@@ -308,10 +318,18 @@ def register(
     )
     app.state.operator = state
 
+    def whisper_ready() -> bool:
+        """Whisper has somewhere to run: the Hermeneia server, or this PC if it loaded at start."""
+        translator = getattr(app.state, "translator", None)
+        return settings.hermeneia() or bool(getattr(translator, "whisper_on_this_pc", False))
+
     def public_state() -> dict[str, object]:
         body = state.snapshot()
         body["gemini_key_set"] = bool(settings.gemini_api_key.strip())
         body["gemini_live"] = settings.gemini_live()
+        body["caption_engine"] = "gemini_live" if settings.gemini_live() else "whisper"
+        body["hermeneia_token_set"] = bool(settings.hermeneia_token.strip())
+        body["whisper_ready"] = whisper_ready()
         body["youtube_url_set"] = bool(settings.youtube_caption_url.strip())
         body["cleanup_context"] = settings.cleanup_context
         body["korean_style"] = settings.korean_style
@@ -380,6 +398,37 @@ def register(
         settings.gemini_api_key = key
         settings.caption_engine = "gemini_live"
         await bus.publish(GeminiKeyChangedEvent())
+        return public_state()
+
+    @app.put("/hermeneia-token")
+    async def put_hermeneia_token(body: HermeneiaTokenBody) -> dict[str, object]:
+        # Like the Gemini key, the token is saved beside the program and never sent back.
+        token = body.token.strip()
+        if not token or _has_line_break(body.token):
+            raise HTTPException(status_code=422, detail="Hermeneia token is empty")
+        write_env_values(key_file, {"HERMENEIA_TOKEN": token})
+        settings.hermeneia_token = token
+        await bus.publish(CaptionEngineChangedEvent())
+        return public_state()
+
+    @app.put("/caption-engine")
+    async def put_caption_engine(body: CaptionEngineBody) -> dict[str, object]:
+        if body.engine == "gemini_live" and not settings.gemini_api_key.strip():
+            raise HTTPException(status_code=409, detail="Gemini needs a key. Save a Gemini key first.")
+        if body.engine == "whisper":
+            if not whisper_ready():
+                raise HTTPException(
+                    status_code=409,
+                    detail="Whisper runs on Hermeneia here. Save the Hermeneia token first.",
+                )
+            if needs_gemini(state.mode):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Whisper cannot write Korean captions. Pick another mode first.",
+                )
+        write_env_values(key_file, {"CAPTION_ENGINE": body.engine})
+        settings.caption_engine = body.engine
+        await bus.publish(CaptionEngineChangedEvent())
         return public_state()
 
     @app.put("/youtube-caption-url")
