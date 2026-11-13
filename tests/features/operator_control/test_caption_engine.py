@@ -11,10 +11,15 @@ from main import create_app
 
 
 class _HoldingSession:
+    def __init__(self, close_s: float = 0.0) -> None:
+        self._close_s = close_s
+
     async def __aenter__(self):
         return self
 
     async def __aexit__(self, *_args: object) -> bool:
+        # Closing a real socket takes a while; a switch must not race past it.
+        await asyncio.sleep(self._close_s)
         return False
 
     async def send_realtime_input(self, **_kwargs: object) -> None:
@@ -28,7 +33,9 @@ class _HoldingSession:
 class _Booth:
     """One Metagrafo with stand-ins for Gemini, Hermeneia and Whisper on this PC."""
 
-    def __init__(self, tmp_path, monkeypatch, *, env: str = "", load_whisper: bool = False, **settings) -> None:
+    def __init__(
+        self, tmp_path, monkeypatch, *, env: str = "", load_whisper: bool = False, close_s: float = 0.0, **settings
+    ) -> None:
         for name in ("GEMINI_API_KEY", "CAPTION_ENGINE", "HERMENEIA_URL", "HERMENEIA_TOKEN"):
             monkeypatch.delenv(name, raising=False)
         self.env_file = tmp_path / ".env"
@@ -52,7 +59,7 @@ class _Booth:
         def factory(api_key: str):
             def connect(_mode: object) -> _HoldingSession:
                 self.opened.append(api_key)
-                return _HoldingSession()
+                return _HoldingSession(close_s)
 
             return connect
 
@@ -81,6 +88,14 @@ class _Booth:
             client.get("/health")
             time.sleep(0.01)
         raise AssertionError("no caption")
+
+    def wait_until(self, client: TestClient, done) -> None:
+        for _ in range(200):
+            if done():
+                return
+            client.get("/health")
+            time.sleep(0.01)
+        raise AssertionError("timed out")
 
     def saved(self) -> Settings:
         return Settings(_env_file=self.env_file)
@@ -184,3 +199,72 @@ def test_an_unknown_engine_is_refused(tmp_path, monkeypatch, engine: str) -> Non
     booth = _Booth(tmp_path, monkeypatch, caption_engine="whisper", hermeneia_token="tok-42")
     with TestClient(booth.app) as client:
         assert client.put("/caption-engine", json={"engine": engine}).status_code == 422
+
+
+def test_a_line_gemini_had_open_never_shows_after_switching_to_whisper_or_back(tmp_path, monkeypatch) -> None:
+    booth = _Booth(
+        tmp_path,
+        monkeypatch,
+        caption_engine="gemini_live",
+        gemini_api_key="gem-key",
+        hermeneia_token="tok-42",
+        whole_sentences_quiet_s=0.1,
+        clean_up_wording=False,
+    )
+    with TestClient(booth.app) as client:
+        live = booth.app.state.translator.live
+        # Gemini has half a sentence open when the booth switches to Whisper.
+        client.portal.call(live.apply_transcript, "And so we come before")
+        client.put("/caption-engine", json={"engine": "whisper"})
+        time.sleep(0.3)
+        client.get("/health")
+        # Its quiet wait must not show it once Whisper runs.
+        assert booth.captions == []
+        client.put("/caption-engine", json={"engine": "gemini_live"})
+        booth.wait_until(client, lambda: len(booth.opened) == 2)
+        client.portal.call(live.apply_transcript, "we pray for the church in Rome today.")
+        # Back on Gemini, the new sentence starts afresh, with nothing of the old line.
+        assert booth.captions == ["we pray for the church in Rome today."]
+
+
+def test_overlapping_switches_end_on_the_engine_picked_last(tmp_path, monkeypatch) -> None:
+    from features.operator_control.events import CaptionEngineChangedEvent
+
+    booth = _Booth(
+        tmp_path,
+        monkeypatch,
+        caption_engine="gemini_live",
+        gemini_api_key="gem-key",
+        hermeneia_token="tok-42",
+        close_s=0.1,
+    )
+    settings = booth.app.state.settings
+    bus = booth.app.state.bus
+
+    async def whisper_then_gemini() -> None:
+        # A click on Whisper, then on Gemini while the Gemini socket is still closing.
+        settings.caption_engine = "whisper"
+        first = asyncio.create_task(bus.publish(CaptionEngineChangedEvent()))
+        await asyncio.sleep(0.02)
+        settings.caption_engine = "gemini_live"
+        second = asyncio.create_task(bus.publish(CaptionEngineChangedEvent()))
+        await asyncio.gather(first, second)
+
+    with TestClient(booth.app) as client:
+        client.portal.call(whisper_then_gemini)
+        booth.wait_until(client, lambda: len(booth.opened) == 2)
+        chunk = AudioChunkEvent(chunk_id="late", pcm_s16le=b"\x00\x10" * 1600, sample_rate=16000, started_at=time.monotonic(), duration_s=0.1)
+        client.portal.call(bus.publish, chunk)
+        time.sleep(0.2)
+        client.get("/health")
+    # Gemini runs again, and Whisper, which lost, captions nothing.
+    assert booth.opened == ["gem-key", "gem-key"]
+    assert booth.captions == []
+
+
+def test_gemini_starts_from_whisper_with_a_key_saved_before_this_start(tmp_path, monkeypatch) -> None:
+    booth = _Booth(tmp_path, monkeypatch, caption_engine="whisper", gemini_api_key="gem-key", hermeneia_token="tok-42")
+    with TestClient(booth.app) as client:
+        assert booth.opened == []
+        assert client.put("/caption-engine", json={"engine": "gemini_live"}).status_code == 200
+        booth.wait_until(client, lambda: booth.opened == ["gem-key"])

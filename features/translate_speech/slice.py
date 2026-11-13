@@ -41,6 +41,9 @@ class TranslateSlice:
         self.live = live
         self._task: asyncio.Task[None] | None = None
         self._running: str | None = None
+        # Switches overlap when the booth clicks twice, and stopping Gemini waits for its socket
+        # to close: one switch at a time, each applying what Settings say once it runs.
+        self._switching = asyncio.Lock()
         self._settings: Settings | None = None
         self._connect_factory: Callable[[str], Connect] = gemini_connect
         self._bus: EventBus | None = None
@@ -73,12 +76,20 @@ class TranslateSlice:
         self._mode = event.mode
 
     async def _on_gemini_key(self, _event: GeminiKeyChangedEvent) -> None:
+        async with self._switching:
+            self._gemini(new_key=True)
+            await self._apply_engine()
+
+    def _gemini(self, *, new_key: bool = False) -> GeminiLiveTranslator | None:
+        """The Gemini translator, built on first use; `new_key` hands it the key just saved.
+        None while there is no key."""
         settings = self._settings
-        if settings is None or self._bus is None:
-            return
+        assert settings is not None and self._bus is not None
         key = settings.gemini_api_key.strip()
         if not key:
-            return
+            return self.live
+        if self.live is not None and not new_key:
+            return self.live
         connect = self._connect_factory(key)
         cleanup = self._cleanup_factory(key, settings.cleanup_model)
         if self.live is None:
@@ -95,16 +106,21 @@ class TranslateSlice:
             )
         else:
             self.live.use_key(key, connect, cleanup=cleanup)
-        await self._run("live")
+        return self.live
 
     async def _on_engine(self, _event: CaptionEngineChangedEvent) -> None:
         """Booth control picked an engine or saved a Hermeneia token: run what Settings now say."""
+        async with self._switching:
+            await self._apply_engine()
+
+    async def _apply_engine(self) -> None:
+        """Run the engine Settings name now, so the newest click wins. Holds `_switching`."""
         settings = self._settings
         if settings is None or self._bus is None:
             return
         if settings.gemini_live():
-            if self._running != "live":
-                await self._on_gemini_key(GeminiKeyChangedEvent())
+            if self._gemini() is not None:
+                await self._run("live")
             return
         runs_on = _whisper_place(settings)
         if runs_on == "this PC" and self.local_transcribe is None:
@@ -121,8 +137,6 @@ class TranslateSlice:
         elif runs_on != self.worker_runs_on:
             self.worker.use_transcribe(self._whisper_transcribe(runs_on))
         self.worker_runs_on = runs_on
-        if self._running != "worker":
-            self.worker.drop_waiting()
         await self._run("worker")
 
     def _whisper_transcribe(self, runs_on: object) -> TranscribeFn:
@@ -135,6 +149,9 @@ class TranslateSlice:
         """Stop the engine running now, if it is the other one, and start `engine`."""
         if self._running == engine and self._task is not None:
             return
+        if self._running == "live" and self.live is not None:
+            # Its quiet wait and cleanup calls are not part of run(): they would show later.
+            self.live.suspend()
         if self._task is not None:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -142,9 +159,13 @@ class TranslateSlice:
             self._task = None
         if engine == "live":
             assert self.live is not None
+            # Audio queued while it was stopped is from before the switch.
+            self.live.suspend()
             self._task = asyncio.create_task(self.live.run(), name="gemini-live")
         else:
             assert self.worker is not None
+            # So are the chunks queued while Gemini ran.
+            self.worker.drop_waiting()
             self._task = asyncio.create_task(self.worker.run(), name="translate-speech")
         self._running = engine
         for _ in range(10):
