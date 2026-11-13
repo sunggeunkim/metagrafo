@@ -41,14 +41,22 @@ class InstallWhisperSlice:
     async def install(self) -> None:
         if self.state == "installing":
             raise HTTPException(status_code=409, detail="Whisper is already installing.")
-        result = await self.check()
+        # Claimed before the check awaits, so a second click landing meanwhile is refused.
+        before = (self.state, self.step, self.error)
+        self.state, self.step, self.error = "installing", "Checking this PC.", None
+        try:
+            result = await self.check()
+        except BaseException:
+            self.state, self.step, self.error = before
+            raise
         if not result["can_install"]:
+            self.state, self.step, self.error = before
             raise HTTPException(status_code=409, detail=result["message"])
-        self.state, self.error = "installing", None
         self._task = asyncio.create_task(self._install(), name="install-whisper")
 
     async def _install(self) -> None:
         model, _compute = self.profile()
+        installer.begin()
         try:
             self.step = "Installing Whisper's packages. The progress shows under Log."
             logger.info("Installing Whisper: pip install -r %s", installer.REQUIREMENTS.name)
@@ -58,7 +66,9 @@ class InstallWhisperSlice:
             importlib.invalidate_caches()
             self.step = f"Downloading the {model} model."
             logger.info("Downloading the Whisper %s model", model)
-            await asyncio.to_thread(installer.download_model, model)
+            if not await asyncio.to_thread(installer.download_model, model, lambda line: logger.info("model: %s", line)):
+                self._fail(f"The {model} model could not download. The reason is at the end of the Log.")
+                return
         except asyncio.CancelledError:
             installer.stop()
             self._fail("The install stopped with Metagrafo. Check and install again.")

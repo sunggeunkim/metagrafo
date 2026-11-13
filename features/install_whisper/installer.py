@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 
@@ -13,8 +15,13 @@ logger = logging.getLogger(__name__)
 
 REQUIREMENTS = Path(__file__).resolve().parents[2] / "requirements-whisper.txt"
 _SKIP = {"pip", "setuptools", "wheel"}
-# The pip running now, so stopping Metagrafo can stop it too.
+# Fetches the model to the Hugging Face cache without loading it onto the GPU.
+DOWNLOAD = "import sys\nfrom faster_whisper import download_model\nprint(download_model(sys.argv[1]))\n"
+# Every step runs as its own process, the one running now kept here, so stopping Metagrafo
+# kills it: a thread cannot be stopped, and Python waits for its threads before it exits.
 _running: subprocess.Popen[bytes] | None = None
+_stopped = threading.Event()
+_lock = threading.Lock()
 
 
 def pip_python(executable: str) -> str:
@@ -36,15 +43,25 @@ def constraints(freeze: str) -> str:
     return "".join(pin + "\n" for pin in pins)
 
 
-def _run(command: list[str], log: Callable[[str], None]) -> int:
+def begin() -> None:
+    """A new install: forget a stop left from an earlier one."""
+    _stopped.clear()
+
+
+def _run(command: list[str], log: Callable[[str], None], env: dict[str, str] | None = None) -> int:
+    """Run `command`, every output line to `log`; its exit code. Blocks: run it in a thread."""
     global _running
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    _running = process
+    with _lock:
+        if _stopped.is_set():
+            return -1
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        _running = process
     try:
         assert process.stdout is not None
         for raw in process.stdout:
@@ -59,17 +76,13 @@ def _run(command: list[str], log: Callable[[str], None]) -> int:
 def run_pip(log: Callable[[str], None]) -> bool:
     """pip install requirements-whisper.txt, every line to `log`. Blocks: run it in a thread."""
     python = pip_python(sys.executable)
-    freeze = subprocess.run(
-        [python, "-m", "pip", "freeze"],
-        capture_output=True,
-        text=True,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
-    if freeze.returncode != 0:
-        log(freeze.stderr.strip() or "pip freeze failed")
+    freeze: list[str] = []
+    if _run([python, "-m", "pip", "freeze"], freeze.append) != 0:
+        for line in freeze[-5:] or ["pip freeze failed"]:
+            log(line)
         return False
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False, encoding="utf-8") as pinned:
-        pinned.write(constraints(freeze.stdout))
+        pinned.write(constraints("\n".join(freeze)))
     try:
         code = _run(
             [
@@ -84,16 +97,16 @@ def run_pip(log: Callable[[str], None]) -> bool:
     return code == 0
 
 
-def download_model(model: str) -> None:
-    """Fetch the model to the Hugging Face cache without loading it onto the GPU."""
-    import importlib
-
-    importlib.invalidate_caches()
-    from faster_whisper import download_model as fetch
-
-    fetch(model)
+def download_model(model: str, log: Callable[[str], None]) -> bool:
+    """Fetch the model in a new Python, which sees the packages pip just added. Blocks."""
+    # Progress bars redraw one line with \r: the Log would get it only once it ends.
+    env = {**os.environ, "HF_HUB_DISABLE_PROGRESS_BARS": "1"}
+    return _run([pip_python(sys.executable), "-c", DOWNLOAD, model], log, env=env) == 0
 
 
 def stop() -> None:
-    if _running is not None and _running.poll() is None:
-        _running.kill()
+    """Kill the step running now, and start no other until the next install begins."""
+    with _lock:
+        _stopped.set()
+        if _running is not None and _running.poll() is None:
+            _running.kill()

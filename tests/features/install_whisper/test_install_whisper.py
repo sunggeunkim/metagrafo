@@ -1,3 +1,5 @@
+import sys
+import threading
 import time
 
 import pytest
@@ -24,13 +26,20 @@ class _ThisPC:
         pip_ok: bool = True,
         pip_s: float = 0.0,
         installed: bool = False,
+        check_s: float = 0.0,
+        download_ok: bool = True,
     ) -> None:
         for name in ("CAPTION_ENGINE", "HERMENEIA_TOKEN", "HERMENEIA_MODEL", "USE_HERMENEIA", "WHISPER_MODEL"):
             monkeypatch.delenv(name, raising=False)
         self.installed = installed
         self.pip_runs: list[str] = []
         self.downloads: list[str] = []
-        monkeypatch.setattr(check, "read_gpu", lambda: gpu)
+        def read_gpu() -> Gpu | None:
+            # nvidia-smi takes up to a second.
+            time.sleep(check_s)
+            return gpu
+
+        monkeypatch.setattr(check, "read_gpu", read_gpu)
         monkeypatch.setattr(check, "disk_free_gb", lambda _path: disk_gb)
         monkeypatch.setattr("features.translate_speech.whisper_asr.installed", lambda: self.installed)
         monkeypatch.setattr(
@@ -51,7 +60,12 @@ class _ThisPC:
             return pip_ok
 
         monkeypatch.setattr(installer, "run_pip", run_pip)
-        monkeypatch.setattr(installer, "download_model", lambda model: self.downloads.append(model))
+        def download_model(model: str, log) -> bool:
+            self.downloads.append(model)
+            log("Fetching 4 files" if download_ok else "LocalEntryNotFoundError: cannot reach huggingface.co")
+            return download_ok
+
+        monkeypatch.setattr(installer, "download_model", download_model)
         env_file = tmp_path / ".env"
         env_file.write_text("", encoding="utf-8")
         self.app = create_app(
@@ -168,6 +182,68 @@ def test_a_second_install_click_while_installing_is_refused(tmp_path, monkeypatc
         assert "already installing" in response.json()["detail"]
         assert pc.wait_for_install(client)["state"] == "done"
     assert pc.pip_runs == ["requirements-whisper.txt"]
+
+
+def test_two_install_clicks_at_once_start_one_install(tmp_path, monkeypatch) -> None:
+    # A double-click, or two tabs: both land while the first is still reading the GPU.
+    pc = _ThisPC(tmp_path, monkeypatch, check_s=0.3)
+    with TestClient(pc.app) as client:
+        codes: list[int] = []
+        clicks = [threading.Thread(target=lambda: codes.append(client.post("/whisper-install").status_code)) for _ in range(2)]
+        for click in clicks:
+            click.start()
+        for click in clicks:
+            click.join(5)
+        assert sorted(codes) == [202, 409]
+        assert pc.wait_for_install(client)["state"] == "done"
+    assert pc.pip_runs == ["requirements-whisper.txt"]
+
+
+def test_a_refused_check_leaves_the_install_free_for_the_next_click(tmp_path, monkeypatch) -> None:
+    pc = _ThisPC(tmp_path, monkeypatch, gpu=None)
+    with TestClient(pc.app) as client:
+        assert client.post("/whisper-install").status_code == 409
+        assert client.get("/whisper-install").json()["state"] == "idle"
+
+
+def test_a_model_that_cannot_download_says_so(tmp_path, monkeypatch) -> None:
+    pc = _ThisPC(tmp_path, monkeypatch, download_ok=False)
+    with TestClient(pc.app) as client:
+        assert client.post("/whisper-install").status_code == 202
+        status = pc.wait_for_install(client)
+        assert status["state"] == "failed"
+        assert "large-v3" in status["error"] and "Log" in status["error"]
+
+
+def test_stopping_metagrafo_kills_the_model_download(monkeypatch) -> None:
+    # The download runs as its own process, so quitting does not wait for gigabytes.
+    monkeypatch.setattr(installer, "DOWNLOAD", "import time; print('downloading', flush=True); time.sleep(60)")
+    monkeypatch.setattr(installer, "pip_python", lambda _executable: sys.executable)
+    installer.begin()
+    lines: list[str] = []
+    results: list[bool] = []
+    download = threading.Thread(target=lambda: results.append(installer.download_model("large-v3", lines.append)))
+    download.start()
+    for _ in range(500):
+        if lines:
+            break
+        time.sleep(0.01)
+    assert lines == ["downloading"]
+    installer.stop()
+    download.join(5)
+    assert not download.is_alive()
+    assert results == [False]
+
+
+def test_nothing_starts_once_metagrafo_is_stopping(monkeypatch) -> None:
+    # Stopped between pip freeze and pip install, or before the download: the next step never runs.
+    monkeypatch.setattr(installer, "pip_python", lambda _executable: sys.executable)
+    installer.begin()
+    installer.stop()
+    lines: list[str] = []
+    assert installer.download_model("large-v3", lines.append) is False
+    assert installer.run_pip(lines.append) is False
+    installer.begin()
 
 
 def test_pip_runs_on_the_console_python_beside_pythonw(tmp_path) -> None:

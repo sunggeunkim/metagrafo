@@ -625,7 +625,10 @@
       whisperInstall.hidden = !result.can_install;
     };
     whisperInstall.onclick = async () => {
+      // One click: the check before the install takes a moment.
+      whisperInstall.disabled = true;
       const response = await fetch("/whisper-install", { method: "POST" });
+      whisperInstall.disabled = false;
       if (!response.ok) {
         const body = await response.json();
         alert(typeof body.detail === "string" ? body.detail : "Whisper did not install");

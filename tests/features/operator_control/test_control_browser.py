@@ -318,7 +318,7 @@ def control_no_whisper(tmp_path, monkeypatch) -> Iterator[tuple[str, list[str]]]
         return True
 
     monkeypatch.setattr(installer, "run_pip", run_pip)
-    monkeypatch.setattr(installer, "download_model", lambda _model: None)
+    monkeypatch.setattr(installer, "download_model", lambda _model, _log: True)
     monkeypatch.setattr(
         "features.translate_speech.hermeneia_client.make_hermeneia_transcribe",
         lambda *_args, **_kwargs: lambda _pcm, **_kw: "",
