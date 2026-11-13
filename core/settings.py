@@ -42,7 +42,9 @@ class Settings(BaseSettings):
     vad_pauses: int = 1
     condition_on_previous_text: bool = True
     whole_sentences: bool = True
-    whole_sentences_quiet_s: float = 1.2
+    # The translation often pauses longer than 1.2 s mid-sentence, which showed half sentences;
+    # the open line shows on its own only once the speaker has stopped.
+    whole_sentences_quiet_s: float = 5.0
     clean_up_wording: bool = True
     cleanup_model: str = "gemini-3.5-flash-lite"
     # 3.5 Flash Lite took 1–8 s a line (median ~3 s) on 2026-11-09; past this the line shows as heard.

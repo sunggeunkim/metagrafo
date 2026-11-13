@@ -10,8 +10,6 @@ class LiveLine:
         self._open = ""
         self._word_times: list[float | None] = []
         self.opened_at: float | None = None
-        # How many of the first words waited from the caption before, so they wait only once.
-        self.carried = 0
 
     @property
     def text(self) -> str:
@@ -32,19 +30,6 @@ class LiveLine:
         self._word_times.extend([at] * len(piece.split()))
         return self._open
 
-    def prepend(self, words: str, times: list[float | None]) -> None:
-        """Words held back from the caption before start this one, keeping when they arrived."""
-        piece = " ".join(words.split())
-        if not piece:
-            return
-        count = len(piece.split())
-        times = (list(times) + [None] * count)[:count]
-        self._open = piece if not self._open else f"{piece} {self._open}"
-        self._word_times = times + self._word_times
-        if times[0] is not None or self.opened_at is None:
-            self.opened_at = times[0]
-        self.carried += count
-
     def closes_sentence(self) -> bool:
         return bool(self._open) and self._open[-1] in _SENTENCE_END
 
@@ -53,5 +38,4 @@ class LiveLine:
         self._open = ""
         self._word_times = []
         self.opened_at = None
-        self.carried = 0
         return text or None

@@ -192,9 +192,7 @@ async def test_the_booth_glossary_replaces_the_default_and_empty_means_none(monk
     assert "Glossary" not in asked["config"].system_instruction
 
 
-async def test_cleanup_replies_with_the_finished_sentences_and_the_unfinished_words_after_them(
-    monkeypatch,
-) -> None:
+async def test_cleanup_replies_in_json_with_finished_and_unfinished_parts(monkeypatch) -> None:
     _built, asked = _record_client(
         monkeypatch,
         '{"finished": "그리고 이렇게 생각해 보십시오.", "unfinished": "마치 개별적인 존재로서의 당신이"}',
@@ -208,33 +206,21 @@ async def test_cleanup_replies_with_the_finished_sentences_and_the_unfinished_wo
     schema = config.response_json_schema
     assert set(schema["properties"]) == {"finished", "unfinished"}
     assert set(schema["required"]) == {"finished", "unfinished"}
-    instruction = config.system_instruction
-    for asks in (
-        'In "unfinished", put the words at the end of the line that do not finish a sentence yet',
-        "copied exactly as they are in the line",
-        "never finish them with words from",
-    ):
-        assert asks in instruction
 
 
-async def test_a_line_that_must_show_whole_asks_the_model_to_hold_nothing(monkeypatch) -> None:
+async def test_every_line_is_cleaned_to_show_whole(monkeypatch) -> None:
     _built, asked = _record_client(monkeypatch, "Cleaned.")
     clean = gemini_cleanup("test-key", model="gemini-test-lite")
     await clean("예를 들어, 불교에서는 창시자인 부처에 대한 이야기는", [])
-    usual = asked["config"].system_instruction
-    await clean("예를 들어, 불교에서는 창시자인 부처에 대한 이야기는", [], hold=False)
-    whole = asked["config"].system_instruction
-    rule = "This line shows now, even if it ends in the middle of a sentence"
-    assert rule not in usual
-    assert rule in whole
-    assert '"unfinished" is always empty' in whole
+    instruction = asked["config"].system_instruction
+    assert "This line shows now, even if it ends in the middle of a sentence" in instruction
+    assert '"unfinished" is always empty' in instruction
     # The tail is part of what shows: it must not be dropped from "finished".
-    assert "leave nothing out" in whole
+    assert "leave nothing out" in instruction
     # Made to show a fragment, the model must not invent its ending (seen live: "멀리" → "멀리하셨습니다").
-    assert "no word or ending added" in whole
-    # The usual split rules are replaced, not contradicted.
-    assert 'when none of it is, "finished" is empty' not in whole
-    assert 'Leave them out of "finished"' not in whole
+    assert "no word or ending added" in instruction
+    # Nothing tells it to hold words back for the next line.
+    assert 'Leave them out of "finished"' not in instruction
 
 
 async def test_a_reply_that_is_not_json_says_what_the_model_sent(monkeypatch) -> None:

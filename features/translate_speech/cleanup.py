@@ -22,17 +22,6 @@ CLEANUP_RULES = (
     "what belongs to another line.\n\n"
 )
 
-# How a line is split when its end may wait for the next line.
-SPLIT_RULES = (
-    "The line was cut wherever the translation paused, so it can end in the middle of a "
-    'sentence. Reply in JSON. In "finished", put the cleaned-up complete sentences of the line. '
-    'In "unfinished", put the words at the end of the line that do not finish a sentence yet, '
-    "copied exactly as they are in the line: they start the next line and are cleaned there, "
-    'once the sentence is complete. Leave them out of "finished", and never finish them with '
-    'words from "Said:" or "Shown before:". When the whole line is complete, "unfinished" is '
-    'empty; when none of it is, "finished" is empty.'
-)
-
 # For an English line, instead of the Korean style: with the style and the glossary's Korean in
 # the instruction, the model answered English captions in Korean.
 ENGLISH_LINE = (
@@ -40,19 +29,19 @@ ENGLISH_LINE = (
     "it. Use only the English side of the glossary."
 )
 
-INSTRUCTION = CLEANUP_RULES + SPLIT_RULES
-
-# In place of SPLIT_RULES, for a line that starts with words held over from the line before:
-# they have waited once, so all of it shows now.
+# Every line shows whole. It usually ends a sentence; one cut short after LONG_WAIT_S ends on a
+# comma, and the end of what was said can stop anywhere.
 SHOW_WHOLE = (
-    "This line shows now, even if it ends in the middle of a sentence: its first words already "
-    'waited for it. Reply in JSON. Put all of the line, cleaned up, in "finished", including the '
+    "This line shows now, even if it ends in the middle of a sentence. "
+    'Reply in JSON. Put all of the line, cleaned up, in "finished", including the '
     "words at its end that do not finish a sentence: every part of the line is shown, so leave "
     'nothing out. "unfinished" is always empty. Where the line stops in the middle of a '
     'sentence, "finished" stops at the same place, on the line\'s own last words, with no word or '
     "ending added to finish them and nothing changed in meaning to make it sound complete. An "
     "ending the line already has still follows the Korean style, if any."
 )
+
+INSTRUCTION = CLEANUP_RULES + SHOW_WHOLE
 
 # Gemini's structured output: every reply is this object.
 REPLY_SCHEMA = {
@@ -76,12 +65,9 @@ def instruction_with(
     context: str,
     korean_style: str = KOREAN_STYLE_DEFAULT,
     glossary: str = GLOSSARY_DEFAULT,
-    *,
-    hold: bool = True,
 ) -> str:
-    """The instruction, plus the booth's Korean style, glossary and notes on this service, when set.
-    Without `hold`, the line shows whole: SHOW_WHOLE replaces the split rules."""
-    instruction = INSTRUCTION if hold else CLEANUP_RULES + SHOW_WHOLE
+    """The instruction, plus the booth's Korean style, glossary and notes on this service, when set."""
+    instruction = INSTRUCTION
     if korean_style.strip():
         instruction += (
             "\n\nWhen the line is Korean, follow this style. Changing the endings this way is part "
@@ -119,14 +105,13 @@ def gemini_cleanup(
     # Pinned like the live socket: google-genai 3.x changed the default API version.
     client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version="v1beta"))
 
-    async def clean(line: str, shown: list[str], said: str = "", *, hold: bool = True) -> Cleaned:
+    async def clean(line: str, shown: list[str], said: str = "") -> Cleaned:
         korean = is_korean(line)
         style = korean_style() if korean_style is not None else KOREAN_STYLE_DEFAULT
         instruction = instruction_with(
             context() if context is not None else "",
             style if korean else "",
             glossary() if glossary is not None else GLOSSARY_DEFAULT,
-            hold=hold,
         )
         config = types.GenerateContentConfig(
             system_instruction=instruction if korean else instruction + ENGLISH_LINE,
