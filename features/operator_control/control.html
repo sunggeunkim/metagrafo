@@ -93,7 +93,7 @@
     <button id="context-on" class="on">Previous text ON</button>
   </div>
   <h2>Whole sentences</h2>
-  <p class="hint">Gemini only. <strong>On</strong> (default) shows each line once it is finished instead of word by word, joins a short sentence like "Yes." to the next one, shows a long sentence up to its last comma once it has run about 6 seconds, and leaves out "uh", "um" and repeated words. <strong>Off</strong> grows the bottom line as the words arrive. Starts with the next line, and this computer keeps the choice for the next time.</p>
+  <p class="hint">Gemini only. <strong>On</strong> (default) shows each line once it is finished instead of word by word, joins a short sentence like "Yes." to the next one, waits for each sentence to end, shows a long sentence up to its last comma once it has run about 15 seconds, and leaves out "uh", "um" and repeated words. <strong>Off</strong> grows the bottom line as the words arrive. Starts with the next line, and this computer keeps the choice for the next time.</p>
   <label class="check"><input id="whole-sentences" type="checkbox" /> Whole sentences</label>
   <h2>Clean up wording</h2>
   <p class="hint">Gemini only, and only with Whole sentences on. <strong>On</strong> (default) sends each finished line to a fast Gemini text model with the last few lines shown, to take out false starts and make it read naturally, without changing the meaning, names, or scripture references. If it takes longer than about 4 s, the line shows as heard. The cleaned line is what the overlay and YouTube captions get. Starts with the next line, and this computer keeps the choice for the next time.</p>

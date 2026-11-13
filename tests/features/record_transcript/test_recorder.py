@@ -137,6 +137,8 @@ def _gemini_app(env_file, tmp_path, *, english, cleanup=None, **settings):
     def connect(_api_key: str):
         return lambda _mode: _KoreanSession(english)
 
+    # A short sentence shows once the speaker stops; these tests don't wait the real 5 s for that.
+    settings.setdefault("whole_sentences_quiet_s", 0.1)
     return create_app(
         settings=Settings(
             caption_engine="gemini_live",
