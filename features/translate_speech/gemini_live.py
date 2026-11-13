@@ -48,6 +48,11 @@ SHORT_SENTENCE_CHARS = 25
 # Two 1920-wide overlay rows at the default 2.5 vw hold about 140 characters. The cut leaves
 # slack because the overlay can wrap a full two rows onto a third (issue #36).
 LONG_LINE_CHARS = 120
+# A line past LONG_LINE_CHARS with no comma or sentence end to cut at grows to this long before
+# it is cut between words: four default rows hold 173-192 characters (2026-11-12 measure), so
+# it still shows whole. A cut between words split "하나님이 진짜인지 / 아니면 선하신지에", and
+# the next caption, cleaned, repeated the first half.
+MAX_LINE_CHARS = 170
 CLEANUP_CONTEXT_LINES = 3
 # Captions never wait longer than this for the text model; the line shows as heard instead.
 CLEANUP_TIMEOUT_S = 4.0
@@ -302,7 +307,7 @@ class GeminiLiveTranslator:
     async def _cut_long_line(self) -> None:
         """Publish the front of a line that would overflow the overlay; the rest opens the next line."""
         while len(text := tidy(self._line.text)) > LONG_LINE_CHARS:
-            cut = _cut_point(text, LONG_LINE_CHARS)
+            cut = _cut_point(text)
             if cut is None or not await self._show_front(text, cut):
                 return
 
@@ -637,15 +642,22 @@ def _clause_end(text: str) -> int | None:
     return ends[-1] if ends else None
 
 
-def _cut_point(text: str, limit: int) -> int | None:
-    """Where to end a line of at most `limit` characters: its last comma, else its last space.
+def _cut_point(text: str, limit: int = LONG_LINE_CHARS, ceiling: int = MAX_LINE_CHARS) -> int | None:
+    """Where to end a line longer than `limit`, or None to let it grow.
 
-    A comma in the first half would leave a stub of a line, so the space wins there.
+    Its last comma or sentence end up to `limit`; else the first one after that, up to
+    `ceiling`; past `ceiling` with neither, its last space. One in the first half would leave a
+    stub of a line, so it never counts.
     """
-    comma = text.rfind(",", 0, limit)
-    if comma >= limit // 2:
-        return comma + 1
-    space = text.rfind(" ", 0, limit + 1)
+    marks = [m.end() for m in re.finditer(r"(?<=\S\S)[,.?!](?=\s|$)", text) if limit // 2 <= m.end() <= ceiling]
+    within = [end for end in marks if end <= limit]
+    if within:
+        return within[-1]
+    if marks:
+        return marks[0]
+    if len(text) <= ceiling:
+        return None
+    space = text.rfind(" ", 0, ceiling + 1)
     return space if space > 0 else None
 
 

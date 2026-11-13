@@ -330,7 +330,27 @@ async def test_whole_sentences_cuts_a_long_line_at_the_last_comma() -> None:
     ]
 
 
-async def test_whole_sentences_cuts_a_long_line_without_a_comma_between_words() -> None:
+async def test_whole_sentences_cuts_a_long_line_at_its_last_sentence_end() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    # Seen live (2026-11-12 22:38): with only a comma in the first half, the cut fell between
+    # "하나님이 진짜인지" and "아니면 선하신지에", and the next caption repeated the first half.
+    await translator.apply_transcript(
+        "In those sermons I said that within the question of having hope there is a deeper issue"
+    )
+    await translator.apply_transcript("of evil. Whether or not God")
+    await translator.apply_transcript("is real")
+    await translator.apply_transcript("or if he is good, that is the question.")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("In those sermons I said that within the question of having hope there is a deeper issue of evil.", False),
+        ("Whether or not God is real or if he is good, that is the question.", False),
+    ]
+
+
+async def test_whole_sentences_lets_a_long_line_with_no_comma_grow_to_its_sentence_end() -> None:
     bus = EventBus()
     seen = _collect(bus)
     translator = GeminiLiveTranslator(
@@ -341,9 +361,45 @@ async def test_whole_sentences_cuts_a_long_line_without_a_comma_between_words() 
     )
     await translator.apply_transcript("to worship with us and to share the meal")
     await translator.apply_transcript("after the service.")
+    # Past 120 characters with nowhere to end a clause, it grows to 157 rather than split a clause.
     assert [(e.text, e.provisional) for e in seen] == [
-        ("We give thanks for the brothers and sisters who came from the north side of the city this morning to worship with us and", False),
-        ("to share the meal after the service.", False),
+        ("We give thanks for the brothers and sisters who came from the north side of the city this morning to worship with us and to share the meal after the service.", False),
+    ]
+
+
+async def test_whole_sentences_cuts_a_line_past_120_at_the_first_comma_that_comes() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript(
+        "We give thanks for the brothers and sisters who came from the north side of the city this morning"
+    )
+    await translator.apply_transcript("to worship with us and to share the meal after the service,")
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("We give thanks for the brothers and sisters who came from the north side of the city this morning to worship with us and to share the meal after the service,", False),
+    ]
+    await translator.apply_transcript("and then we pray for the sick and for the families of our church.")
+    assert [e.text for e in seen][1:] == ["and then we pray for the sick and for the families of our church."]
+
+
+async def test_whole_sentences_cuts_between_words_only_past_170_characters() -> None:
+    bus = EventBus()
+    seen = _collect(bus)
+    translator = GeminiLiveTranslator(
+        bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
+    )
+    await translator.apply_transcript(
+        "We give thanks for the brothers and sisters who came from the north side of the city this morning"
+    )
+    await translator.apply_transcript("to worship with us and to share the meal after the service in the hall")
+    # 168 characters and still no comma or sentence end: it keeps growing.
+    assert seen == []
+    await translator.apply_transcript("with all the children and their parents and their grandparents")
+    # Four overlay rows hold at least 173 characters, so past 170 the cut falls between words.
+    assert [(e.text, e.provisional) for e in seen] == [
+        ("We give thanks for the brothers and sisters who came from the north side of the city this morning to worship with us and to share the meal after the service in the hall", False),
     ]
 
 
@@ -358,8 +414,7 @@ async def test_whole_sentences_does_not_cut_at_a_comma_that_leaves_a_stub() -> N
     )
     await translator.apply_transcript("to worship with us and to share the meal after the service.")
     assert [(e.text, e.provisional) for e in seen] == [
-        ("Brothers, we give thanks for the sisters who came from the north side of the city this morning to worship with us and to", False),
-        ("share the meal after the service.", False),
+        ("Brothers, we give thanks for the sisters who came from the north side of the city this morning to worship with us and to share the meal after the service.", False),
     ]
 
 
@@ -393,11 +448,13 @@ async def test_captions_off_while_a_cut_line_is_shown_drops_the_rest_of_it() -> 
         bus, connect=lambda _mode: HoldingSession(), whole_sentences=True
     )
     await translator.apply_transcript(
-        "Brothers, we give thanks for the sisters who came from the north side of the city this morning"
+        "In those sermons I said that within the question of having hope there is a deeper issue"
     )
-    await translator.apply_transcript("to worship with us and to share the meal after the service.")
+    await translator.apply_transcript("of evil. Whether or not God")
+    await translator.apply_transcript("is real")
+    await translator.apply_transcript("or if he is good, that is the question.")
     assert [(e.text, e.provisional) for e in seen] == [
-        ("Brothers, we give thanks for the sisters who came from the north side of the city this morning to worship with us and to", False),
+        ("In those sermons I said that within the question of having hope there is a deeper issue of evil.", False),
     ]
 
 
