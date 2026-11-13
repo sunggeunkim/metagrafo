@@ -140,7 +140,7 @@ For reading the captions back afterwards (analysis), not for viewers. Off by def
 
 - `SaveTranscriptEvent(save_transcript)` — on opens a new `transcripts/YYYY-MM-DD_HHMMSS.jsonl` (in the folder Metagrafo starts in; `_2`, `_3`… when that name is taken, so a session never appends to another); off closes it. `SAVE_TRANSCRIPT=true` in `.env` opens one at startup. Shutdown, including **Quit Metagrafo**, closes it. Lines are flushed as written, so a file can be read mid-service.
 - One JSON record per line. Every record has `t_s` (seconds since this file started), `at` (local clock, ms) and `kind`:
-  - `start` — `engine` (`gemini_live` | `whisper_local` | `whisper_hermeneia` | `seamless_hermeneia`, as on booth control)\| `whisper`), `captions_active`, `mode`, `whole_sentences`, `clean_up_wording`, `cleanup_context`, `korean_style`, `glossary`.
+  - `start` — `engine` (`gemini_live` \| `whisper_local` \| `whisper_hermeneia` \| `seamless_hermeneia`, as on booth control), `captions_active`, `mode`, `whole_sentences`, `clean_up_wording`, `cleanup_context`, `korean_style`, `glossary`.
   - `heard` — `text`, `language`: a Korean (source) fragment as Gemini live transcribed it (`SpeechHeardEvent`). Whisper writes none.
   - `shown` — `text` as the overlay and YouTube got it, `delay_s` (shown time − `spoken_at`; for Gemini live that is from the line's first English fragment, so a lower bound on the delay from speech; compare with the `heard` times), `mode`, and `before_cleanup` when Clean up wording rewrote it (equal to `text` when the model kept it or timed out). Provisional (growing) lines are skipped.
   - `setting` — one booth change: `captions_active`, `mode`, `whole_sentences`, `clean_up_wording`, `cleanup_context`, `korean_style`, or `glossary`.
