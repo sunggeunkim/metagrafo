@@ -171,6 +171,19 @@ class GeminiLiveTranslator:
         self._cleanup = cleanup
         self._reconnect.set()
 
+    def suspend(self) -> None:
+        """Another engine takes over. Call before cancelling run(): nothing held here may show
+        later or carry over when Gemini runs again, the open line, its quiet wait, lines being
+        cleaned, queued audio. Unlike captions off, run() connects again once restarted."""
+        self._stop_quiet_wait()
+        if self._in_order is not None:
+            self._in_order.cancel()
+            self._in_order = None
+        self._drop_waiting_lines()
+        self._line.commit()
+        self._drain_audio()
+        self._heard.clear()
+
     async def _on_mode(self, event: ModeChangedEvent) -> None:
         try:
             mode = TranslateMode(event.mode)

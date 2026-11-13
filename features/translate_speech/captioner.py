@@ -25,6 +25,9 @@ class Captioner:
         self._condition_on_previous_text = condition_on_previous_text
         self._previous = ""
 
+    def use_recognize(self, recognize: Recognize) -> None:
+        self._recognize = recognize
+
     def set_condition_on_previous_text(self, enabled: bool) -> None:
         self._condition_on_previous_text = enabled
 

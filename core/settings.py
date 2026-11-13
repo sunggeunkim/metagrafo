@@ -67,7 +67,8 @@ class Settings(BaseSettings):
     whisper_device: str | None = "cuda"
     whisper_compute_type: str | None = "float16"
     translate_queue_size: int = 4
-    hermeneia_url: str = ""
+    # The church's Whisper server. Whisper uses it once a token is saved; until then, this PC.
+    hermeneia_url: str = "https://hermeneia.stugen.net"
     hermeneia_token: str = ""
     hermeneia_model: str = "whisper"
     hermeneia_timeout_s: float = 30.0
@@ -77,3 +78,7 @@ class Settings(BaseSettings):
 
     def gemini_live(self) -> bool:
         return self.caption_engine == "gemini_live" and bool(self.gemini_api_key.strip())
+
+    def hermeneia(self) -> bool:
+        """Whether Whisper runs on the Hermeneia server rather than this PC."""
+        return bool(self.hermeneia_url.strip() and self.hermeneia_token.strip())
