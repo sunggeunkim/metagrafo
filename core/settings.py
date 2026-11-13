@@ -30,6 +30,13 @@ Bible books and references as in the 개역개정 Bible: Genesis → 창세기, 
 
 # Booth control's caption engines. The two on Hermeneia name the model the server runs.
 CAPTION_ENGINES = ("gemini_live", "whisper_local", "whisper_hermeneia", "seamless_hermeneia")
+# What booth control calls each engine.
+ENGINE_NAMES = {
+    "gemini_live": "Gemini live",
+    "whisper_local": "Whisper on this PC",
+    "whisper_hermeneia": "Whisper on Hermeneia",
+    "seamless_hermeneia": "Seamless on Hermeneia",
+}
 HERMENEIA_MODELS = {"whisper_hermeneia": "whisper", "seamless_hermeneia": "seamless-m4t-v2"}
 
 

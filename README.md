@@ -237,7 +237,7 @@ uv run python -m main
 
 `GET /health` reports `model`, `device`, `compute_type`, `vram_gb`, captions on/off, and mode.
 
-To run speech on the church's Hermeneia GPU server instead of this PC, paste the Hermeneia token you were given on booth control under **Hermeneia token** and click **Save token**. The server address (`HERMENEIA_URL`) defaults to `https://hermeneia.stugen.net`. With no token saved, Whisper runs on this PC.
+To run speech on the church's Hermeneia GPU server, paste the Hermeneia token you were given on booth control under **Hermeneia token**, click **Save token**. **Whisper on Hermeneia** and **Seamless on Hermeneia** use it. The server address (`HERMENEIA_URL`) defaults to `https://hermeneia.stugen.net`. With no token saved, Whisper runs on this PC, and saving one moves it to **Whisper on Hermeneia**; a booth where **Whisper on this PC** was picked stays there.
 
 Booth control's **Caption engine** buttons switch engines while Metagrafo runs, and the choice is kept in `.env` for the next start:
 
