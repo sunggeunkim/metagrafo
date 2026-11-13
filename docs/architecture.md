@@ -56,6 +56,7 @@ metagrafo/
     operator_control/       # /control, /mode, CaptionsStateEvent
     youtube_captions/       # SubtitleEvent → YouTube caption ingestion URL, /youtube-captions
     record_transcript/      # SubtitleEvent + SpeechHeardEvent → transcripts/*.jsonl, /transcript
+    install_whisper/        # /whisper-check, /whisper-install: Whisper on a Start Metagrafo.cmd booth
   docs/
     architecture.md
     aten-obs.md
@@ -145,6 +146,14 @@ For reading the captions back afterwards (analysis), not for viewers. Off by def
   - `shown` — `text` as the overlay and YouTube got it, `delay_s` (shown time − `spoken_at`; for Gemini live that is from the line's first English fragment, so a lower bound on the delay from speech; compare with the `heard` times), `mode`, and `before_cleanup` when Clean up wording rewrote it (equal to `text` when the model kept it or timed out). Provisional (growing) lines are skipped.
   - `setting` — one booth change: `captions_active`, `mode`, `whole_sentences`, `clean_up_wording`, `cleanup_context`, `korean_style`, or `glossary`.
 - `GET /transcript` — `{saving, file}` with the file's full path.
+
+### `install_whisper`
+
+`Start Metagrafo.cmd` installs only `requirements-gemini.txt`, so Whisper on this PC is not there (`whisper_asr.installed()` is false) until booth control installs it.
+
+- `GET /whisper-check` — reads the first NVIDIA GPU with `nvidia-smi` (it comes with the driver, so it works before any install) and the disk, and returns `verdict`, `can_install`, `gpu` (`name`, `total_gb`, `free_gb`, `driver`), `model`, `compute_type`, `download_gb`, `disk_free_gb` and a `message` for the booth. The model is the Whisper profile `translate_speech` would load. Verdicts: `installed`; `no_gpu`, `old_driver` (under 527.41 on Windows, 525.60 elsewhere: CUDA 12), `too_small` (the model's GPU memory, after faster-whisper's benchmark, is more than the GPU has) and `no_disk`, which refuse; `tight` (it fits the GPU but not what is free now, or the GPU is under 8 GB) and `fits`, which allow. A forecast only: the first load on **Whisper on this PC** proves it.
+- `POST /whisper-install` — 202, or 409 with the check's message when it refuses, or while an install runs. In the background: `python -m pip install -r requirements-whisper.txt -c <pip freeze>` on the console `python.exe` beside `pythonw.exe` (Windows locks open packages, so nothing installed is upgraded), every line logged as `pip: …`; then `faster_whisper.download_model` fetches the model without loading it, so the GPU stays with OBS until Whisper on this PC is picked. Stopping Metagrafo kills pip.
+- `GET /whisper-install` — `state` (`idle`, `installing`, `done`, `failed`), `step`, `error`. Booth control polls it while installing, from any tab.
 
 ### `operator_control`
 

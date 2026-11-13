@@ -248,6 +248,8 @@ Booth control's **Caption engine** buttons switch engines while Metagrafo runs, 
 | **Whisper on Hermeneia** | a saved Hermeneia token | `CAPTION_ENGINE=whisper`, `USE_HERMENEIA=true`, `HERMENEIA_MODEL=whisper` |
 | **Seamless on Hermeneia** | a saved Hermeneia token | `CAPTION_ENGINE=whisper`, `USE_HERMENEIA=true`, `HERMENEIA_MODEL=seamless-m4t-v2` |
 
+`Start Metagrafo.cmd` installs only what Gemini and Hermeneia need. To add Whisper on this PC, click **Check this PC** under **Install Whisper** on booth control. It reads the NVIDIA GPU (name, memory, memory free beside OBS, driver) and the disk with `nvidia-smi`, which comes with the driver, and says whether Whisper would run here before anything is downloaded. If it would, **Install Whisper** pip-installs `requirements-whisper.txt` into Metagrafo's own Python, pinned to the packages already installed, and downloads the model (about 4.5 GB in all for large-v3) while captions keep running; pip's progress shows under **Log**. It refuses with no NVIDIA GPU, a driver older than 527.41, a GPU too small for the model, or too little disk.
+
 Whisper on this PC loads the first time it is picked, which can take a minute; if it cannot load, the engine stays as it was and booth control says why. The three non-Gemini engines caption only into English, so they are refused in English → Korean mode. The Hermeneia server keeps one model in memory at a time and takes several seconds to swap, so every booth using it should pick the same model.
 
 To give another booth access, send them the Hermeneia token privately (a password manager or a direct message, never the repository or a group chat). The address needs no setup.

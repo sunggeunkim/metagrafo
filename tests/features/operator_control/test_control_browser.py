@@ -293,3 +293,81 @@ def test_engine_buttons_switch_to_seamless_and_grey_out_what_cannot_run(browser,
         assert not page.is_visible("#engine-whisper_hermeneia.active")
     finally:
         page.close()
+
+
+@pytest.fixture
+def control_no_whisper(tmp_path, monkeypatch) -> Iterator[tuple[str, list[str]]]:
+    """A served app on Hermeneia, on a PC with an RTX 3060 and Whisper not installed yet."""
+    from features.install_whisper import check, installer
+    from features.install_whisper.check import Gpu
+
+    for name in ("CAPTION_ENGINE", "HERMENEIA_TOKEN", "HERMENEIA_MODEL", "USE_HERMENEIA"):
+        monkeypatch.delenv(name, raising=False)
+    installed = [False]
+    pip_runs: list[str] = []
+    monkeypatch.setattr(
+        check, "read_gpu", lambda: Gpu(name="NVIDIA GeForce RTX 3060", total_gb=12.0, free_gb=11.0, driver="560.94")
+    )
+    monkeypatch.setattr(check, "disk_free_gb", lambda _path: 200.0)
+    monkeypatch.setattr("features.translate_speech.whisper_asr.installed", lambda: installed[0])
+
+    def run_pip(log) -> bool:
+        time.sleep(0.5)
+        pip_runs.append("pip")
+        installed[0] = True
+        return True
+
+    monkeypatch.setattr(installer, "run_pip", run_pip)
+    monkeypatch.setattr(installer, "download_model", lambda _model: None)
+    monkeypatch.setattr(
+        "features.translate_speech.hermeneia_client.make_hermeneia_transcribe",
+        lambda *_args, **_kwargs: lambda _pcm, **_kw: "",
+    )
+    env_file = tmp_path / ".env"
+    env_file.write_text("", encoding="utf-8")
+    app = create_app(
+        settings=Settings(caption_engine="whisper", gemini_api_key="", hermeneia_token="tok-42", _env_file=env_file),
+        env_file=env_file,
+        load_whisper=True,
+        list_input_devices=lambda: [],
+    )
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    config = uvicorn.Config(
+        app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=3
+    )
+    server = uvicorn.Server(config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    deadline = time.monotonic() + 15
+    while not server.started:
+        if time.monotonic() > deadline:
+            raise RuntimeError("control server did not start")
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}", pip_runs
+    server.should_exit = True
+    thread.join(timeout=15)
+
+
+def test_check_this_pc_then_install_whisper_turns_on_whisper_on_this_pc(browser, control_no_whisper) -> None:
+    url, pip_runs = control_no_whisper
+    page = browser.new_page()
+    try:
+        page.goto(f"{url}/control")
+        page.wait_for_selector("#engine-whisper_hermeneia.active")
+        assert page.is_disabled("#engine-whisper_local")
+        assert not page.is_visible("#whisper-install")
+
+        page.click("#whisper-check")
+        page.wait_for_selector("#whisper-check-result:has-text('NVIDIA GeForce RTX 3060')")
+        assert "should fit beside OBS" in page.inner_text("#whisper-check-result")
+        assert pip_runs == []
+
+        page.click("#whisper-install")
+        page.wait_for_selector("#whisper-install-status:has-text('Installing')")
+        page.wait_for_selector("#whisper-install-status:has-text('Whisper is installed')", timeout=10000)
+        assert pip_runs == ["pip"]
+        page.wait_for_selector("#engine-whisper_local:enabled")
+    finally:
+        page.close()
