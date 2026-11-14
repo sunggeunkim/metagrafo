@@ -156,10 +156,10 @@ class TranslateSlice:
                 mode=self._mode or settings.translate_mode,
                 queue_size=settings.translate_queue_size,
                 condition_on_previous_text=settings.condition_on_previous_text,
-                korean=_writes_korean(runs_on),
+                seamless=_is_seamless(runs_on),
             )
         elif runs_on != self.worker_runs_on:
-            self.worker.use_transcribe(self._whisper_transcribe(runs_on), korean=_writes_korean(runs_on))
+            self.worker.use_transcribe(self._whisper_transcribe(runs_on), seamless=_is_seamless(runs_on))
         self.worker_runs_on = runs_on
         await self._run("worker")
 
@@ -223,7 +223,7 @@ def _whisper_place(settings: Settings) -> object:
     return "this PC"
 
 
-def _writes_korean(runs_on: object) -> bool:
+def _is_seamless(runs_on: object) -> bool:
     """Seamless on Hermeneia writes Korean; Whisper, here or there, only English."""
     return isinstance(runs_on, tuple) and runs_on[3] == HERMENEIA_MODELS["seamless_hermeneia"]
 
@@ -323,7 +323,7 @@ def register(
         mode=settings.translate_mode,
         queue_size=settings.translate_queue_size,
         condition_on_previous_text=settings.condition_on_previous_text,
-        korean=_writes_korean(runs_on),
+        seamless=_is_seamless(runs_on),
     )
     if app is not None:
         app.state.whisper_profile = profile

@@ -52,7 +52,8 @@ def test_invalid_mode_is_rejected() -> None:
 
 
 def test_korean_captions_are_refused_on_whisper() -> None:
-    settings = Settings(caption_engine="whisper", gemini_api_key="")
+    # Whisper on this PC, whatever .env sits in the folder the tests run from.
+    settings = Settings(caption_engine="whisper", gemini_api_key="", hermeneia_token="", _env_file=None)
     with TestClient(create_app(settings=settings)) as client:
         assert client.get("/mode").json()["gemini_live"] is False
         response = client.put("/mode", json={"mode": "en_to_ko"})
@@ -62,7 +63,9 @@ def test_korean_captions_are_refused_on_whisper() -> None:
 
 
 def test_whisper_start_ignores_a_korean_caption_mode_in_env() -> None:
-    settings = Settings(caption_engine="whisper", gemini_api_key="", translate_mode="en_to_ko")
+    settings = Settings(
+        caption_engine="whisper", gemini_api_key="", hermeneia_token="", translate_mode="en_to_ko", _env_file=None
+    )
     with TestClient(create_app(settings=settings)) as client:
         assert client.get("/mode").json()["mode"] == "ko_to_en"
 

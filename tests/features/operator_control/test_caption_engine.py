@@ -116,7 +116,8 @@ class _Booth:
         """Send one cut of speech and return the caption it became."""
         before = len(self.captions)
         chunk = AudioChunkEvent(
-            chunk_id=f"c{before}", pcm_s16le=b"\x00\x10" * 1600, sample_rate=16000, started_at=time.monotonic(), duration_s=0.1
+            # Long enough that Seamless gets it at once rather than waiting for the next piece.
+            chunk_id=f"c{before}", pcm_s16le=b"\x00\x10" * 1600, sample_rate=16000, started_at=time.monotonic(), duration_s=3.0
         )
         client.portal.call(self.app.state.bus.publish, chunk)
         for _ in range(200):
