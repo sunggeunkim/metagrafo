@@ -67,7 +67,7 @@
     <button id="mode-en" class="mode" data-mode="en_to_en">Mode: en_to_en (Guest)</button>
     <button id="mode-en-ko" class="mode" data-mode="en_to_ko">Mode: en_to_ko (Guest → Korean)</button>
   </div>
-  <p class="hint">en_to_ko puts English speech on screen in Korean. It needs a saved Gemini key; Whisper can only translate into English.</p>
+  <p class="hint">en_to_ko puts English speech on screen in Korean. It needs <strong>Gemini live</strong> or <strong>Seamless on Hermeneia</strong> as the caption engine; Whisper can only translate into English.</p>
   <h2>Audio input</h2>
   <p class="hint">The recording device Metagrafo listens to. Pick one, then Use this input. Capture switches in about a second, and this computer keeps the choice for the next time. OBS picks its own audio separately. Plugged a device in? Refresh list.</p>
   <label for="audio-device">Input</label>
@@ -156,7 +156,7 @@
   <input id="gemini-key" class="key" type="password" autocomplete="off" />
   <button id="gemini-save" class="mode">Save key</button>
   <h2>Caption engine</h2>
-  <p class="hint"><strong>Gemini live</strong> translates as the speaker talks and needs the Gemini key. The other three caption each stretch of speech once the speaker pauses, and only into English. <strong>Whisper on this PC</strong> needs Whisper installed and an NVIDIA GPU with room beside OBS; it loads the first time you pick it, which can take a minute. <strong>Whisper on Hermeneia</strong> and <strong>Seamless on Hermeneia</strong> run on the church's server and need its token. The server holds one model at a time, so every booth on it should pick the same one. The switch takes effect at once, and this computer keeps the choice for the next time.</p>
+  <p class="hint"><strong>Gemini live</strong> translates as the speaker talks and needs the Gemini key. The other three caption each stretch of speech once the speaker pauses. Whisper writes only English; Seamless also writes Korean for en_to_ko. <strong>Whisper on this PC</strong> needs Whisper installed and an NVIDIA GPU with room beside OBS; it loads the first time you pick it, which can take a minute. <strong>Whisper on Hermeneia</strong> and <strong>Seamless on Hermeneia</strong> run on the church's server and need its token. The server holds one model at a time, so every booth on it should pick the same one. The switch takes effect at once, and this computer keeps the choice for the next time.</p>
   <button id="engine-gemini_live" class="mode engine" data-engine="gemini_live">Gemini live</button>
   <button id="engine-whisper_local" class="mode engine" data-engine="whisper_local">Whisper on this PC</button>
   <button id="engine-whisper_hermeneia" class="mode engine" data-engine="whisper_hermeneia">Whisper on Hermeneia</button>
@@ -334,12 +334,12 @@
       document.getElementById("mode-ko").classList.toggle("active", s.mode === "ko_to_en");
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
       document.getElementById("mode-en-ko").classList.toggle("active", s.mode === "en_to_ko");
-      document.getElementById("mode-en-ko").disabled = !s.gemini_live;
+      document.getElementById("mode-en-ko").disabled = !s.writes_korean;
       const engineReady = {
         gemini_live: s.gemini_key_set,
         whisper_local: s.whisper_local_ready && s.mode !== "en_to_ko",
         whisper_hermeneia: s.hermeneia_token_set && s.mode !== "en_to_ko",
-        seamless_hermeneia: s.hermeneia_token_set && s.mode !== "en_to_ko",
+        seamless_hermeneia: s.hermeneia_token_set,
       };
       document.querySelectorAll(".engine").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.engine === s.caption_engine);

@@ -130,6 +130,7 @@ def languages_for(mode: TranslateMode) -> tuple[str, str]:
     return "ko", "en"
 
 
-def needs_gemini(mode: TranslateMode) -> bool:
-    """Whisper only translates into English, so Korean captions need Gemini live."""
+def korean_captions(mode: TranslateMode) -> bool:
+    """The mode puts Korean on screen. Whisper only translates into English, so only
+    Gemini live and Seamless on Hermeneia write it (`Settings.writes_korean`)."""
     return mode is TranslateMode.EN_TO_KO

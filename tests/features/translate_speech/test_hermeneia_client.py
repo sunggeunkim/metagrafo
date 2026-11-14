@@ -70,3 +70,16 @@ def test_busy_and_unauthorized_return_empty_text() -> None:
 
     transcribe = make_hermeneia_transcribe("http://h", "t", "whisper", post=denied)
     assert transcribe(b"\x00\x00", language="ko", task="translate", initial_prompt="") == ""
+
+
+def test_seamless_is_asked_for_korean_in_en_to_ko() -> None:
+    seen: dict = {}
+
+    def post(url, *, files, data, headers):
+        seen["data"] = data
+        return _Response(200, {"text": "안녕하세요, 하나님의 말씀입니다."})
+
+    transcribe = make_hermeneia_transcribe("https://hermeneia.stugen.net", "secret", "seamless-m4t-v2", post=post)
+    text = transcribe(b"\x00\x00", language="en", task="translate", target_language="ko", initial_prompt="")
+    assert text == "안녕하세요, 하나님의 말씀입니다."
+    assert (seen["data"]["source_language"], seen["data"]["target_language"]) == ("en", "ko")

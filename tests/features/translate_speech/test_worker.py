@@ -299,3 +299,88 @@ async def test_whisper_falls_back_to_sermon_mode_when_asked_for_korean() -> None
     task.cancel()
     assert whisper.calls[0]["task"] == "translate"
     assert seen[0].mode == "ko_to_en"
+
+
+def _piece(chunk_id: str, seconds: float, started_at: float = 1.0) -> AudioChunkEvent:
+    return AudioChunkEvent(
+        chunk_id=chunk_id,
+        pcm_s16le=b"\x00\x10" * int(16000 * seconds),
+        sample_rate=16000,
+        started_at=started_at,
+        duration_s=seconds,
+    )
+
+
+class _Heard:
+    """Seamless, or Whisper: records how much audio each request carried."""
+
+    def __init__(self) -> None:
+        self.seconds: list[float] = []
+
+    def transcribe(self, pcm: bytes, **_kwargs: object) -> str:
+        self.seconds.append(len(pcm) / 2 / 16000)
+        return f"line {len(self.seconds)}"
+
+
+async def _run_worker(worker: TranslateWorker, bus: EventBus, pieces, wait_s: float = 0.2) -> None:
+    task = asyncio.create_task(worker.run())
+    for piece in pieces:
+        await bus.publish(piece)
+    await asyncio.sleep(wait_s)
+    task.cancel()
+
+
+async def test_seamless_gets_short_pieces_joined_with_the_next() -> None:
+    # Seamless makes text up from a second of audio, so short pieces wait for the next one.
+    bus = EventBus()
+    heard = _Heard()
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(SubtitleEvent, handler)
+    worker = TranslateWorker(bus, heard.transcribe, seamless=True)
+    await _run_worker(worker, bus, [_piece("a", 0.8, 10.0), _piece("b", 0.7, 11.0), _piece("c", 1.0, 12.0)])
+    assert heard.seconds == [2.5]
+    assert [event.chunk_id for event in seen] == ["a"]
+    assert seen[0].duration_s == 2.5
+
+
+async def test_seamless_gets_a_long_piece_at_once() -> None:
+    bus = EventBus()
+    heard = _Heard()
+    worker = TranslateWorker(bus, heard.transcribe, seamless=True)
+    await _run_worker(worker, bus, [_piece("a", 3.0), _piece("b", 0.5), _piece("c", 4.0)])
+    # The short one rides along with the piece after it.
+    assert heard.seconds == [3.0, 4.5]
+
+
+async def test_a_short_last_piece_still_reaches_seamless_once_the_speaker_stops() -> None:
+    bus = EventBus()
+    heard = _Heard()
+    worker = TranslateWorker(bus, heard.transcribe, seamless=True, hold_s=0.1)
+    await _run_worker(worker, bus, [_piece("amen", 0.6)], wait_s=0.4)
+    assert heard.seconds == [0.6]
+
+
+async def test_whisper_gets_every_piece_as_it_comes() -> None:
+    bus = EventBus()
+    heard = _Heard()
+    worker = TranslateWorker(bus, heard.transcribe)
+    await _run_worker(worker, bus, [_piece("a", 0.8), _piece("b", 0.7)])
+    assert heard.seconds == [0.8, 0.7]
+
+
+async def test_pieces_held_for_seamless_are_dropped_when_captions_stop() -> None:
+    bus = EventBus()
+    heard = _Heard()
+    worker = TranslateWorker(bus, heard.transcribe, seamless=True)
+    task = asyncio.create_task(worker.run())
+    await bus.publish(_piece("before", 0.8))
+    await bus.publish(CaptionsStateEvent(is_active=False))
+    await bus.publish(CaptionsStateEvent(is_active=True))
+    await bus.publish(_piece("after", 2.0))
+    await asyncio.sleep(0.2)
+    task.cancel()
+    assert heard.seconds == [2.0]

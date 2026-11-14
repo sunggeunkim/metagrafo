@@ -26,8 +26,10 @@ def make_hermeneia_transcribe(
         task: str,
         initial_prompt: str,
         condition_on_previous_text: bool = False,
+        target_language: str | None = None,
     ) -> str:
-        target = "en" if task == "translate" else language
+        # Seamless writes Korean when asked (en_to_ko); Whisper translates only into English.
+        target = target_language or ("en" if task == "translate" else language)
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         files = {"audio": ("chunk.pcm", pcm_s16le, "application/octet-stream")}
         data = {

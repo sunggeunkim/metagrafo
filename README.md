@@ -110,7 +110,7 @@ CAPTION_ENGINE=gemini_live
 GEMINI_API_KEY=your-key-here
 ```
 
-The model is `gemini-3.5-live-translate-preview`. Korean speech is translated to English while it is still coming in. With Gemini on, booth control also offers **en_to_ko**, which captions an English speaker in Korean. Get the key from [Google AI Studio](https://aistudio.google.com/api-keys). The key belongs only in `.env`. An empty key, or any other `CAPTION_ENGINE` value, stays on Whisper.
+The model is `gemini-3.5-live-translate-preview`. Korean speech is translated to English while it is still coming in. With Gemini on, booth control also offers **en_to_ko**, which captions an English speaker in Korean (so does **Seamless on Hermeneia**). Get the key from [Google AI Studio](https://aistudio.google.com/api-keys). The key belongs only in `.env`. An empty key, or any other `CAPTION_ENGINE` value, stays on Whisper.
 
 ## Sign-in autostart
 
@@ -206,7 +206,7 @@ Captions **default ON** when the process starts. Turn **OFF** during worship so 
 | Pre-service / worship / hymns | Leave captions stopped (**Stop captions**). Do not caption PGM music — Whisper will hallucinate. |
 | Pastor at the pulpit | **Start captions**. Mode **ko_to_en** for a Korean sermon. |
 | Songs again | **Stop captions**. Stops **new** capture and queued Whisper jobs. Not the same as hiding the OBS source. |
-| English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. For Korean captions, set **en_to_ko (Guest → Korean)** instead; it needs a saved Gemini key. |
+| English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. For Korean captions, set **en_to_ko (Guest → Korean)** instead; it needs **Gemini live** or **Seamless on Hermeneia**. |
 
 Do **not** flip language verse-by-verse. Stay on `ko_to_en` for a Korean sermon.
 
@@ -250,7 +250,7 @@ Booth control's **Caption engine** buttons switch engines while Metagrafo runs, 
 
 `Start Metagrafo.cmd` installs only what Gemini and Hermeneia need. To add Whisper on this PC, click **Check this PC** under **Install Whisper** on booth control. It reads the NVIDIA GPU (name, memory, memory free beside OBS, driver) and the disk with `nvidia-smi`, which comes with the driver, and says whether Whisper would run here before anything is downloaded. If it would, **Install Whisper** pip-installs `requirements-whisper.txt` into Metagrafo's own Python, pinned to the packages already installed, and downloads the model (about 4.5 GB in all for large-v3) while captions keep running; pip's progress shows under **Log**. It refuses with no NVIDIA GPU, a driver older than 527.41, a GPU too small for the model, or too little disk.
 
-Whisper on this PC loads the first time it is picked, which can take a minute; if it cannot load, the engine stays as it was and booth control says why. The three non-Gemini engines caption only into English, so they are refused in English → Korean mode. The Hermeneia server keeps one model in memory at a time and takes several seconds to swap, so every booth using it should pick the same model.
+Whisper on this PC loads the first time it is picked, which can take a minute; if it cannot load, the engine stays as it was and booth control says why. Whisper, on this PC or on Hermeneia, captions only into English, so both are refused in en_to_ko; Seamless on Hermeneia writes Korean there, asked with `target_language=ko`. Seamless makes text up from a second or less of audio, so Metagrafo joins a piece under 2 s to the next one before sending it (or sends it alone after 1.5 s with no more speech). The Hermeneia server keeps one model in memory at a time and takes several seconds to swap, so every booth using it should pick the same model.
 
 To give another booth access, send them the Hermeneia token privately (a password manager or a direct message, never the repository or a group chat). The address needs no setup.
 

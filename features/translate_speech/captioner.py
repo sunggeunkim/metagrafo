@@ -47,8 +47,12 @@ class Captioner:
             self._previous = self._previous[-2000:]
 
     def line(self, pcm: bytes, *, direction: str) -> str:
+        korean: dict[str, str] = {}
         if direction == "en_to_en":
             language, task = "en", "transcribe"
+        elif direction == "en_to_ko":
+            # Only Seamless on Hermeneia is handed en_to_ko: it takes the target as asked.
+            language, task, korean = "en", "translate", {"target_language": "ko"}
         elif self._engine == "gemini":
             language, task = "ko", "transcribe"
         else:
@@ -59,11 +63,12 @@ class Captioner:
             task=task,
             initial_prompt=self._prompt(),
             condition_on_previous_text=self._condition_on_previous_text,
+            **korean,
         )
         text = (recognized or "").strip()
         if self._condition_on_previous_text and text:
             self._remember(text)
-        if direction == "en_to_en" or self._engine != "gemini":
+        if direction in ("en_to_en", "en_to_ko") or self._engine != "gemini":
             return text
         if not text or self._translate is None:
             return ""

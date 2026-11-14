@@ -9,7 +9,7 @@ from functools import partial
 from fastapi import FastAPI
 
 from core.event_bus import EventBus
-from core.settings import Settings
+from core.settings import HERMENEIA_MODELS, Settings
 from features.operator_control.events import (
     CaptionEngineChangedEvent,
     GeminiKeyChangedEvent,
@@ -156,9 +156,10 @@ class TranslateSlice:
                 mode=self._mode or settings.translate_mode,
                 queue_size=settings.translate_queue_size,
                 condition_on_previous_text=settings.condition_on_previous_text,
+                seamless=_is_seamless(runs_on),
             )
         elif runs_on != self.worker_runs_on:
-            self.worker.use_transcribe(self._whisper_transcribe(runs_on))
+            self.worker.use_transcribe(self._whisper_transcribe(runs_on), seamless=_is_seamless(runs_on))
         self.worker_runs_on = runs_on
         await self._run("worker")
 
@@ -220,6 +221,11 @@ def _whisper_place(settings: Settings) -> object:
             settings.hermeneia_model,
         )
     return "this PC"
+
+
+def _is_seamless(runs_on: object) -> bool:
+    """Seamless on Hermeneia writes Korean; Whisper, here or there, only English."""
+    return isinstance(runs_on, tuple) and runs_on[3] == HERMENEIA_MODELS["seamless_hermeneia"]
 
 
 def _hermeneia_transcribe(settings: Settings | None) -> TranscribeFn:
@@ -305,22 +311,25 @@ def register(
         def transcribe(_pcm: bytes, **_kwargs: object) -> str:
             return ""
 
+    # None while the worker holds the empty stand-in, so a later load always goes into it.
+    runs_on: object = None
+    if local_transcribe is not None:
+        runs_on = "this PC"
+    elif settings.hermeneia():
+        runs_on = _whisper_place(settings)
     worker = TranslateWorker(
         bus,
         transcribe,
         mode=settings.translate_mode,
         queue_size=settings.translate_queue_size,
         condition_on_previous_text=settings.condition_on_previous_text,
+        seamless=_is_seamless(runs_on),
     )
     if app is not None:
         app.state.whisper_profile = profile
     slice_ = TranslateSlice(worker)
     slice_.local_transcribe = local_transcribe
     slice_.load_local = load_local
-    # None while the worker holds the empty stand-in, so a later load always goes into it.
-    if local_transcribe is not None:
-        slice_.worker_runs_on = "this PC"
-    elif settings.hermeneia():
-        slice_.worker_runs_on = _whisper_place(settings)
+    slice_.worker_runs_on = runs_on
     slice_.watch_gemini_key(bus, settings, connect_factory, cleanup_factory)
     return slice_

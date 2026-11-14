@@ -30,6 +30,8 @@ Bible books and references as in the 개역개정 Bible: Genesis → 창세기, 
 
 # Booth control's caption engines. The two on Hermeneia name the model the server runs.
 CAPTION_ENGINES = ("gemini_live", "whisper_local", "whisper_hermeneia", "seamless_hermeneia")
+# The engines that write Korean captions (en_to_ko). Whisper only translates into English.
+KOREAN_ENGINES = ("gemini_live", "seamless_hermeneia")
 # What booth control calls each engine.
 ENGINE_NAMES = {
     "gemini_live": "Gemini live",
@@ -95,6 +97,9 @@ class Settings(BaseSettings):
     def hermeneia(self) -> bool:
         """Whether Whisper runs on the Hermeneia server rather than this PC."""
         return self.use_hermeneia and bool(self.hermeneia_url.strip() and self.hermeneia_token.strip())
+
+    def writes_korean(self) -> bool:
+        return self.engine() in KOREAN_ENGINES
 
     def engine(self) -> str:
         """The booth control engine these settings run: one of CAPTION_ENGINES."""

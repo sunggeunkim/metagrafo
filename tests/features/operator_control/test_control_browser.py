@@ -287,10 +287,19 @@ def test_engine_buttons_switch_to_seamless_and_grey_out_what_cannot_run(browser,
         assert page.is_disabled("#engine-whisper_local")
         assert page.is_enabled("#engine-seamless_hermeneia")
 
+        # Whisper on Hermeneia writes only English.
+        assert page.is_disabled("#mode-en-ko")
+
         page.click("#engine-seamless_hermeneia")
         page.wait_for_selector("#engine-seamless_hermeneia.active")
         assert "engine Seamless on Hermeneia" in page.inner_text("body")
         assert not page.is_visible("#engine-whisper_hermeneia.active")
+        # Seamless writes Korean, and while it does, Whisper on Hermeneia cannot be picked.
+        page.wait_for_selector("#mode-en-ko:enabled")
+        page.click("#mode-en-ko")
+        page.wait_for_selector("#mode-en-ko.active")
+        page.wait_for_selector("#engine-whisper_hermeneia:disabled")
+        assert page.is_enabled("#engine-seamless_hermeneia")
     finally:
         page.close()
 
