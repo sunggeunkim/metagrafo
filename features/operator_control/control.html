@@ -156,11 +156,14 @@
   <input id="gemini-key" class="key" type="password" autocomplete="off" />
   <button id="gemini-save" class="mode">Save key</button>
   <h2>Caption engine</h2>
-  <p class="hint"><strong>Gemini live</strong> translates as the speaker talks and needs the Gemini key. <strong>Whisper</strong> captions each stretch of speech once the speaker pauses, on the church's Hermeneia server once its token is saved, and only into English. The switch takes effect at once, and this computer keeps the choice for the next time.</p>
-  <button id="engine-gemini" class="mode">Gemini live</button>
-  <button id="engine-whisper" class="mode">Whisper</button>
+  <p class="hint"><strong>Gemini live</strong> translates as the speaker talks and needs the Gemini key. The other three caption each stretch of speech once the speaker pauses, and only into English. <strong>Whisper on this PC</strong> needs Whisper installed and an NVIDIA GPU with room beside OBS; it loads the first time you pick it, which can take a minute. <strong>Whisper on Hermeneia</strong> and <strong>Seamless on Hermeneia</strong> run on the church's server and need its token. The server holds one model at a time, so every booth on it should pick the same one. The switch takes effect at once, and this computer keeps the choice for the next time.</p>
+  <button id="engine-gemini_live" class="mode engine" data-engine="gemini_live">Gemini live</button>
+  <button id="engine-whisper_local" class="mode engine" data-engine="whisper_local">Whisper on this PC</button>
+  <button id="engine-whisper_hermeneia" class="mode engine" data-engine="whisper_hermeneia">Whisper on Hermeneia</button>
+  <button id="engine-seamless_hermeneia" class="mode engine" data-engine="seamless_hermeneia">Seamless on Hermeneia</button>
+  <p id="engine-status" class="hint"></p>
   <h2>Hermeneia token</h2>
-  <p class="hint">Paste the Hermeneia token you were given, then Save token. Whisper then runs on the Hermeneia server instead of this computer, and this computer keeps the token for the next time you open Metagrafo.</p>
+  <p class="hint">Paste the Hermeneia token you were given, then Save token. This computer keeps it for <strong>Whisper on Hermeneia</strong> and <strong>Seamless on Hermeneia</strong>, and for the next time you open Metagrafo. If Whisper runs here only because no token was saved, it moves to <strong>Whisper on Hermeneia</strong>. If you picked <strong>Whisper on this PC</strong>, it stays there until you pick one of the Hermeneia buttons.</p>
   <label for="hermeneia-token">Hermeneia token</label>
   <input id="hermeneia-token" class="key" type="password" autocomplete="off" />
   <button id="hermeneia-save" class="mode">Save token</button>
@@ -283,6 +286,13 @@
       // Another /control tab may have started or stopped captions.
       showCaptions(s.captions_active);
     }
+    const ENGINE_NAMES = {
+      gemini_live: "Gemini live",
+      whisper_local: "Whisper on this PC",
+      whisper_hermeneia: "Whisper on Hermeneia",
+      seamless_hermeneia: "Seamless on Hermeneia",
+    };
+    let engineSwitching = false;
     let captionsActive = true;
     function showCaptions(active) {
       captionsActive = active;
@@ -310,7 +320,7 @@
         " · box " + s.box_width_pct + "×" + s.box_height_pct + " %" +
         " · inset " + s.inset_vertical_pct + "/" + s.inset_horizontal_pct + " %" +
         " · Gemini key " + (s.gemini_key_set ? "saved" : "needed") +
-        " · engine " + (s.caption_engine === "gemini_live" ? "Gemini live" : "Whisper") +
+        " · engine " + ENGINE_NAMES[s.caption_engine] +
         " · Hermeneia token " + (s.hermeneia_token_set ? "saved" : "not saved") +
         " · YouTube captions " + (s.youtube_url_set ? "on" : "off");
       refreshYouTube();
@@ -319,10 +329,16 @@
       document.getElementById("mode-en").classList.toggle("active", s.mode === "en_to_en");
       document.getElementById("mode-en-ko").classList.toggle("active", s.mode === "en_to_ko");
       document.getElementById("mode-en-ko").disabled = !s.gemini_live;
-      document.getElementById("engine-gemini").classList.toggle("active", s.caption_engine === "gemini_live");
-      document.getElementById("engine-whisper").classList.toggle("active", s.caption_engine === "whisper");
-      document.getElementById("engine-gemini").disabled = !s.gemini_key_set;
-      document.getElementById("engine-whisper").disabled = !s.whisper_ready || s.mode === "en_to_ko";
+      const engineReady = {
+        gemini_live: s.gemini_key_set,
+        whisper_local: s.whisper_local_ready && s.mode !== "en_to_ko",
+        whisper_hermeneia: s.hermeneia_token_set && s.mode !== "en_to_ko",
+        seamless_hermeneia: s.hermeneia_token_set && s.mode !== "en_to_ko",
+      };
+      document.querySelectorAll(".engine").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.engine === s.caption_engine);
+        btn.disabled = engineSwitching || !engineReady[btn.dataset.engine];
+      });
       document.querySelectorAll(".pos").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.pos === s.position);
       });
@@ -516,19 +532,30 @@
       refresh();
     };
     async function setEngine(engine) {
-      const response = await fetch("/caption-engine", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ engine }),
-      });
-      if (!response.ok) {
-        const body = await response.json();
-        alert(typeof body.detail === "string" ? body.detail : "Engine not changed");
+      // Whisper on this PC loads before the switch answers, which can take a minute.
+      const status = document.getElementById("engine-status");
+      engineSwitching = true;
+      document.querySelectorAll(".engine").forEach((btn) => { btn.disabled = true; });
+      status.textContent = "Switching to " + ENGINE_NAMES[engine] + "…";
+      try {
+        const response = await fetch("/caption-engine", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ engine }),
+        });
+        if (!response.ok) {
+          const body = await response.json();
+          alert(typeof body.detail === "string" ? body.detail : "Engine not changed");
+        }
+      } finally {
+        engineSwitching = false;
+        status.textContent = "";
+        refresh();
       }
-      refresh();
     }
-    document.getElementById("engine-gemini").onclick = () => setEngine("gemini_live");
-    document.getElementById("engine-whisper").onclick = () => setEngine("whisper");
+    document.querySelectorAll(".engine").forEach((btn) => {
+      btn.onclick = () => setEngine(btn.dataset.engine);
+    });
     document.getElementById("hermeneia-save").onclick = async () => {
       const token = document.getElementById("hermeneia-token").value;
       const response = await fetch("/hermeneia-token", {

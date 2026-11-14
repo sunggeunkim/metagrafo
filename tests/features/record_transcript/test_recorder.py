@@ -224,7 +224,7 @@ def test_the_file_notes_the_settings_at_the_start_and_each_booth_change(env_file
     assert _without_clock_time(records[0]) == {
         "t_s": 0.0,
         "kind": "start",
-        "engine": "whisper",
+        "engine": "whisper_local",
         "captions_active": True,
         "mode": "ko_to_en",
         "whole_sentences": True,

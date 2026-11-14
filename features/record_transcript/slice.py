@@ -128,7 +128,7 @@ def register(
     def current() -> dict[str, object]:
         operator = app.state.operator
         return {
-            "engine": "gemini_live" if settings.gemini_live() else "whisper",
+            "engine": settings.engine(),
             "captions_active": operator.captions_active,
             "mode": operator.mode.value,
             "whole_sentences": operator.whole_sentences,
