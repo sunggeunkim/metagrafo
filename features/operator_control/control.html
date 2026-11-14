@@ -162,6 +162,12 @@
   <button id="engine-whisper_hermeneia" class="mode engine" data-engine="whisper_hermeneia">Whisper on Hermeneia</button>
   <button id="engine-seamless_hermeneia" class="mode engine" data-engine="seamless_hermeneia">Seamless on Hermeneia</button>
   <p id="engine-status" class="hint"></p>
+  <h2>Install Whisper</h2>
+  <p class="hint">Start Metagrafo.cmd does not install Whisper, so <strong>Whisper on this PC</strong> stays greyed out until it is installed. <strong>Check this PC</strong> looks at the NVIDIA GPU, its memory free beside OBS, the driver and the disk, and says whether Whisper would run here, before anything is downloaded. If it would, <strong>Install Whisper</strong> downloads it and its model in the background, about 4–5 GB; captions keep running, and pip's progress shows under Log.</p>
+  <button id="whisper-check" class="mode">Check this PC</button>
+  <button id="whisper-install" class="mode" hidden>Install Whisper</button>
+  <p id="whisper-check-result" class="hint" style="white-space: pre-line"></p>
+  <p id="whisper-install-status" class="hint"></p>
   <h2>Hermeneia token</h2>
   <p class="hint">Paste the Hermeneia token you were given, then Save token. This computer keeps it for <strong>Whisper on Hermeneia</strong> and <strong>Seamless on Hermeneia</strong>, and for the next time you open Metagrafo. If Whisper runs here only because no token was saved, it moves to <strong>Whisper on Hermeneia</strong>. If you picked <strong>Whisper on this PC</strong>, it stays there until you pick one of the Hermeneia buttons.</p>
   <label for="hermeneia-token">Hermeneia token</label>
@@ -608,7 +614,46 @@
         "<h1>Metagrafo has stopped</h1>" +
         "<p>To start it again, double-click <strong>Start Metagrafo.cmd</strong>.</p>";
     };
+    // Whisper on this PC: check first, and offer Install only when the check allows it.
+    const whisperResult = document.getElementById("whisper-check-result");
+    const whisperInstall = document.getElementById("whisper-install");
+    document.getElementById("whisper-check").onclick = async () => {
+      whisperResult.textContent = "Checking this PC…";
+      whisperInstall.hidden = true;
+      const result = await (await fetch("/whisper-check")).json();
+      whisperResult.textContent = result.message;
+      whisperInstall.hidden = !result.can_install;
+    };
+    whisperInstall.onclick = async () => {
+      // One click: the check before the install takes a moment.
+      whisperInstall.disabled = true;
+      const response = await fetch("/whisper-install", { method: "POST" });
+      whisperInstall.disabled = false;
+      if (!response.ok) {
+        const body = await response.json();
+        alert(typeof body.detail === "string" ? body.detail : "Whisper did not install");
+        return;
+      }
+      whisperInstall.hidden = true;
+      followInstall();
+    };
+    async function followInstall() {
+      // Another tab may have started it; Metagrafo keeps one install at a time.
+      const status = await (await fetch("/whisper-install")).json();
+      const shown = document.getElementById("whisper-install-status");
+      document.getElementById("whisper-check").disabled = status.state === "installing";
+      if (status.state === "installing") {
+        shown.textContent = status.step;
+        setTimeout(followInstall, 2000);
+        return;
+      }
+      shown.textContent = status.state === "done"
+        ? "Whisper is installed. Pick Whisper on this PC under Caption engine."
+        : status.state === "failed" ? status.error : "";
+      refresh();
+    }
     refresh();
+    followInstall();
     loadAudioDevices();
     // Filled once on load, not on every refresh, so text being typed is never overwritten.
     fetch("/mode").then((r) => r.json()).then((s) => {

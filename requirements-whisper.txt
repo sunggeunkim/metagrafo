@@ -1,0 +1,6 @@
+# Whisper on this PC. Start Metagrafo.cmd installs only requirements-gemini.txt;
+# booth control's Install Whisper adds these, pinned to what is already installed.
+faster-whisper>=1.2.1
+nvidia-cublas-cu12>=12.9.2.10
+nvidia-cuda-runtime-cu12>=12.9.79
+nvidia-cudnn-cu12>=9,<10

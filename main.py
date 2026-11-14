@@ -20,6 +20,7 @@ from core.settings import Settings
 from features import (
     broadcast_subtitles,
     capture_audio,
+    install_whisper,
     operator_control,
     record_transcript,
     translate_speech,
@@ -67,6 +68,7 @@ def create_app(
             await capture.stop()
         await translator.stop()
         await youtube.stop()
+        await app.state.install_whisper.stop()
         await transcript.stop()
 
     app = FastAPI(title="metagrafo", lifespan=lifespan)
@@ -94,6 +96,8 @@ def create_app(
         gemini_connect_factory=gemini_connect_factory,
         gemini_cleanup_factory=gemini_cleanup_factory,
     )
+    # After the translator, which sets the Whisper profile the check reads.
+    app.state.install_whisper = install_whisper.register(app, settings)
     broadcast_subtitles.register(app, bus, settings)
     app.state.youtube_captions = youtube_captions.register(app, bus, settings)
     app.state.record_transcript = record_transcript.register(
