@@ -13,7 +13,7 @@ from features.operator_control.events import (
     ModeChangedEvent,
     TranslateMode,
     languages_for,
-    needs_gemini,
+    korean_captions,
 )
 from features.translate_speech.captioner import Captioner
 from features.translate_speech.events import SubtitleEvent
@@ -34,6 +34,7 @@ class TranslateWorker:
         engine: str = "whisper",
         translate=None,
         condition_on_previous_text: bool = False,
+        korean: bool = False,
     ) -> None:
         self._bus = bus
         self._captioner = Captioner(
@@ -42,7 +43,10 @@ class TranslateWorker:
             translate=translate,
             condition_on_previous_text=condition_on_previous_text,
         )
-        self._mode = _whisper_mode(TranslateMode(mode))
+        # The mode the booth picked, and whether `transcribe` writes Korean (Seamless on Hermeneia).
+        self._picked = TranslateMode(mode)
+        self._korean = korean
+        self._mode = self._runnable_mode()
         self._queue: asyncio.Queue[AudioChunkEvent] = asyncio.Queue(maxsize=queue_size)
         self._active = True
         bus.subscribe(CaptionsStateEvent, self._on_captions)
@@ -50,9 +54,17 @@ class TranslateWorker:
         bus.subscribe(ConditionOnPreviousTextEvent, self._on_previous_text)
         bus.subscribe(AudioChunkEvent, self._on_chunk)
 
-    def use_transcribe(self, transcribe: TranscribeFn) -> None:
-        """Whisper moved, between this PC and Hermeneia: the next chunk goes to `transcribe`."""
+    def use_transcribe(self, transcribe: TranscribeFn, *, korean: bool = False) -> None:
+        """Speech moved (this PC, Hermeneia, another model): the next chunk goes to `transcribe`."""
         self._captioner.use_recognize(transcribe)
+        self._korean = korean
+        self._mode = self._runnable_mode()
+
+    def _runnable_mode(self) -> TranslateMode:
+        """Whisper cannot write Korean, so there en_to_ko falls back to the sermon mode."""
+        if korean_captions(self._picked) and not self._korean:
+            return TranslateMode.KO_TO_EN
+        return self._picked
 
     def drop_waiting(self) -> None:
         """Chunks queued while Gemini ran are stale, so they never become captions."""
@@ -81,9 +93,10 @@ class TranslateWorker:
 
     async def _on_mode(self, event: ModeChangedEvent) -> None:
         try:
-            self._mode = _whisper_mode(TranslateMode(event.mode))
+            self._picked = TranslateMode(event.mode)
         except ValueError:
-            self._mode = TranslateMode.KO_TO_EN
+            self._picked = TranslateMode.KO_TO_EN
+        self._mode = self._runnable_mode()
 
     async def _on_chunk(self, event: AudioChunkEvent) -> None:
         if not self._active:
@@ -138,7 +151,3 @@ class TranslateWorker:
             )
         )
 
-
-def _whisper_mode(mode: TranslateMode) -> TranslateMode:
-    """Whisper cannot write Korean, so a Gemini-only mode falls back to the sermon mode."""
-    return TranslateMode.KO_TO_EN if needs_gemini(mode) else mode

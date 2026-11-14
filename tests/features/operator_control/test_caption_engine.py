@@ -58,6 +58,7 @@ class _Booth:
         self.models: list[str] = []
         self.loads = 0
         self.captions: list[str] = []
+        self.subtitles: list[SubtitleEvent] = []
         # Install Whisper can make this true while Metagrafo runs.
         self.installed = whisper_installed
 
@@ -65,7 +66,14 @@ class _Booth:
             self.servers.append((url, token))
             self.models.append(model)
             name = "Seamless" if model == "seamless-m4t-v2" else "Whisper"
-            return lambda _pcm, **_kw: f"Hello from {name} on Hermeneia."
+
+            def transcribe(_pcm, **kwargs):
+                # The client sends the target: Seamless writes Korean when asked, Whisper never.
+                if name == "Seamless" and kwargs.get("target_language") == "ko":
+                    return "안녕하세요, 하나님의 말씀입니다."
+                return f"Hello from {name} on Hermeneia."
+
+            return transcribe
 
         def make_transcribe(_profile):
             if not self.installed:
@@ -100,6 +108,7 @@ class _Booth:
 
         async def collect(event: SubtitleEvent) -> None:
             self.captions.append(event.text)
+            self.subtitles.append(event)
 
         self.app.state.bus.subscribe(SubtitleEvent, collect)
 
@@ -467,3 +476,44 @@ def test_whisper_on_this_pc_is_refused_when_korean_captions_start_while_it_loads
         assert client.get("/mode").json()["caption_engine"] == "gemini_live"
     # .env is left as it was: nothing saved Whisper.
     assert booth.env_file.read_text(encoding="utf-8") == ""
+
+
+def test_seamless_on_hermeneia_writes_korean_captions_in_en_to_ko(tmp_path, monkeypatch) -> None:
+    booth = _Booth(tmp_path, monkeypatch, caption_engine="whisper", hermeneia_token="tok-42")
+    with TestClient(booth.app) as client:
+        # Whisper on Hermeneia only writes English.
+        assert client.get("/mode").json()["writes_korean"] is False
+        assert client.put("/mode", json={"mode": "en_to_ko"}).status_code == 409
+        assert client.put("/caption-engine", json={"engine": "seamless_hermeneia"}).status_code == 200
+        assert client.get("/mode").json()["writes_korean"] is True
+        response = client.put("/mode", json={"mode": "en_to_ko"})
+        assert response.status_code == 200
+        assert booth.speak(client) == "안녕하세요, 하나님의 말씀입니다."
+    last = booth.subtitles[-1]
+    assert (last.mode, last.source_language, last.target_language) == ("en_to_ko", "en", "ko")
+
+
+def test_seamless_keeps_korean_captions_when_picked_from_gemini_in_en_to_ko(tmp_path, monkeypatch) -> None:
+    booth = _Booth(
+        tmp_path, monkeypatch, caption_engine="gemini_live", gemini_api_key="gem-key", hermeneia_token="tok-42"
+    )
+    with TestClient(booth.app) as client:
+        assert client.put("/mode", json={"mode": "en_to_ko"}).status_code == 200
+        assert client.put("/caption-engine", json={"engine": "seamless_hermeneia"}).status_code == 200
+        assert client.get("/mode").json()["mode"] == "en_to_ko"
+        assert booth.speak(client) == "안녕하세요, 하나님의 말씀입니다."
+
+
+@pytest.mark.parametrize("engine", ["whisper_hermeneia", "whisper_local"])
+def test_whisper_is_refused_while_seamless_writes_korean(tmp_path, monkeypatch, engine: str) -> None:
+    booth = _Booth(tmp_path, monkeypatch, caption_engine="whisper", hermeneia_token="tok-42", load_whisper=True)
+    with TestClient(booth.app) as client:
+        client.put("/caption-engine", json={"engine": "seamless_hermeneia"})
+        client.put("/mode", json={"mode": "en_to_ko"})
+        response = client.put("/caption-engine", json={"engine": engine})
+        assert response.status_code == 409
+        assert "Korean" in response.json()["detail"]
+        assert client.get("/mode").json()["caption_engine"] == "seamless_hermeneia"
+        assert booth.speak(client) == "안녕하세요, 하나님의 말씀입니다."
+    # Whisper on this PC never loaded for a pick that was refused.
+    assert booth.loads == 0

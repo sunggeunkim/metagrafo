@@ -11,7 +11,14 @@ from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core.event_bus import EventBus
-from core.settings import ENGINE_NAMES, GLOSSARY_DEFAULT, HERMENEIA_MODELS, KOREAN_STYLE_DEFAULT, Settings
+from core.settings import (
+    ENGINE_NAMES,
+    GLOSSARY_DEFAULT,
+    HERMENEIA_MODELS,
+    KOREAN_ENGINES,
+    KOREAN_STYLE_DEFAULT,
+    Settings,
+)
 from features.operator_control.events import (
     AudioDeviceChangedEvent,
     CaptionEngineChangedEvent,
@@ -33,7 +40,7 @@ from features.operator_control.events import (
     WholeSentencesEvent,
     YouTubeCaptionUrlChangedEvent,
     languages_for,
-    needs_gemini,
+    korean_captions,
 )
 
 _CONTROL_PAGE = Path(__file__).with_name("control.html")
@@ -293,7 +300,7 @@ def register(
         initial_mode = TranslateMode(settings.translate_mode)
     except ValueError:
         initial_mode = TranslateMode.KO_TO_EN
-    if needs_gemini(initial_mode) and not settings.gemini_live():
+    if korean_captions(initial_mode) and not settings.writes_korean():
         initial_mode = TranslateMode.KO_TO_EN
     # A key pasted later starts Gemini from this setting, so it must match the booth.
     settings.translate_mode = initial_mode.value
@@ -332,6 +339,7 @@ def register(
         body = state.snapshot()
         body["gemini_key_set"] = bool(settings.gemini_api_key.strip())
         body["gemini_live"] = settings.gemini_live()
+        body["writes_korean"] = settings.writes_korean()
         body["caption_engine"] = settings.engine()
         body["hermeneia_token_set"] = bool(settings.hermeneia_token.strip())
         body["whisper_local_ready"] = whisper_local_ready()
@@ -425,10 +433,10 @@ def register(
         pick = engine_picks
 
         def refuse_in_korean() -> None:
-            if needs_gemini(state.mode):
+            if korean_captions(state.mode):
                 raise HTTPException(
                     status_code=409,
-                    detail="Only Gemini live writes Korean captions. Pick another mode first.",
+                    detail="Only Gemini live and Seamless on Hermeneia write Korean captions. Pick another mode first.",
                 )
 
         if body.engine == "gemini_live":
@@ -436,7 +444,8 @@ def register(
                 raise HTTPException(status_code=409, detail="Gemini needs a key. Save a Gemini key first.")
             values = {"CAPTION_ENGINE": "gemini_live"}
         else:
-            refuse_in_korean()
+            if body.engine not in KOREAN_ENGINES:
+                refuse_in_korean()
             if body.engine == "whisper_local":
                 # Loaded before the switch, so a GPU that cannot hold it leaves the engine as it was.
                 translator = getattr(app.state, "translator", None)
@@ -512,10 +521,10 @@ def register(
 
     @app.put("/mode")
     async def put_mode(body: ModeBody) -> dict[str, object]:
-        if needs_gemini(body.mode) and not settings.gemini_live():
+        if korean_captions(body.mode) and not settings.writes_korean():
             raise HTTPException(
                 status_code=409,
-                detail="Korean captions need Gemini. Save a Gemini key first.",
+                detail="Korean captions need Gemini live or Seamless on Hermeneia. Pick one of them first.",
             )
         state.mode = body.mode
         source, target = languages_for(state.mode)

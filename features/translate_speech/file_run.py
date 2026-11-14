@@ -4,7 +4,7 @@ from pathlib import Path
 
 from features.capture_audio.chunker import SpeechChunker
 from features.capture_audio.wav import frames_from_wav
-from features.operator_control.events import TranslateMode, needs_gemini
+from features.operator_control.events import TranslateMode, korean_captions
 from features.translate_speech.captioner import Captioner
 
 
@@ -26,7 +26,7 @@ def run_wav(
         translate_mode = TranslateMode(mode)
     except ValueError:
         translate_mode = TranslateMode.KO_TO_EN
-    if needs_gemini(translate_mode):
+    if korean_captions(translate_mode):
         translate_mode = TranslateMode.KO_TO_EN
     captioner = Captioner(
         transcribe,
