@@ -93,13 +93,13 @@
     <button id="context-on" class="on">Previous text ON</button>
   </div>
   <h2>Whole sentences</h2>
-  <p class="hint">Gemini only. <strong>On</strong> (default) shows each line once it is finished instead of word by word, joins a short sentence like "Yes." to the next one, waits for each sentence to end, shows a long sentence up to its last comma once it has run about 15 seconds, and leaves out "uh", "um" and repeated words. <strong>Off</strong> grows the bottom line as the words arrive. Starts with the next line, and this computer keeps the choice for the next time.</p>
+  <p class="hint">Gemini live only. <strong>On</strong> (default) shows each line once it is finished instead of word by word, joins a short sentence like "Yes." to the next one, waits for each sentence to end, shows a long sentence up to its last comma once it has run about 15 seconds, and leaves out "uh", "um" and repeated words. <strong>Off</strong> grows the bottom line as the words arrive. Starts with the next line, and this computer keeps the choice for the next time.</p>
   <label class="check"><input id="whole-sentences" type="checkbox" /> Whole sentences</label>
   <h2>Clean up wording</h2>
-  <p class="hint">Gemini only, and only with Whole sentences on. <strong>On</strong> (default) sends each finished line to a fast Gemini text model with the last few lines shown, to take out false starts and make it read naturally, without changing the meaning, names, or scripture references. If it takes longer than about 8 s, the line shows as heard. The cleaned line is what the overlay and YouTube captions get. Starts with the next line, and this computer keeps the choice for the next time.</p>
+  <p class="hint">Gemini live only, and only with Whole sentences on. <strong>On</strong> (default) sends each finished line to a fast Gemini text model with the last few lines shown, to take out false starts and make it read naturally, without changing the meaning, names, or scripture references. If it takes longer than about 8 s, the line shows as heard. The cleaned line is what the overlay and YouTube captions get. Starts with the next line, and this computer keeps the choice for the next time.</p>
   <label class="check"><input id="clean-up-wording" type="checkbox" /> Clean up wording</label>
   <h2>Additional context</h2>
-  <p class="hint">Gemini only, used by Clean up wording. A few lines about this service help the text model get names, scripture references and terms right, for example the title, the passage, the speaker, and names or words likely to come up. You can also ask for a wording or style here, for example <em>Style: use 합니다체, never 해요체</em>. How Korean captions are worded is set under Korean style below. It is background only and never shows on screen. Up to 2000 characters. Starts with the next cleaned line. It is forgotten when Metagrafo quits, so each service starts with an empty box.</p>
+  <p class="hint">Used by Gemini live's Clean up wording, and by Gemini on pauses for every line, whether Clean up wording is on or off. A few lines about this service help the text model get names, scripture references and terms right, for example the title, the passage, the speaker, and names or words likely to come up. You can also ask for a wording or style here, for example <em>Style: use 합니다체, never 해요체</em>. How Korean captions are worded is set under Korean style below. It is background only and never shows on screen. Up to 2000 characters. Starts with the next cleaned line. It is forgotten when Metagrafo quits, so each service starts with an empty box.</p>
   <textarea id="cleanup-context" rows="4" maxlength="2000"></textarea>
   <div>
     <button id="cleanup-context-save" class="mode">Save context</button>
@@ -107,7 +107,7 @@
   </div>
   <p id="cleanup-context-status" class="hint"></p>
   <h2>Korean style</h2>
-  <p class="hint">Gemini only, used by Clean up wording on Korean captions (English guest → Korean). It tells the text model how to word each Korean line. The default is formal sermon language: 합니다체 endings, never 해요체 or 반말, with honorifics only for God and Jesus (none for the speaker's own title), 여러분 only where the speaker says "you" (never 당신, never added), and natural Korean word order (time and place phrases before the verb, not trailing after the sentence as in English). Edit it for a different service, for example a youth service, and click <strong>Save style</strong>. Save it empty to keep each line as it was translated. <strong>Reset to default</strong> brings back the formal style. Up to 1000 characters. Starts with the next cleaned line, and this computer keeps it for the next time. Lines that cleanup cannot finish within about 4 s keep their translated wording.</p>
+  <p class="hint">Used on Korean captions (English guest → Korean) by Gemini live's Clean up wording, and by Gemini on pauses for every line, whether Clean up wording is on or off. It tells the text model how to word each Korean line. The default is formal sermon language: 합니다체 endings, never 해요체 or 반말, with honorifics only for God and Jesus (none for the speaker's own title), 여러분 only where the speaker says "you" (never 당신, never added), and natural Korean word order (time and place phrases before the verb, not trailing after the sentence as in English). Edit it for a different service, for example a youth service, and click <strong>Save style</strong>. Save it empty to keep each line as it was translated. <strong>Reset to default</strong> brings back the formal style. Up to 1000 characters. Starts with the next cleaned line, and this computer keeps it for the next time. Lines that cleanup cannot finish within about 4 s keep their translated wording.</p>
   <textarea id="korean-style" rows="3" maxlength="1000"></textarea>
   <div>
     <button id="korean-style-save" class="mode">Save style</button>
@@ -115,7 +115,7 @@
   </div>
   <p id="korean-style-status" class="hint"></p>
   <h2>Glossary</h2>
-  <p class="hint">Gemini only, used by Clean up wording. Church words the text model keeps to in every service, one group per line, for example <em>God → 하나님 (never 신)</em>. It works both ways, for Korean and English captions. The default holds common church terms and 개역개정 Bible book names. Add a term when the same mistake keeps coming back across services; one sermon's names and topics belong in Additional context instead. <strong>Save glossary</strong> keeps your list (empty turns it off), and <strong>Reset to default</strong> brings back the church terms. Up to 3000 characters. Starts with the next cleaned line, and this computer keeps it for the next time.</p>
+  <p class="hint">Used by Gemini live's Clean up wording, and by Gemini on pauses for every line, whether Clean up wording is on or off. Church words the text model keeps to in every service, one group per line, for example <em>God → 하나님 (never 신)</em>. It works both ways, for Korean and English captions. The default holds common church terms and 개역개정 Bible book names. Add a term when the same mistake keeps coming back across services; one sermon's names and topics belong in Additional context instead. <strong>Save glossary</strong> keeps your list (empty turns it off), and <strong>Reset to default</strong> brings back the church terms. Up to 3000 characters. Starts with the next cleaned line, and this computer keeps it for the next time.</p>
   <textarea id="glossary" rows="8" maxlength="3000"></textarea>
   <div>
     <button id="glossary-save" class="mode">Save glossary</button>
@@ -156,8 +156,9 @@
   <input id="gemini-key" class="key" type="password" autocomplete="off" />
   <button id="gemini-save" class="mode">Save key</button>
   <h2>Caption engine</h2>
-  <p class="hint"><strong>Gemini live</strong> translates as the speaker talks and needs the Gemini key. The other three caption each stretch of speech once the speaker pauses. Whisper writes only English; Seamless also writes Korean for en_to_ko. <strong>Whisper on this PC</strong> needs Whisper installed and an NVIDIA GPU with room beside OBS; it loads the first time you pick it, which can take a minute. <strong>Whisper on Hermeneia</strong> and <strong>Seamless on Hermeneia</strong> run on the church's server and need its token. The server holds one model at a time, so every booth on it should pick the same one. The switch takes effect at once, and this computer keeps the choice for the next time.</p>
+  <p class="hint"><strong>Gemini live</strong> translates as the speaker talks and needs the Gemini key. The other four caption each stretch of speech once the speaker pauses. <strong>Gemini on pauses</strong> sends each stretch to a Gemini model, which hears it and writes the caption, also needing the Gemini key. Whisper writes only English; Gemini on pauses and Seamless also write Korean for en_to_ko. <strong>Whisper on this PC</strong> needs Whisper installed and an NVIDIA GPU with room beside OBS; it loads the first time you pick it, which can take a minute. <strong>Whisper on Hermeneia</strong> and <strong>Seamless on Hermeneia</strong> run on the church's server and need its token. The server holds one model at a time, so every booth on it should pick the same one. The switch takes effect at once, and this computer keeps the choice for the next time.</p>
   <button id="engine-gemini_live" class="mode engine" data-engine="gemini_live">Gemini live</button>
+  <button id="engine-gemini_pauses" class="mode engine" data-engine="gemini_pauses">Gemini on pauses</button>
   <button id="engine-whisper_local" class="mode engine" data-engine="whisper_local">Whisper on this PC</button>
   <button id="engine-whisper_hermeneia" class="mode engine" data-engine="whisper_hermeneia">Whisper on Hermeneia</button>
   <button id="engine-seamless_hermeneia" class="mode engine" data-engine="seamless_hermeneia">Seamless on Hermeneia</button>
@@ -294,6 +295,7 @@
     }
     const ENGINE_NAMES = {
       gemini_live: "Gemini live",
+      gemini_pauses: "Gemini on pauses",
       whisper_local: "Whisper on this PC",
       whisper_hermeneia: "Whisper on Hermeneia",
       seamless_hermeneia: "Seamless on Hermeneia",
@@ -337,6 +339,7 @@
       document.getElementById("mode-en-ko").disabled = !s.writes_korean;
       const engineReady = {
         gemini_live: s.gemini_key_set,
+        gemini_pauses: s.gemini_key_set,
         whisper_local: s.whisper_local_ready && s.mode !== "en_to_ko",
         whisper_hermeneia: s.hermeneia_token_set && s.mode !== "en_to_ko",
         seamless_hermeneia: s.hermeneia_token_set,

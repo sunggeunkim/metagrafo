@@ -145,28 +145,35 @@ class TranslateSlice:
             if self._gemini() is not None:
                 await self._run("live")
             return
-        runs_on = _whisper_place(settings)
+        runs_on = _speech_place(settings)
         if runs_on == "this PC" and self.local_transcribe is None:
             logger.warning("Whisper is not loaded on this PC: pick Whisper on this PC, or save the Hermeneia token")
             return
         if self.worker is None:
             self.worker = TranslateWorker(
                 self._bus,
-                self._whisper_transcribe(runs_on),
+                self._transcribe_for(runs_on),
                 mode=self._mode or settings.translate_mode,
                 queue_size=settings.translate_queue_size,
                 condition_on_previous_text=settings.condition_on_previous_text,
-                seamless=_is_seamless(runs_on),
+                writes_korean=_seamless_or_gemini(runs_on),
+                join_short=_seamless_or_gemini(runs_on),
             )
         elif runs_on != self.worker_runs_on:
-            self.worker.use_transcribe(self._whisper_transcribe(runs_on), seamless=_is_seamless(runs_on))
+            self.worker.use_transcribe(
+                self._transcribe_for(runs_on),
+                writes_korean=_seamless_or_gemini(runs_on),
+                join_short=_seamless_or_gemini(runs_on),
+            )
         self.worker_runs_on = runs_on
         await self._run("worker")
 
-    def _whisper_transcribe(self, runs_on: object) -> TranscribeFn:
+    def _transcribe_for(self, runs_on: object) -> TranscribeFn:
         if runs_on == "this PC":
             assert self.local_transcribe is not None
             return self.local_transcribe
+        if _on_gemini(runs_on):
+            return _gemini_pauses_transcribe(self._settings)
         return _hermeneia_transcribe(self._settings)
 
     async def _run(self, engine: str) -> None:
@@ -211,8 +218,11 @@ class TranslateSlice:
         self._running = None
 
 
-def _whisper_place(settings: Settings) -> object:
-    """Where speech goes for these settings: Hermeneia (address, token and model), or this PC."""
+def _speech_place(settings: Settings) -> object:
+    """Where each piece goes for these settings: Gemini (key and model), Hermeneia (address,
+    token and model), or Whisper on this PC."""
+    if settings.gemini_pauses():
+        return ("gemini", settings.gemini_api_key.strip(), settings.gemini_pauses_model)
     if settings.hermeneia():
         return (
             "hermeneia",
@@ -223,9 +233,37 @@ def _whisper_place(settings: Settings) -> object:
     return "this PC"
 
 
-def _is_seamless(runs_on: object) -> bool:
-    """Seamless on Hermeneia writes Korean; Whisper, here or there, only English."""
-    return isinstance(runs_on, tuple) and runs_on[3] == HERMENEIA_MODELS["seamless_hermeneia"]
+def _on_gemini(runs_on: object) -> bool:
+    return isinstance(runs_on, tuple) and runs_on[0] == "gemini"
+
+
+def _seamless_or_gemini(runs_on: object) -> bool:
+    """Gemini on pauses and Seamless on Hermeneia: both write Korean (Whisper, here or there,
+    only English), and both make text up from a second of audio, so short pieces are joined.
+    The worker's `writes_korean` and `join_short` follow it."""
+    if _on_gemini(runs_on):
+        return True
+    return (
+        isinstance(runs_on, tuple)
+        and runs_on[0] == "hermeneia"
+        and runs_on[3] == HERMENEIA_MODELS["seamless_hermeneia"]
+    )
+
+
+def _gemini_pauses_transcribe(settings: Settings | None) -> TranscribeFn:
+    from features.translate_speech.gemini_pauses_client import make_gemini_pauses_transcribe
+
+    assert settings is not None
+    # The booth's context, Korean style and glossary are read for every piece, as cleanup does.
+    return make_gemini_pauses_transcribe(
+        settings.gemini_api_key.strip(),
+        settings.gemini_pauses_model,
+        thinking_budget=settings.gemini_pauses_thinking_budget,
+        timeout_s=settings.gemini_pauses_timeout_s,
+        context=lambda: settings.cleanup_context,
+        korean_style=lambda: settings.korean_style,
+        glossary=lambda: settings.glossary,
+    )
 
 
 def _hermeneia_transcribe(settings: Settings | None) -> TranscribeFn:
@@ -298,7 +336,9 @@ def register(
         slice_.watch_gemini_key(bus, settings, connect_factory, cleanup_factory)
         return slice_
     local_transcribe = transcribe
-    if transcribe is None and settings.hermeneia():
+    if transcribe is None and settings.gemini_pauses():
+        transcribe = _gemini_pauses_transcribe(settings)
+    elif transcribe is None and settings.hermeneia():
         transcribe = _hermeneia_transcribe(settings)
     elif load_local is not None:
         try:
@@ -316,15 +356,16 @@ def register(
     runs_on: object = None
     if local_transcribe is not None:
         runs_on = "this PC"
-    elif settings.hermeneia():
-        runs_on = _whisper_place(settings)
+    elif settings.gemini_pauses() or settings.hermeneia():
+        runs_on = _speech_place(settings)
     worker = TranslateWorker(
         bus,
         transcribe,
         mode=settings.translate_mode,
         queue_size=settings.translate_queue_size,
         condition_on_previous_text=settings.condition_on_previous_text,
-        seamless=_is_seamless(runs_on),
+        writes_korean=_seamless_or_gemini(runs_on),
+        join_short=_seamless_or_gemini(runs_on),
     )
     if app is not None:
         app.state.whisper_profile = profile

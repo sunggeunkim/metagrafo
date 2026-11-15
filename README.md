@@ -112,6 +112,8 @@ GEMINI_API_KEY=your-key-here
 
 The model is `gemini-3.5-live-translate-preview`. Korean speech is translated to English while it is still coming in. With Gemini on, booth control also offers **en_to_ko**, which captions an English speaker in Korean (so does **Seamless on Hermeneia**). Get the key from [Google AI Studio](https://aistudio.google.com/api-keys). The key belongs only in `.env`. An empty key, or any other `CAPTION_ENGINE` value, stays on Whisper.
 
+**Gemini on pauses** (`CAPTION_ENGINE=gemini_pauses`, same key) waits for each pause instead. Every stretch of speech the booth cuts at a pause goes to a Gemini model (`GEMINI_PAUSES_MODEL`, default `gemini-4-hydrogen`, thinking budget `GEMINI_PAUSES_THINKING_BUDGET=0`, though gemini-4-hydrogen still thinks a little, `GEMINI_PAUSES_TIMEOUT_S=10`, the least Gemini accepts), which hears it and writes the caption in one call, in any mode, en_to_ko included. That call follows booth control's Korean style, glossary and additional context; Clean up wording is not used. Silence between stretches is never sent, a stretch under 2 s is joined to the next one (or sent alone after 1.5 s), and the model is told to leave the caption empty when it hears no one speaking: without that, it made sermon lines up from silence. A busy or rate-limited Gemini (503, 429) is tried once more; a stretch that still fails, or takes longer than the timeout, shows nothing. Stretches are captioned one at a time, so a slow call holds back the captions after it. Each stretch is one call billed to the Gemini key.
+
 ## Sign-in autostart
 
 Optional. Copy `scripts/Metagrafo.cmd` into the Startup folder so Metagrafo starts when you sign in:
@@ -206,7 +208,7 @@ Captions **default ON** when the process starts. Turn **OFF** during worship so 
 | Pre-service / worship / hymns | Leave captions stopped (**Stop captions**). Do not caption PGM music — Whisper will hallucinate. |
 | Pastor at the pulpit | **Start captions**. Mode **ko_to_en** for a Korean sermon. |
 | Songs again | **Stop captions**. Stops **new** capture and queued Whisper jobs. Not the same as hiding the OBS source. |
-| English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. For Korean captions, set **en_to_ko (Guest → Korean)** instead; it needs **Gemini live** or **Seamless on Hermeneia**. |
+| English guest speaker | Before service, set mode **en_to_en (Guest)**. English stays English. For Korean captions, set **en_to_ko (Guest → Korean)** instead; it needs **Gemini live**, **Gemini on pauses** or **Seamless on Hermeneia**. |
 
 Do **not** flip language verse-by-verse. Stay on `ko_to_en` for a Korean sermon.
 
@@ -244,6 +246,7 @@ Booth control's **Caption engine** buttons switch engines while Metagrafo runs, 
 | Button | Needs | Kept in `.env` as |
 |---|---|---|
 | **Gemini live** | a saved Gemini key | `CAPTION_ENGINE=gemini_live` |
+| **Gemini on pauses** | a saved Gemini key | `CAPTION_ENGINE=gemini_pauses` |
 | **Whisper on this PC** | Whisper installed (not by `Start Metagrafo.cmd`) and an NVIDIA GPU with room beside OBS | `CAPTION_ENGINE=whisper`, `USE_HERMENEIA=false` |
 | **Whisper on Hermeneia** | a saved Hermeneia token | `CAPTION_ENGINE=whisper`, `USE_HERMENEIA=true`, `HERMENEIA_MODEL=whisper` |
 | **Seamless on Hermeneia** | a saved Hermeneia token | `CAPTION_ENGINE=whisper`, `USE_HERMENEIA=true`, `HERMENEIA_MODEL=seamless-m4t-v2` |

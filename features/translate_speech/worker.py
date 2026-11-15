@@ -34,7 +34,8 @@ class TranslateWorker:
         engine: str = "whisper",
         translate=None,
         condition_on_previous_text: bool = False,
-        seamless: bool = False,
+        writes_korean: bool = False,
+        join_short: bool = False,
         join_under_s: float = 2.0,
         hold_s: float = 1.5,
     ) -> None:
@@ -45,10 +46,12 @@ class TranslateWorker:
             translate=translate,
             condition_on_previous_text=condition_on_previous_text,
         )
-        # The mode the booth picked, and whether `transcribe` is Seamless on Hermeneia, which
-        # writes Korean, and makes text up from a second of audio, so short pieces are joined.
+        # The mode the booth picked; whether `transcribe` writes Korean (Seamless on Hermeneia,
+        # Gemini on pauses); and whether it makes text up from a second of audio, so short pieces
+        # are joined with the next.
         self._picked = TranslateMode(mode)
-        self._seamless = seamless
+        self._writes_korean = writes_korean
+        self._join_short = join_short
         self._mode = self._runnable_mode()
         self._join_under_s = join_under_s
         self._hold_s = hold_s
@@ -61,16 +64,19 @@ class TranslateWorker:
         bus.subscribe(ConditionOnPreviousTextEvent, self._on_previous_text)
         bus.subscribe(AudioChunkEvent, self._on_chunk)
 
-    def use_transcribe(self, transcribe: TranscribeFn, *, seamless: bool = False) -> None:
-        """Speech moved (this PC, Hermeneia, another model): the next chunk goes to `transcribe`."""
+    def use_transcribe(
+        self, transcribe: TranscribeFn, *, writes_korean: bool = False, join_short: bool = False
+    ) -> None:
+        """Speech moved (this PC, Hermeneia, Gemini, another model): the next chunk goes to `transcribe`."""
         self._captioner.use_recognize(transcribe)
-        self._seamless = seamless
+        self._writes_korean = writes_korean
+        self._join_short = join_short
         self._mode = self._runnable_mode()
         self._drop_held()
 
     def _runnable_mode(self) -> TranslateMode:
         """Whisper cannot write Korean, so there en_to_ko falls back to the sermon mode."""
-        if korean_captions(self._picked) and not self._seamless:
+        if korean_captions(self._picked) and not self._writes_korean:
             return TranslateMode.KO_TO_EN
         return self._picked
 
@@ -111,7 +117,7 @@ class TranslateWorker:
     async def _on_chunk(self, event: AudioChunkEvent) -> None:
         if not self._active:
             return
-        if self._seamless:
+        if self._join_short:
             self._held.append(event)
             if sum(piece.duration_s for piece in self._held) < self._join_under_s:
                 # Waits for the next piece; sent alone if the speaker stops here.

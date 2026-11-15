@@ -192,3 +192,8 @@ def test_cleanup_thinks_little_unless_env_says_otherwise(monkeypatch) -> None:
     assert Settings(_env_file=None).cleanup_thinking == "low"
     monkeypatch.setenv("CLEANUP_THINKING", "")
     assert Settings(_env_file=None).cleanup_thinking == ""
+
+
+def test_gemini_on_pauses_gives_up_on_a_piece_after_10_s() -> None:
+    # A slow call holds back every caption after it; 10 s is the least Gemini accepts.
+    assert Settings(_env_file=None).gemini_pauses_timeout_s == 10.0
