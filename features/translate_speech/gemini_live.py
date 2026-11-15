@@ -55,7 +55,7 @@ LONG_LINE_CHARS = 120
 MAX_LINE_CHARS = 170
 CLEANUP_CONTEXT_LINES = 3
 # Captions never wait longer than this for the text model; the line shows as heard instead.
-CLEANUP_TIMEOUT_S = 4.0
+CLEANUP_TIMEOUT_S = 8.0
 # A line still growing after this long shows up to its last comma; until then it waits for its
 # sentence to end. At 6 s a third of the 2026-11-12 19:54 run's captions were half sentences; a
 # run-on sentence can otherwise leave the screen still for 30 s.

@@ -135,11 +135,11 @@ def test_gemini_cleans_each_finished_line_with_the_saved_key_and_the_default_mod
     with TestClient(app) as client:
         _wait_for_a_finished_line(client, seen)
     assert seen == [("TODAY'S TOPICAL SERMON IS ABOUT PRAYER.", False)]
-    assert made == [("saved-key", "gemini-3.5-flash-lite")]
+    assert made == [("saved-key", "gemini-3.8-flash")]
 
 
 def test_cleanup_waits_four_seconds_by_default() -> None:
-    assert Settings(_env_file=None).cleanup_timeout_s == 4.0
+    assert Settings(_env_file=None).cleanup_timeout_s == 8.0
 
 
 def test_gemini_shows_the_line_as_heard_when_cleanup_outlasts_the_timeout_from_env(env_file, monkeypatch) -> None:
