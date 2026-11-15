@@ -43,6 +43,18 @@ def make_job_dir(*, cwd: Path | None = None, now: datetime | None = None) -> Pat
     return path
 
 
+_VIDEO_SUFFIXES = (".mp4", ".mkv", ".webm", ".mov")
+
+
+def find_video(job_dir: Path, video_id: str) -> Path | None:
+    """The video yt-dlp kept beside the wav (`keepvideo`), whichever container it chose."""
+    for suffix in _VIDEO_SUFFIXES:
+        path = Path(job_dir) / f"{video_id}{suffix}"
+        if path.is_file():
+            return path
+    return None
+
+
 def download_media(url: str, dest_dir: Path) -> Path:
     video_id = youtube_video_id(url)
     if shutil.which("ffmpeg") is None:
