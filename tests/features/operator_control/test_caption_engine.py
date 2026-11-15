@@ -90,6 +90,22 @@ class _Booth:
             "features.translate_speech.hermeneia_client.make_hermeneia_transcribe", make_hermeneia_transcribe
         )
         monkeypatch.setattr("features.translate_speech.whisper_asr.make_transcribe", make_transcribe)
+
+        self.gemini_pieces: list[tuple[str, str]] = []
+
+        def make_gemini_pauses_transcribe(api_key: str, model: str, **_kwargs: object):
+            def transcribe(_pcm, **kwargs):
+                self.gemini_pieces.append((api_key, model))
+                if kwargs.get("target_language") == "ko":
+                    return "제미나이가 쓴 한국어 자막입니다."
+                return "Hello from Gemini on pauses."
+
+            return transcribe
+
+        monkeypatch.setattr(
+            "features.translate_speech.gemini_pauses_client.make_gemini_pauses_transcribe",
+            make_gemini_pauses_transcribe,
+        )
         monkeypatch.setattr("features.translate_speech.whisper_asr.installed", lambda: self.installed)
 
         def factory(api_key: str):
@@ -518,3 +534,64 @@ def test_whisper_is_refused_while_seamless_writes_korean(tmp_path, monkeypatch, 
         assert booth.speak(client) == "안녕하세요, 하나님의 말씀입니다."
     # Whisper on this PC never loaded for a pick that was refused.
     assert booth.loads == 0
+
+
+def test_gemini_on_pauses_is_refused_without_a_gemini_key(tmp_path, monkeypatch) -> None:
+    booth = _Booth(tmp_path, monkeypatch, caption_engine="whisper", hermeneia_token="tok-42")
+    with TestClient(booth.app) as client:
+        response = client.put("/caption-engine", json={"engine": "gemini_pauses"})
+        assert response.status_code == 409
+        assert "Gemini key" in response.json()["detail"]
+        assert client.get("/mode").json()["caption_engine"] == "whisper_hermeneia"
+
+
+def test_gemini_on_pauses_captions_each_piece_and_is_kept_for_next_time(tmp_path, monkeypatch) -> None:
+    booth = _Booth(tmp_path, monkeypatch, caption_engine="whisper", hermeneia_token="tok-42", gemini_api_key="gem-key")
+    with TestClient(booth.app) as client:
+        response = client.put("/caption-engine", json={"engine": "gemini_pauses"})
+        assert response.status_code == 200
+        assert response.json()["caption_engine"] == "gemini_pauses"
+        assert booth.speak(client) == "Hello from Gemini on pauses."
+    # No live socket opened: each piece is its own call.
+    assert booth.opened == []
+    assert booth.gemini_pieces == [("gem-key", "gemini-4-hydrogen")]
+    assert booth.saved().caption_engine == "gemini_pauses"
+    again = _Booth(
+        tmp_path, monkeypatch, env=booth.env_file.read_text(encoding="utf-8"), hermeneia_token="tok-42", gemini_api_key="gem-key"
+    )
+    with TestClient(again.app) as client:
+        assert client.get("/mode").json()["caption_engine"] == "gemini_pauses"
+        assert again.speak(client) == "Hello from Gemini on pauses."
+
+
+def test_gemini_on_pauses_writes_korean_captions_in_en_to_ko(tmp_path, monkeypatch) -> None:
+    booth = _Booth(tmp_path, monkeypatch, caption_engine="whisper", hermeneia_token="tok-42", gemini_api_key="gem-key")
+    with TestClient(booth.app) as client:
+        assert client.put("/caption-engine", json={"engine": "gemini_pauses"}).status_code == 200
+        assert client.get("/mode").json()["writes_korean"] is True
+        assert client.put("/mode", json={"mode": "en_to_ko"}).status_code == 200
+        assert booth.speak(client) == "제미나이가 쓴 한국어 자막입니다."
+        # Whisper only writes English, so it is refused while Gemini on pauses writes Korean.
+        response = client.put("/caption-engine", json={"engine": "whisper_hermeneia"})
+        assert response.status_code == 409
+        assert "Korean" in response.json()["detail"]
+    last = booth.subtitles[-1]
+    assert (last.mode, last.source_language, last.target_language) == ("en_to_ko", "en", "ko")
+
+
+def test_gemini_on_pauses_hears_short_pieces_joined_with_the_next(tmp_path, monkeypatch) -> None:
+    # Like Seamless, it can make a line up from a second of audio, so it gets more to go on.
+    booth = _Booth(
+        tmp_path, monkeypatch, caption_engine="gemini_pauses", hermeneia_token="tok-42", gemini_api_key="gem-key"
+    )
+    with TestClient(booth.app) as client:
+        for n in range(2):
+            piece = AudioChunkEvent(
+                chunk_id=f"short{n}", pcm_s16le=b"\x00\x10" * 12800, sample_rate=16000,
+                started_at=time.monotonic(), duration_s=0.8,
+            )
+            client.portal.call(booth.app.state.bus.publish, piece)
+        booth.wait_until(client, lambda: booth.captions)
+        booth.wait_until(client, lambda: True)
+    assert booth.captions == ["Hello from Gemini on pauses."]
+    assert len(booth.gemini_pieces) == 1

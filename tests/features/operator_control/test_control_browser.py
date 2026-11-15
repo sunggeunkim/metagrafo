@@ -245,16 +245,32 @@ def test_glossary_box_starts_at_the_church_default_saves_turns_off_and_resets(br
 @pytest.fixture
 def control_hermeneia(tmp_path, monkeypatch) -> Iterator[str]:
     """A served app with a Hermeneia token saved and no Whisper on this PC."""
-    for name in ("CAPTION_ENGINE", "HERMENEIA_TOKEN", "HERMENEIA_MODEL", "USE_HERMENEIA"):
+    yield from _serve_hermeneia(tmp_path, monkeypatch, gemini_api_key="")
+
+
+@pytest.fixture
+def control_hermeneia_and_gemini(tmp_path, monkeypatch) -> Iterator[str]:
+    """The same, with a Gemini key saved too (still on Whisper on Hermeneia)."""
+    yield from _serve_hermeneia(tmp_path, monkeypatch, gemini_api_key="gem-key")
+
+
+def _serve_hermeneia(tmp_path, monkeypatch, *, gemini_api_key: str) -> Iterator[str]:
+    for name in ("CAPTION_ENGINE", "HERMENEIA_TOKEN", "HERMENEIA_MODEL", "USE_HERMENEIA", "GEMINI_API_KEY"):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(
         "features.translate_speech.hermeneia_client.make_hermeneia_transcribe",
         lambda *_args, **_kwargs: lambda _pcm, **_kw: "",
     )
+    monkeypatch.setattr(
+        "features.translate_speech.gemini_pauses_client.make_gemini_pauses_transcribe",
+        lambda *_args, **_kwargs: lambda _pcm, **_kw: "",
+    )
     env_file = tmp_path / ".env"
     env_file.write_text("", encoding="utf-8")
     app = create_app(
-        settings=Settings(caption_engine="whisper", gemini_api_key="", hermeneia_token="tok-42", _env_file=env_file),
+        settings=Settings(
+            caption_engine="whisper", gemini_api_key=gemini_api_key, hermeneia_token="tok-42", _env_file=env_file
+        ),
         env_file=env_file,
         list_input_devices=lambda: [],
     )
@@ -284,6 +300,7 @@ def test_engine_buttons_switch_to_seamless_and_grey_out_what_cannot_run(browser,
         page.wait_for_selector("#engine-whisper_hermeneia.active")
         # No Gemini key, and Whisper is not on this PC.
         assert page.is_disabled("#engine-gemini_live")
+        assert page.is_disabled("#engine-gemini_pauses")
         assert page.is_disabled("#engine-whisper_local")
         assert page.is_enabled("#engine-seamless_hermeneia")
 
@@ -300,6 +317,25 @@ def test_engine_buttons_switch_to_seamless_and_grey_out_what_cannot_run(browser,
         page.wait_for_selector("#mode-en-ko.active")
         page.wait_for_selector("#engine-whisper_hermeneia:disabled")
         assert page.is_enabled("#engine-seamless_hermeneia")
+    finally:
+        page.close()
+
+
+def test_gemini_on_pauses_is_picked_with_a_key_and_writes_korean(browser, control_hermeneia_and_gemini) -> None:
+    page = browser.new_page()
+    try:
+        page.goto(f"{control_hermeneia_and_gemini}/control")
+        page.wait_for_selector("#engine-whisper_hermeneia.active")
+        assert page.is_disabled("#mode-en-ko")
+        page.click("#engine-gemini_pauses")
+        page.wait_for_selector("#engine-gemini_pauses.active")
+        assert "engine Gemini on pauses" in page.inner_text("body")
+        # It writes Korean, and while it does, Whisper on Hermeneia cannot be picked.
+        page.wait_for_selector("#mode-en-ko:enabled")
+        page.click("#mode-en-ko")
+        page.wait_for_selector("#mode-en-ko.active")
+        page.wait_for_selector("#engine-whisper_hermeneia:disabled")
+        assert page.is_enabled("#engine-gemini_pauses")
     finally:
         page.close()
 

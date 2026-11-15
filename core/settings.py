@@ -29,12 +29,13 @@ sermon → 설교; Sunday → 주일; church → 교회
 Bible books and references as in the 개역개정 Bible: Genesis → 창세기, Job → 욥기, Psalms → 시편, Romans → 로마서, John 3:16 → 요한복음 3장 16절"""
 
 # Booth control's caption engines. The two on Hermeneia name the model the server runs.
-CAPTION_ENGINES = ("gemini_live", "whisper_local", "whisper_hermeneia", "seamless_hermeneia")
+CAPTION_ENGINES = ("gemini_live", "gemini_pauses", "whisper_local", "whisper_hermeneia", "seamless_hermeneia")
 # The engines that write Korean captions (en_to_ko). Whisper only translates into English.
-KOREAN_ENGINES = ("gemini_live", "seamless_hermeneia")
+KOREAN_ENGINES = ("gemini_live", "gemini_pauses", "seamless_hermeneia")
 # What booth control calls each engine.
 ENGINE_NAMES = {
     "gemini_live": "Gemini live",
+    "gemini_pauses": "Gemini on pauses",
     "whisper_local": "Whisper on this PC",
     "whisper_hermeneia": "Whisper on Hermeneia",
     "seamless_hermeneia": "Seamless on Hermeneia",
@@ -92,10 +93,19 @@ class Settings(BaseSettings):
     hermeneia_timeout_s: float = 30.0
     caption_engine: str = "whisper"
     gemini_api_key: str = ""
+    # Gemini on pauses: each piece cut at a pause goes to this model, which hears it and writes
+    # the caption in one call. gemini-4-hydrogen kept silence, noise and music empty on 2026-11-15
+    # where gemini-3.8-flash made sermon lines up from them.
+    gemini_pauses_model: str = "gemini-4-hydrogen"
+    gemini_pauses_thinking_budget: int = 0
+    gemini_pauses_timeout_s: float = 15.0
     youtube_caption_url: str = ""
 
     def gemini_live(self) -> bool:
         return self.caption_engine == "gemini_live" and bool(self.gemini_api_key.strip())
+
+    def gemini_pauses(self) -> bool:
+        return self.caption_engine == "gemini_pauses" and bool(self.gemini_api_key.strip())
 
     def hermeneia(self) -> bool:
         """Whether Whisper runs on the Hermeneia server rather than this PC."""
@@ -108,6 +118,8 @@ class Settings(BaseSettings):
         """The booth control engine these settings run: one of CAPTION_ENGINES."""
         if self.gemini_live():
             return "gemini_live"
+        if self.gemini_pauses():
+            return "gemini_pauses"
         if not self.hermeneia():
             return "whisper_local"
         if self.hermeneia_model == HERMENEIA_MODELS["seamless_hermeneia"]:

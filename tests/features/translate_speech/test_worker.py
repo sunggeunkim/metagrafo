@@ -33,6 +33,7 @@ class FakeWhisper:
         task: str,
         initial_prompt: str,
         condition_on_previous_text: bool = False,
+        target_language: str | None = None,
     ) -> str:
         self.calls.append(
             {
@@ -40,6 +41,7 @@ class FakeWhisper:
                 "task": task,
                 "initial_prompt": initial_prompt,
                 "condition_on_previous_text": condition_on_previous_text,
+                "target_language": target_language,
             }
         )
         return self.text
@@ -69,6 +71,7 @@ async def test_ko_to_en_uses_translate_task_and_publishes_english(caplog) -> Non
             "task": "translate",
             "initial_prompt": "",
             "condition_on_previous_text": False,
+            "target_language": None,
         }
     ]
     assert seen[0].mode == "ko_to_en"
@@ -301,6 +304,24 @@ async def test_whisper_falls_back_to_sermon_mode_when_asked_for_korean() -> None
     assert seen[0].mode == "ko_to_en"
 
 
+async def test_an_engine_that_writes_korean_keeps_english_guest_to_korean() -> None:
+    bus = EventBus()
+    engine = FakeWhisper("하나님은 사랑이십니다.")
+    seen: list[SubtitleEvent] = []
+
+    async def handler(event: SubtitleEvent) -> None:
+        seen.append(event)
+
+    bus.subscribe(SubtitleEvent, handler)
+    worker = TranslateWorker(bus, engine.transcribe, mode="en_to_ko", writes_korean=True)
+    task = asyncio.create_task(worker.run())
+    await bus.publish(_chunk())
+    await asyncio.sleep(0.1)
+    task.cancel()
+    assert engine.calls[0]["target_language"] == "ko"
+    assert seen[0].mode == "en_to_ko"
+
+
 def _piece(chunk_id: str, seconds: float, started_at: float = 1.0) -> AudioChunkEvent:
     return AudioChunkEvent(
         chunk_id=chunk_id,
@@ -340,7 +361,7 @@ async def test_seamless_gets_short_pieces_joined_with_the_next() -> None:
         seen.append(event)
 
     bus.subscribe(SubtitleEvent, handler)
-    worker = TranslateWorker(bus, heard.transcribe, seamless=True)
+    worker = TranslateWorker(bus, heard.transcribe, join_short=True)
     await _run_worker(worker, bus, [_piece("a", 0.8, 10.0), _piece("b", 0.7, 11.0), _piece("c", 1.0, 12.0)])
     assert heard.seconds == [2.5]
     assert [event.chunk_id for event in seen] == ["a"]
@@ -350,7 +371,7 @@ async def test_seamless_gets_short_pieces_joined_with_the_next() -> None:
 async def test_seamless_gets_a_long_piece_at_once() -> None:
     bus = EventBus()
     heard = _Heard()
-    worker = TranslateWorker(bus, heard.transcribe, seamless=True)
+    worker = TranslateWorker(bus, heard.transcribe, join_short=True)
     await _run_worker(worker, bus, [_piece("a", 3.0), _piece("b", 0.5), _piece("c", 4.0)])
     # The short one rides along with the piece after it.
     assert heard.seconds == [3.0, 4.5]
@@ -359,7 +380,7 @@ async def test_seamless_gets_a_long_piece_at_once() -> None:
 async def test_a_short_last_piece_still_reaches_seamless_once_the_speaker_stops() -> None:
     bus = EventBus()
     heard = _Heard()
-    worker = TranslateWorker(bus, heard.transcribe, seamless=True, hold_s=0.1)
+    worker = TranslateWorker(bus, heard.transcribe, join_short=True, hold_s=0.1)
     await _run_worker(worker, bus, [_piece("amen", 0.6)], wait_s=0.4)
     assert heard.seconds == [0.6]
 
@@ -375,7 +396,7 @@ async def test_whisper_gets_every_piece_as_it_comes() -> None:
 async def test_pieces_held_for_seamless_are_dropped_when_captions_stop() -> None:
     bus = EventBus()
     heard = _Heard()
-    worker = TranslateWorker(bus, heard.transcribe, seamless=True)
+    worker = TranslateWorker(bus, heard.transcribe, join_short=True)
     task = asyncio.create_task(worker.run())
     await bus.publish(_piece("before", 0.8))
     await bus.publish(CaptionsStateEvent(is_active=False))

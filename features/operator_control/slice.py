@@ -124,8 +124,8 @@ class HermeneiaTokenBody(BaseModel):
 
 
 class CaptionEngineBody(BaseModel):
-    engine: Literal["gemini_live", "whisper_local", "whisper_hermeneia", "seamless_hermeneia"] = Field(
-        description="gemini_live, Whisper on this PC, or Whisper or Seamless on the Hermeneia server"
+    engine: Literal["gemini_live", "gemini_pauses", "whisper_local", "whisper_hermeneia", "seamless_hermeneia"] = Field(
+        description="gemini_live, Gemini on pauses, Whisper on this PC, or Whisper or Seamless on the Hermeneia server"
     )
 
 
@@ -436,13 +436,14 @@ def register(
             if korean_captions(state.mode):
                 raise HTTPException(
                     status_code=409,
-                    detail="Only Gemini live and Seamless on Hermeneia write Korean captions. Pick another mode first.",
+                    detail="Only Gemini live, Gemini on pauses and Seamless on Hermeneia write Korean captions. "
+                    "Pick another mode first.",
                 )
 
-        if body.engine == "gemini_live":
+        if body.engine in ("gemini_live", "gemini_pauses"):
             if not settings.gemini_api_key.strip():
                 raise HTTPException(status_code=409, detail="Gemini needs a key. Save a Gemini key first.")
-            values = {"CAPTION_ENGINE": "gemini_live"}
+            values = {"CAPTION_ENGINE": body.engine}
         else:
             if body.engine not in KOREAN_ENGINES:
                 refuse_in_korean()
@@ -524,7 +525,7 @@ def register(
         if korean_captions(body.mode) and not settings.writes_korean():
             raise HTTPException(
                 status_code=409,
-                detail="Korean captions need Gemini live or Seamless on Hermeneia. Pick one of them first.",
+                detail="Korean captions need Gemini live, Gemini on pauses or Seamless on Hermeneia. Pick one of them first.",
             )
         state.mode = body.mode
         source, target = languages_for(state.mode)
