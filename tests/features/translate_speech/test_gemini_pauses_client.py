@@ -123,3 +123,22 @@ def test_the_model_is_told_never_to_invent_words_from_silence_or_music(monkeypat
     assert "silence, room noise, music or singing" in instruction
     assert "An empty caption is always better than words nobody said." in instruction
     assert "If no one is clearly speaking in it, reply with both fields empty." in _prompt(asked)
+
+
+def test_a_busy_or_rate_limited_gemini_is_tried_once_more(monkeypatch) -> None:
+    # The library tries once by default, and a 429 or 503 would lose that piece's caption.
+    built, _asked = _record_client(monkeypatch, {"heard": "", "caption": ""})
+    _transcribe(timeout_s=12.0)
+    options = built["http_options"]
+    assert options.timeout == 12000
+    retry = options.retry_options
+    assert retry.attempts == 2
+    assert sorted(retry.http_status_codes) == [429, 503]
+    assert retry.max_delay <= 1.0
+
+
+def test_a_timeout_under_10_s_is_raised_to_10_s(monkeypatch) -> None:
+    # Gemini refuses the call outright: "Minimum allowed deadline is 10s."
+    built, _asked = _record_client(monkeypatch, {"heard": "", "caption": ""})
+    _transcribe(timeout_s=4.0)
+    assert built["http_options"].timeout == 10000

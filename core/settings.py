@@ -97,8 +97,12 @@ class Settings(BaseSettings):
     # the caption in one call. gemini-4-hydrogen kept silence, noise and music empty on 2026-11-15
     # where gemini-3.8-flash made sermon lines up from them.
     gemini_pauses_model: str = "gemini-4-hydrogen"
+    # Sent as the thinking budget. gemini-4-hydrogen still thought 30–280 tokens a piece at 0,
+    # about half of what a piece costs.
     gemini_pauses_thinking_budget: int = 0
-    gemini_pauses_timeout_s: float = 15.0
+    # Pieces are captioned one at a time, so a slow call holds back every caption after it.
+    # 10 s is the least Gemini accepts; a lower value is raised to it.
+    gemini_pauses_timeout_s: float = 10.0
     youtube_caption_url: str = ""
 
     def gemini_live(self) -> bool:

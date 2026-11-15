@@ -156,14 +156,14 @@ class TranslateSlice:
                 mode=self._mode or settings.translate_mode,
                 queue_size=settings.translate_queue_size,
                 condition_on_previous_text=settings.condition_on_previous_text,
-                writes_korean=_writes_korean(runs_on),
-                join_short=_writes_korean(runs_on),
+                writes_korean=_seamless_or_gemini(runs_on),
+                join_short=_seamless_or_gemini(runs_on),
             )
         elif runs_on != self.worker_runs_on:
             self.worker.use_transcribe(
                 self._transcribe_for(runs_on),
-                writes_korean=_writes_korean(runs_on),
-                join_short=_writes_korean(runs_on),
+                writes_korean=_seamless_or_gemini(runs_on),
+                join_short=_seamless_or_gemini(runs_on),
             )
         self.worker_runs_on = runs_on
         await self._run("worker")
@@ -237,9 +237,10 @@ def _on_gemini(runs_on: object) -> bool:
     return isinstance(runs_on, tuple) and runs_on[0] == "gemini"
 
 
-def _writes_korean(runs_on: object) -> bool:
-    """Gemini on pauses and Seamless on Hermeneia write Korean; Whisper, here or there, only
-    English. Both also make text up from a second of audio, so short pieces are joined."""
+def _seamless_or_gemini(runs_on: object) -> bool:
+    """Gemini on pauses and Seamless on Hermeneia: both write Korean (Whisper, here or there,
+    only English), and both make text up from a second of audio, so short pieces are joined.
+    The worker's `writes_korean` and `join_short` follow it."""
     if _on_gemini(runs_on):
         return True
     return (
@@ -363,8 +364,8 @@ def register(
         mode=settings.translate_mode,
         queue_size=settings.translate_queue_size,
         condition_on_previous_text=settings.condition_on_previous_text,
-        writes_korean=_writes_korean(runs_on),
-        join_short=_writes_korean(runs_on),
+        writes_korean=_seamless_or_gemini(runs_on),
+        join_short=_seamless_or_gemini(runs_on),
     )
     if app is not None:
         app.state.whisper_profile = profile

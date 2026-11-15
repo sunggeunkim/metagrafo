@@ -41,6 +41,8 @@ NEVER_INVENT = (
     'like a sermon. If you cannot clearly hear spoken words, "heard" and "caption" are both '
     "empty. An empty caption is always better than words nobody said."
 )
+# Gemini refuses a call with a shorter deadline: "Minimum allowed deadline is 10s."
+MIN_TIMEOUT_S = 10.0
 PROMPT = "Write the caption for this audio. If no one is clearly speaking in it, reply with both fields empty."
 
 
@@ -89,21 +91,29 @@ def make_gemini_pauses_transcribe(
     model: str,
     *,
     thinking_budget: int = 0,
-    timeout_s: float = 15.0,
+    timeout_s: float = MIN_TIMEOUT_S,
     context: Callable[[], str] | None = None,
     korean_style: Callable[[], str] | None = None,
     glossary: Callable[[], str] | None = None,
 ):
-    """PCM in, caption out: a Gemini text model hears one piece cut at a pause and writes its
+    """PCM in, caption out: a Gemini model hears one piece cut at a pause and writes its
     caption in one call. Source and target come from the caller's language and task, as for
     Hermeneia. `context`, `korean_style` and `glossary` are read for every piece."""
     from google import genai
     from google.genai import types
 
     # Pinned like cleanup and the live socket: google-genai 3.x changed the default API version.
+    # The library tries once unless told otherwise; a busy (503) or rate-limited (429) Gemini
+    # gets one quick second try, since a piece that fails is never captioned.
     client = genai.Client(
         api_key=api_key,
-        http_options=types.HttpOptions(api_version="v1beta", timeout=int(timeout_s * 1000)),
+        http_options=types.HttpOptions(
+            api_version="v1beta",
+            timeout=int(max(timeout_s, MIN_TIMEOUT_S) * 1000),
+            retry_options=types.HttpRetryOptions(
+                attempts=2, initial_delay=0.5, max_delay=1.0, jitter=0.2, http_status_codes=[429, 503]
+            ),
+        ),
     )
 
     def transcribe(

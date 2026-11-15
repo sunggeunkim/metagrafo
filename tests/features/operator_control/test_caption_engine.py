@@ -592,6 +592,10 @@ def test_gemini_on_pauses_hears_short_pieces_joined_with_the_next(tmp_path, monk
             )
             client.portal.call(booth.app.state.bus.publish, piece)
         booth.wait_until(client, lambda: booth.captions)
-        booth.wait_until(client, lambda: True)
+        # Long enough for a second call to land, had the pieces gone separately.
+        deadline = time.monotonic() + 0.5
+        while time.monotonic() < deadline:
+            client.get("/health")
+            time.sleep(0.01)
     assert booth.captions == ["Hello from Gemini on pauses."]
     assert len(booth.gemini_pieces) == 1
