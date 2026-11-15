@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     # the open line shows on its own only once the speaker has stopped.
     whole_sentences_quiet_s: float = 5.0
     clean_up_wording: bool = True
-    cleanup_model: str = "gemini-3.5-flash-lite"
+    cleanup_model: str = "gemini-3.8-flash"
     # 3.5 Flash Lite took 1–8 s a line (median ~3 s) on 2026-11-09; past this the line shows as heard.
     cleanup_timeout_s: float = 4.0
     # Background on this service for the cleanup model. Booth control sets it while Metagrafo
