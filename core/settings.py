@@ -60,6 +60,9 @@ class Settings(BaseSettings):
     whole_sentences_quiet_s: float = 5.0
     clean_up_wording: bool = True
     cleanup_model: str = "gemini-3.8-flash"
+    # Sent as the model's thinking level. 3.8 Flash thought 4–6.5 s a line by default on
+    # 2026-11-14 and answered in 1.5–2.5 s on "low". Empty leaves the model's own default.
+    cleanup_thinking: str = "low"
     # 3.5 Flash Lite took 1–8 s a line (median ~3 s) on 2026-11-09; past this the line shows as heard.
     cleanup_timeout_s: float = 8.0
     # Background on this service for the cleanup model. Booth control sets it while Metagrafo

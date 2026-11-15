@@ -305,3 +305,17 @@ async def test_an_english_line_gets_no_korean_style_and_is_told_to_stay_english(
     assert "The line is English" in asked["config"].system_instruction
     await clean("오늘은 Romans 8장을 함께 읽겠습니다.", [])
     assert "When the line is Korean" in asked["config"].system_instruction
+
+
+async def test_cleanup_asks_the_text_model_to_think_little(monkeypatch) -> None:
+    # gemini-3.8-flash thinks 4–6.5 s a line by default, past the booth's cleanup timeout;
+    # on "low" it answered in 1.5–2.5 s.
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    await gemini_cleanup("test-key", model="gemini-test-lite", thinking="low")("A line.", [])
+    assert asked["config"].thinking_config.thinking_level == "LOW"
+
+
+async def test_no_thinking_level_leaves_the_model_default(monkeypatch) -> None:
+    _built, asked = _record_client(monkeypatch, "Cleaned.")
+    await gemini_cleanup("test-key", model="gemini-test-lite")("A line.", [])
+    assert asked["config"].thinking_config is None

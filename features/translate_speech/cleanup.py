@@ -93,11 +93,13 @@ def gemini_cleanup(
     context: Callable[[], str] | None = None,
     korean_style: Callable[[], str] | None = None,
     glossary: Callable[[], str] | None = None,
+    thinking: str = "",
 ) -> Cleanup:
     """A fast Gemini text model (`CLEANUP_MODEL`) that rewrites one finished caption line.
 
     `context`, `korean_style` and `glossary` are read for every line, so text saved on booth
     control applies from the next one. Without `korean_style` or `glossary`, the defaults apply.
+    `thinking` is the model's thinking level (`CLEANUP_THINKING`); empty leaves its default.
     """
     from google import genai
     from google.genai import types
@@ -119,6 +121,7 @@ def gemini_cleanup(
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             response_mime_type="application/json",
             response_json_schema=REPLY_SCHEMA,
+            thinking_config=types.ThinkingConfig(thinking_level=thinking) if thinking else None,
         )
         response = await client.aio.models.generate_content(
             model=model, contents=prompt_for(line, shown, said), config=config

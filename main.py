@@ -420,7 +420,8 @@ async def run_compare_async(
     else:
         raise ValueError("need --youtube or --file")
     connect = (connect_factory or gemini_connect)(key)
-    cleanup = (cleanup_factory or gemini_cleanup)(key, settings.cleanup_model)
+    make_cleanup = cleanup_factory or partial(gemini_cleanup, thinking=settings.cleanup_thinking)
+    cleanup = make_cleanup(key, settings.cleanup_model)
     translate = (translate_factory or gemini_translate_sentence)(key, settings.cleanup_model)
     return await compare_wav(
         wav_path=wav_path,

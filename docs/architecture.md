@@ -212,7 +212,7 @@ Startup: operator_control + translate + broadcast + youtube_captions, then captu
 
 Env (`core/settings.py`). Profile fills unset whisper fields only.
 
-Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port, `YOUTUBE_CAPTION_URL` (optional), `WHOLE_SENTENCES` (default `true`), `WHOLE_SENTENCES_QUIET_S` (default 5), `CLEAN_UP_WORDING` (default `true`), `CLEANUP_MODEL` (default `gemini-3.8-flash`), `CLEANUP_TIMEOUT_S` (default 8), `SAVE_TRANSCRIPT` (default `false`), `ONE_SENTENCE` (default `true`). Captions active is **not** persisted; always starts on.
+Notable: `AUDIO_DEVICE_NAME` (default `HDMI (Elgato 4K S)`), `AUDIO_DEVICE_INDEX`, VAD (`VAD_MIN_SILENCE_MS` default 500), `WHISPER_MODEL` (default `large-v3`), `WHISPER_DEVICE` (default `cuda`), `WHISPER_COMPUTE_TYPE` (default `float16`), `TRANSLATE_MODE` (`ko_to_en` \| `en_to_en` \| `en_to_ko`), queue size, host/port, `YOUTUBE_CAPTION_URL` (optional), `WHOLE_SENTENCES` (default `true`), `WHOLE_SENTENCES_QUIET_S` (default 5), `CLEAN_UP_WORDING` (default `true`), `CLEANUP_MODEL` (default `gemini-3.8-flash`), `CLEANUP_THINKING` (default `low`; empty leaves the model's default), `CLEANUP_TIMEOUT_S` (default 8), `SAVE_TRANSCRIPT` (default `false`), `ONE_SENTENCE` (default `true`). Captions active is **not** persisted; always starts on.
 
 ## Operator path
 

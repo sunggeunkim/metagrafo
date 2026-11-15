@@ -266,6 +266,7 @@ def register(
         context=lambda: settings.cleanup_context,
         korean_style=lambda: settings.korean_style,
         glossary=lambda: settings.glossary,
+        thinking=settings.cleanup_thinking,
     )
     # Whisper on this PC loads only when it runs: at start when picked, else when first picked.
     # A transcriber handed in (tests, the file run) is Whisper on this PC, already loaded.

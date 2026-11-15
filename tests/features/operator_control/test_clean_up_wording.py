@@ -186,3 +186,9 @@ def test_a_pasted_key_cleans_lines_with_that_key_and_the_cleanup_model_from_env(
         assert seen[:1] == [("TODAY'S TOPICAL SERMON IS ABOUT PRAYER.", False)]
         client.put("/gemini-key", json={"api_key": "replacement-key"})
     assert made == [("pasted-key-42", "gemini-test-lite"), ("replacement-key", "gemini-test-lite")]
+
+
+def test_cleanup_thinks_little_unless_env_says_otherwise(monkeypatch) -> None:
+    assert Settings(_env_file=None).cleanup_thinking == "low"
+    monkeypatch.setenv("CLEANUP_THINKING", "")
+    assert Settings(_env_file=None).cleanup_thinking == ""
