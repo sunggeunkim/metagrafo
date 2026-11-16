@@ -29,7 +29,7 @@ class Cue:
 class _Piece:
     pcm: bytes
     start_s: float
-    end_s: float  # with the pause that ended it
+    speech_end_s: float  # without the pause that ended it
     cut_at_s: float  # when the chunker handed it over
 
 
@@ -60,7 +60,6 @@ def run_wav(
         translate=translate,
         condition_on_previous_text=condition_on_previous_text,
     )
-    pause_s = max(0, min_silence_ms) / 1000
     frame_s = FRAME_SAMPLES / TARGET_RATE
     cues: list[Cue] = []
     held: list[_Piece] = []
@@ -69,18 +68,24 @@ def run_wav(
         text = captioner.line(b"".join(p.pcm for p in pieces), direction=translate_mode.value)
         cleaned = (text or "").strip()
         if cleaned:
-            first, last = pieces[0], pieces[-1]
-            speech_end = max(first.start_s, last.end_s - pause_s)
-            cues.append(Cue(first.start_s, speech_end, cleaned))
+            cues.append(Cue(pieces[0].start_s, pieces[-1].speech_end_s, cleaned))
 
     def _take(parts: list[bytes], cut_at_s: float) -> None:
-        # Pieces handed over together sit back to back, ending where the chunker cut.
-        pieces: list[_Piece] = []
-        end = cut_at_s
-        for pcm in reversed(parts):
-            start = end - len(pcm) / BYTES_PER_S
-            pieces.insert(0, _Piece(pcm, start, end, cut_at_s))
-            end = start
+        if not parts:
+            return
+        # Timed from the frames each piece holds: with two pauses, the silence bridged between
+        # the phrases is in neither, and a 12 s cut has no pause at its end.
+        spans = chunker.emitted_spans
+        assert len(spans) == len(parts)
+        pieces = [
+            _Piece(
+                pcm,
+                start_s + span.start_frame * frame_s,
+                start_s + (span.start_frame + span.frames - span.trailing_frames) * frame_s,
+                cut_at_s,
+            )
+            for pcm, span in zip(parts, spans, strict=True)
+        ]
         for piece in pieces:
             if not join_short:
                 _caption([piece])

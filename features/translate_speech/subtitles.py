@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import tempfile
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -36,9 +37,13 @@ def to_srt(cues: Sequence[Cue]) -> str:
     return "\n".join(blocks)
 
 
+# The name the captions go to ffmpeg under (see `burn_subtitles`).
+SRT_NAME = "captions.srt"
+
+
 def burn_command(video: Path, srt_name: str, out: Path, *, font: str = FONT) -> list[str]:
-    """ffmpeg arguments that draw the captions into the picture. The subtitles filter is given a
-    bare file name, run from the srt's folder: a Windows path's drive colon breaks the filter."""
+    """ffmpeg arguments that draw the captions into the picture. `srt_name` goes into the filter
+    as it is, so it must be a plain name in ffmpeg's working folder."""
     return [
         "ffmpeg",
         "-y",
@@ -73,7 +78,14 @@ def burn_subtitles(
     *,
     run: Callable[..., None] = _run_ffmpeg,
 ) -> Path:
-    """Write `out`: `video` with the captions in `srt` drawn at the bottom."""
+    """Write `out`: `video` with the captions in `srt` drawn at the bottom.
+
+    The subtitles filter reads a drive colon, backslashes, quotes, commas, semicolons and
+    brackets in its file name as syntax ("Sunday's sermon.en.srt" stops ffmpeg). So ffmpeg runs
+    in a folder of its own, given a copy of the captions under a plain name; the video and
+    output are ordinary arguments, which take any path."""
     srt, out = Path(srt).resolve(), Path(out).resolve()
-    run(burn_command(Path(video).resolve(), srt.name, out), cwd=srt.parent)
+    with tempfile.TemporaryDirectory(prefix="metagrafo-burn-") as folder:
+        shutil.copyfile(srt, Path(folder) / SRT_NAME)
+        run(burn_command(Path(video).resolve(), SRT_NAME, out), cwd=Path(folder))
     return out

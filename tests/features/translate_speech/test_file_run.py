@@ -206,10 +206,11 @@ def test_each_line_is_timed_from_its_speech_into_the_recording(tmp_path: Path) -
         start_s=0.0,
     )
     assert [c.text for c in cues] == ["One.", "Two."]
-    # Each starts with its 200 ms preroll and ends where the speech stopped.
-    assert cues[0].start_s == pytest.approx(0.0, abs=0.04)
-    assert cues[0].end_s == pytest.approx(0.512, abs=0.04)
-    assert cues[1].start_s == pytest.approx(1.472 - 0.2, abs=0.04)
+    # Each starts with its preroll (the 5 frames before the onset frame, of a 200 ms
+    # preroll) and ends where the speech stopped.
+    assert cues[0].start_s == pytest.approx(0.0, abs=0.01)
+    assert cues[0].end_s == pytest.approx(0.512, abs=0.01)
+    assert cues[1].start_s == pytest.approx(1.472 - 0.16, abs=0.01)
     assert cues[1].end_s == pytest.approx(1.984, abs=0.04)
 
 
@@ -303,3 +304,46 @@ def test_en_to_ko_reaches_the_engine_as_asked(tmp_path: Path) -> None:
     assert seen[0]["target_language"] == "ko"
     assert (tmp_path / "sermon.ko.txt").read_text(encoding="utf-8") == "오늘 우리는\n"
     assert len(cues) == 1
+
+
+def test_two_pauses_keep_the_first_line_on_its_own_speech(tmp_path: Path) -> None:
+    # Speech 0–0.512 s, a 2 s pause the chunker bridges without keeping, then speech from 2.512 s.
+    wav_path = tmp_path / "sermon.wav"
+    long_gap = np.zeros(FRAME * 62, dtype=np.int16)  # 1.984 s
+    _write_wav(wav_path, np.concatenate([SPEECH, long_gap, SPEECH, SILENCE]))
+    lines = iter(["One.", "Two."])
+    chunker = _chunker(min_silence_ms=500)
+    chunker.set_pauses_to_cut(2)
+
+    cues = run_wav(
+        wav_path=wav_path,
+        out_path=tmp_path / "sermon.en.txt",
+        transcribe=lambda _pcm, **_kwargs: next(lines),
+        chunker=chunker,
+        mode="ko_to_en",
+        min_silence_ms=500,
+    )
+    assert [c.text for c in cues] == ["One.", "Two."]
+    assert cues[0].start_s == pytest.approx(0.0, abs=0.04)
+    assert cues[0].end_s == pytest.approx(0.512, abs=0.04)
+    # Its preroll: the 5 frames before the onset frame.
+    assert cues[1].start_s == pytest.approx(0.512 + 1.984 - 0.16, abs=0.04)
+    assert cues[1].end_s == pytest.approx(0.512 + 1.984 + 0.512, abs=0.04)
+
+
+def test_a_cut_at_the_12_s_cap_ends_where_the_speech_was_cut(tmp_path: Path) -> None:
+    wav_path = tmp_path / "sermon.wav"
+    _write_wav(wav_path, np.concatenate([np.full(FRAME * 410, 8000, dtype=np.int16), SILENCE]))  # 13.1 s
+
+    cues = run_wav(
+        wav_path=wav_path,
+        out_path=tmp_path / "sermon.en.txt",
+        transcribe=lambda _pcm, **_kwargs: "Line.",
+        chunker=_chunker(),
+        mode="ko_to_en",
+        min_silence_ms=400,
+    )
+    assert len(cues) == 2
+    # Cut on a voiced frame: no pause in that piece to take off.
+    assert cues[0].end_s == pytest.approx(12.0, abs=0.04)
+    assert cues[1].start_s == pytest.approx(12.0, abs=0.04)

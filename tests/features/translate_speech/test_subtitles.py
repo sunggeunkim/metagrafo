@@ -49,17 +49,19 @@ def test_burn_command_names_the_srt_by_file_name_with_a_korean_font(tmp_path: Pa
     assert "libx264" in command and "aac" in command
 
 
-def test_burn_runs_ffmpeg_in_the_srt_folder(tmp_path: Path) -> None:
-    srt = tmp_path / "abc.en.srt"
-    srt.write_text("", encoding="utf-8")
-    ran: list[tuple[list[str], Path]] = []
+@pytest.mark.parametrize("name", ["abc.en.srt", "Sunday's sermon, part [1]; eve.en.srt"])
+def test_burn_hands_ffmpeg_the_captions_under_a_plain_name(tmp_path: Path, name: str) -> None:
+    # The subtitles filter reads ' , ; [ ] : and \ in a file name as syntax.
+    srt = tmp_path / name
+    srt.write_text("1\n00:00:00,000 --> 00:00:01,000\nHi.\n", encoding="utf-8")
+    ran: list[tuple[list[str], str]] = []
 
     def run(command: list[str], *, cwd: Path) -> None:
-        ran.append((command, cwd))
+        ran.append((command, (Path(cwd) / "captions.srt").read_text(encoding="utf-8")))
 
     out = burn_subtitles(tmp_path / "abc.mp4", srt, tmp_path / "abc.en.captioned.mp4", run=run)
     assert out == tmp_path / "abc.en.captioned.mp4"
-    assert ran == [(burn_command(tmp_path / "abc.mp4", "abc.en.srt", out), tmp_path)]
+    assert ran == [(burn_command(tmp_path / "abc.mp4", "captions.srt", out), srt.read_text(encoding="utf-8"))]
 
 
 def test_find_video_skips_the_wav_and_the_captions(tmp_path: Path) -> None:

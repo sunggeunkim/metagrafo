@@ -2,6 +2,17 @@ from __future__ import annotations
 
 from collections import deque
 from collections.abc import Callable
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class ChunkSpan:
+    """Where one handed-over piece sits among the frames pushed (counted from 0), and how many
+    of its frames at the end are the pause that ended it (0 when the 12 s cap cut it)."""
+
+    start_frame: int
+    frames: int
+    trailing_frames: int
 
 
 class SpeechChunker:
@@ -35,8 +46,15 @@ class SpeechChunker:
         # kept in the phrase. The 12 s cap still counts that wait and emits.
         self._bridging = False
         self._wait_frames = 0
+        # Where each piece came from, for a file run that times its captions. Bridged silence
+        # between two phrases is in neither, so the pieces are not back to back.
+        self._frame_index = -1
+        self._utterance_start = 0
+        self._phrase_spans: list[tuple[int, int]] = []
+        self.emitted_spans: list[ChunkSpan] = []
 
     def push(self, frame: bytes) -> list[bytes]:
+        self._frame_index += 1
         if self._bridging and self._pauses_seen >= self._pauses_to_cut:
             return self._emit()
 
@@ -63,6 +81,7 @@ class SpeechChunker:
             self._utterance = list(self._preroll) if self._preroll_frames else [frame]
             if self._preroll_frames and self._utterance[-1] is not frame:
                 self._utterance.append(frame)
+            self._utterance_start = self._frame_index - len(self._utterance) + 1
             self._trailing_silence = 0
             return []
 
@@ -87,6 +106,7 @@ class SpeechChunker:
                 return []
             self._pauses_seen += 1
             self._phrases.append(list(self._utterance))
+            self._phrase_spans.append((self._utterance_start, self._trailing_silence))
             self._utterance = []
             self._trailing_silence = 0
             self._in_speech = False
@@ -111,11 +131,17 @@ class SpeechChunker:
 
     def _emit(self, *, include_open: bool = False) -> list[bytes]:
         phrases = list(self._phrases)
+        spans = [
+            ChunkSpan(start, len(phrase), trailing)
+            for (start, trailing), phrase in zip(self._phrase_spans, self._phrases, strict=True)
+        ]
         if include_open and self._utterance:
             speech_frames = len(self._utterance) - self._trailing_silence
             if speech_frames >= self._min_speech_frames:
                 phrases.append(list(self._utterance))
+                spans.append(ChunkSpan(self._utterance_start, len(self._utterance), self._trailing_silence))
         self.reset()
+        self.emitted_spans = [span for span, phrase in zip(spans, phrases, strict=True) if phrase]
         return [b"".join(phrase) for phrase in phrases if phrase]
 
     def set_min_silence_ms(self, min_silence_ms: int) -> None:
@@ -131,6 +157,7 @@ class SpeechChunker:
     def reset(self) -> None:
         self._utterance = []
         self._phrases = []
+        self._phrase_spans = []
         self._in_speech = False
         self._trailing_silence = 0
         self._preroll.clear()
