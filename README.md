@@ -132,13 +132,27 @@ Hold **Shift** during sign-in to skip Startup items for that logon. Delete the S
 
 ## Rehearsal from a YouTube sermon
 
-Not the Sunday capture path. **ffmpeg must be on PATH.** First run may still download Whisper `large-v3`. A long sermon takes a while (sequential ~12 s chunks).
+Not the Sunday capture path. **ffmpeg must be on PATH** (`winget install Gyan.FFmpeg`, then open a new terminal). With Whisper on this PC, the first run may still download Whisper `large-v3`. A long sermon takes a while, because pieces are captioned one after another.
 
 ```powershell
 uv run python -m main --youtube "https://www.youtube.com/watch?v=VIDEO_ID"
+uv run python -m main --youtube "https://www.youtube.com/watch?v=VIDEO_ID" --engine gemini_pauses --mode en_to_ko --start 5 --end 8
 ```
 
-Saves video + wav (kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current directory, and writes `{VIDEO_ID}.en.txt` there (English lines, one per VAD cut). Optional: `--out captions.txt`, `--file sermon.wav` (wav in only, skip download), `--vad-silence-ms 250`, `--pauses 2`, `--condition-on-previous-text`, `--start 1`, `--end 3`. `--start` and `--end` are minutes into the wav. Omit them to translate the whole file (`--start` defaults to 0, `--end` to the end). `--pauses` is 1 or 2 (default 1). Previous text is on unless you pass `--no-condition-on-previous-text`. `--condition-on-previous-text` forces it on. A YouTube URL still downloads the full video; the flags only limit translation.
+It saves the video and the wav (both kept) under `metagrafo_job/<yyyyMMddHHmm>/` in the current directory, and captions the recording piece by piece, as the booth does. It writes three files there:
+
+- `{VIDEO_ID}.en.txt`: the captions, one per line.
+- `{VIDEO_ID}.en.srt`: the same captions, timed. Each shows from when its speech starts until the next caption, and at most 3 s after its speech ends.
+- `{VIDEO_ID}.en.captioned.mp4`: the video with the captions burned in at the bottom, in Malgun Gothic.
+
+The files are `.ko.*` when the captions are Korean. The re-encode takes a few minutes for a long sermon. `--no-burn` writes only the `.txt` and `.srt`.
+
+**Engine and mode:** by default these are the ones booth control last picked (`CAPTION_ENGINE` and `TRANSLATE_MODE` in `.env`). `--engine gemini_pauses|whisper_local|whisper_hermeneia|seamless_hermeneia` and `--mode ko_to_en|en_to_en|en_to_ko` override them for this run only.
+- Gemini on pauses and Seamless join pieces under 2 s with the next one, as in the booth.
+- Gemini live is refused, because it streams; use `--compare` for it.
+- en_to_ko is refused on Whisper. So is an engine with no key or token saved.
+
+Other options: `--out captions.txt`, `--file sermon.wav` (wav in only, skip download; add `--video sermon.mp4` to burn that video too), `--vad-silence-ms 250`, `--pauses 2`, `--condition-on-previous-text`, `--start 1`, `--end 3`. `--start` and `--end` are minutes into the wav. Omit them to translate the whole file (`--start` defaults to 0, `--end` to the end). `--pauses` is 1 or 2 (default 1). Previous text is on unless you pass `--no-condition-on-previous-text`. `--condition-on-previous-text` forces it on. A YouTube URL still downloads the full video; the flags only limit translation. The `.srt` times still count from the start of the video, so the captions land in the right place in the captioned mp4.
 
 ### Compare live + cleanup with sentence translation (#41)
 

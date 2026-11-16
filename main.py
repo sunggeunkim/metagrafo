@@ -8,6 +8,7 @@ import os
 import sys
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -16,7 +17,7 @@ from typing import TYPE_CHECKING
 from fastapi import FastAPI
 
 from core.event_bus import EventBus
-from core.settings import Settings
+from core.settings import ENGINE_NAMES, HERMENEIA_MODELS, KOREAN_ENGINES, Settings
 from features import (
     broadcast_subtitles,
     capture_audio,
@@ -27,8 +28,14 @@ from features import (
     youtube_captions,
 )
 from features.capture_audio.chunker import SpeechChunker
-from features.capture_audio.youtube import download_media, make_job_dir, youtube_video_id
+from features.capture_audio.youtube import download_media, find_video, make_job_dir, youtube_video_id
+from features.operator_control.events import TranslateMode, korean_captions
 from features.translate_speech.file_run import run_wav
+from features.translate_speech.slice import _gemini_pauses_transcribe, _hermeneia_transcribe
+from features.translate_speech.subtitles import burn_subtitles, to_srt
+
+# The engines a rehearsal run can use: each cuts at pauses. Gemini live streams instead.
+OFFLINE_ENGINES = ("gemini_pauses", "whisper_local", "whisper_hermeneia", "seamless_hermeneia")
 
 if TYPE_CHECKING:
     import uvicorn
@@ -245,6 +252,25 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="MINUTES",
         help="Stop translation this many minutes into the wav (default: the end of the file)",
     )
+    parser.add_argument(
+        "--engine",
+        choices=OFFLINE_ENGINES,
+        default=None,
+        help="Caption engine (default: the one booth control last picked, from .env)",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=tuple(m.value for m in TranslateMode),
+        default=None,
+        help="ko_to_en, en_to_en or en_to_ko (default: booth control's mode, from .env)",
+    )
+    parser.add_argument("--video", help="With --file: the video to burn the captions into")
+    parser.add_argument(
+        "--burn",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Burn the captions into <name>.captioned.mp4 with ffmpeg (default on; --no-burn writes only the .srt)",
+    )
     return parser
 
 
@@ -259,6 +285,46 @@ def _window_seconds(start_minutes: float, end_minutes: float | None) -> tuple[fl
         raise ValueError("--end must be later than --start")
     end_s = None if end_minutes is None else end_minutes * 60.0
     return start_minutes * 60.0, end_s
+
+
+@dataclass(frozen=True, slots=True)
+class OfflineFiles:
+    """What a rehearsal run wrote: the caption lines, the timed .srt, and the video with the
+    captions burned in (None when nothing was burned)."""
+
+    text: Path
+    srt: Path
+    video: Path | None
+
+
+def _booth_settings(settings: Settings, engine: str | None, mode: str | None) -> Settings:
+    """The booth's engine and mode from `.env`, or the ones asked for. Refused here, before
+    anything is downloaded, when they can't run."""
+    values: dict[str, object] = {}
+    if engine in ("gemini_pauses", "gemini_live"):
+        values["caption_engine"] = engine
+    elif engine == "whisper_local":
+        values.update(caption_engine="whisper", use_hermeneia=False)
+    elif engine in HERMENEIA_MODELS:
+        values.update(caption_engine="whisper", use_hermeneia=True, hermeneia_model=HERMENEIA_MODELS[engine])
+    elif engine is not None:
+        raise ValueError(f"unknown engine {engine!r}")
+    if mode is not None:
+        values["translate_mode"] = TranslateMode(mode).value
+    settings = settings.model_copy(update=values) if values else settings
+    gemini = ("gemini_live", "gemini_pauses")
+    wanted = engine or (settings.caption_engine if settings.caption_engine in gemini else settings.engine())
+    if wanted == "gemini_live":
+        raise ValueError("Gemini live streams the whole recording; use --compare, or --engine gemini_pauses")
+    if settings.engine() != wanted:
+        need = "GEMINI_API_KEY" if wanted == "gemini_pauses" else "the Hermeneia address and token"
+        raise ValueError(f"{ENGINE_NAMES[wanted]} needs {need} (save it on booth control, or set it in .env)")
+    if korean_captions(TranslateMode(settings.translate_mode)) and wanted not in KOREAN_ENGINES:
+        raise ValueError(
+            f"{ENGINE_NAMES[wanted]} can't write Korean captions; pass --mode ko_to_en or en_to_en, "
+            "or --engine gemini_pauses or seamless_hermeneia"
+        )
+    return settings
 
 
 def run_offline(
@@ -277,18 +343,27 @@ def run_offline(
     end_minutes: float | None = None,
     pauses: int | None = None,
     condition_on_previous_text: bool | None = None,
-) -> Path:
+    engine: str | None = None,
+    mode: str | None = None,
+    video: str | None = None,
+    burn: bool = True,
+    burner: Callable[[Path, Path, Path], Path] | None = None,
+) -> OfflineFiles:
+    """Caption a YouTube sermon or a wav as the booth would, write the lines and a timed .srt,
+    and burn the captions into the video: the one downloaded, or `video` beside a wav."""
     start_s, end_s = _window_seconds(start_minutes, end_minutes)
-    settings = settings or Settings()
+    settings = _booth_settings(settings or Settings(), engine, mode)
+    language = "ko" if korean_captions(TranslateMode(settings.translate_mode)) else "en"
     job_path: Path | None = None
+    video_id = ""
     if youtube:
         video_id = youtube_video_id(youtube)
         job_path = make_job_dir(cwd=cwd, now=now)
-        out_path = Path(out) if out else job_path / f"{video_id}.en.txt"
+        out_path = Path(out) if out else job_path / f"{video_id}.{language}.txt"
         wav_path: Path | None = None
     elif file:
         wav_path = Path(file)
-        out_path = Path(out) if out else wav_path.with_suffix(".en.txt")
+        out_path = Path(out) if out else wav_path.with_suffix(f".{language}.txt")
     else:
         raise ValueError("need --youtube or --file")
     out_path = out_path.resolve()
@@ -317,15 +392,12 @@ def run_offline(
         pauses_to_cut=pause_count,
         is_speech=is_speech,
     )
-    if transcribe is None and settings.hermeneia():
-        from features.translate_speech.hermeneia_client import make_hermeneia_transcribe
-
-        transcribe = make_hermeneia_transcribe(
-            settings.hermeneia_url,
-            settings.hermeneia_token,
-            settings.hermeneia_model,
-            timeout_s=settings.hermeneia_timeout_s,
-        )
+    on_engine = settings.engine()
+    # Built as the booth builds them, with the booth's context, Korean style and glossary.
+    if transcribe is None and on_engine == "gemini_pauses":
+        transcribe = _gemini_pauses_transcribe(settings)
+    elif transcribe is None and settings.hermeneia():
+        transcribe = _hermeneia_transcribe(settings)
     elif transcribe is None:
         from features.translate_speech.device_profile import detect_vram_gb, resolve_profile
         from features.translate_speech.whisper_asr import make_transcribe
@@ -338,28 +410,33 @@ def run_offline(
         )
         transcribe = make_transcribe(profile)
 
-    def _run(path: Path) -> None:
-        run_wav(
-            wav_path=path,
-            out_path=out_path,
-            transcribe=transcribe,
-            chunker=chunker,
-            mode=settings.translate_mode,
-            min_silence_ms=vad_ms,
-            start_s=start_s,
-            end_s=end_s,
-            condition_on_previous_text=use_previous,
-        )
-
     if youtube:
         assert job_path is not None
         fetch = download if download is not None else download_media
-        downloaded = fetch(youtube, job_path)
-        _run(downloaded)
+        wav_path = fetch(youtube, job_path)
+        video_path = find_video(job_path, video_id)
     else:
-        assert wav_path is not None
-        _run(wav_path)
-    return out_path
+        video_path = Path(video) if video else None
+    assert wav_path is not None
+    cues = run_wav(
+        wav_path=wav_path,
+        out_path=out_path,
+        transcribe=transcribe,
+        chunker=chunker,
+        mode=settings.translate_mode,
+        min_silence_ms=vad_ms,
+        start_s=start_s,
+        end_s=end_s,
+        condition_on_previous_text=use_previous,
+        # Gemini on pauses and Seamless make text up from a second of audio, as in the booth.
+        join_short=on_engine in ("gemini_pauses", "seamless_hermeneia"),
+    )
+    srt_path = out_path.with_suffix(".srt")
+    srt_path.write_text(to_srt(cues), encoding="utf-8")
+    captioned: Path | None = None
+    if burn and video_path is not None:
+        captioned = (burner or burn_subtitles)(video_path, srt_path, srt_path.with_suffix(".captioned.mp4"))
+    return OfflineFiles(text=out_path, srt=srt_path, video=captioned)
 
 
 def run_compare(
@@ -462,17 +539,28 @@ def main(argv: list[str] | None = None) -> None:
     if args.youtube or args.file:
         if args.end is not None and args.end <= args.start:
             parser.error("--end must be later than --start")
-        out = run_offline(
-            youtube=args.youtube,
-            file=args.file,
-            out=args.out,
-            vad_silence_ms=args.vad_silence_ms,
-            start_minutes=args.start,
-            end_minutes=args.end,
-            pauses=args.pauses,
-            condition_on_previous_text=args.condition_on_previous_text,
-        )
-        print(out)
+        if args.video and not args.file:
+            parser.error("--video goes with --file (a YouTube run burns the video it downloads)")
+        try:
+            written = run_offline(
+                youtube=args.youtube,
+                file=args.file,
+                out=args.out,
+                vad_silence_ms=args.vad_silence_ms,
+                start_minutes=args.start,
+                end_minutes=args.end,
+                pauses=args.pauses,
+                condition_on_previous_text=args.condition_on_previous_text,
+                engine=args.engine,
+                mode=args.mode,
+                video=args.video,
+                burn=args.burn,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        for path in (written.text, written.srt, written.video):
+            if path is not None:
+                print(path)
         return
     # Start Metagrafo.cmd already sends this process's output to its log.
     launcher_log = os.environ.get("METAGRAFO_LOG")
